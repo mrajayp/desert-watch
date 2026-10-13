@@ -12,7 +12,7 @@ ENV PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1 \
 WORKDIR /app/backend
 COPY backend/pyproject.toml ./
 RUN pip install "fastapi>=0.115" "uvicorn[standard]>=0.30" "sqlalchemy>=2.0" "pyyaml>=6.0" "httpx>=0.27" \
-    "feedparser>=6.0" "apscheduler>=3.10,<4" "networkx>=3.3" "scikit-learn>=1.5"
+    "feedparser>=6.0" "apscheduler>=3.10,<4" "networkx>=3.3" "scikit-learn>=1.5" "anthropic>=1.0"
 COPY backend/app ./app
 COPY config /app/config
 COPY --from=web /web/dist /app/frontend/dist
