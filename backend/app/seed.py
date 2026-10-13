@@ -109,6 +109,14 @@ def seed_country(s: Session, file: str) -> Country:
             s.add(OutletCategory(outlet_id=out.id, dimension="type", value="international",
                                  confidence="unverified", evidence_url=f"https://{o['domain']}/",
                                  note="Seeded; verify.", valid_from=date.today()))
+    from .models import KeyEvent, Theme as _Theme
+    slug_ids = {t.slug: t.id for t in s.scalars(select(_Theme))}
+    for e in cfg.get("events", []) or []:
+        day = e["date"] if isinstance(e["date"], date) else date.fromisoformat(str(e["date"]))
+        if not s.scalar(select(KeyEvent.id).where(KeyEvent.country_id == c.id, KeyEvent.day == day,
+                                                  KeyEvent.label == e["label"])):
+            s.add(KeyEvent(country_id=c.id, day=day, label=e["label"], theme_id=slug_ids.get(e.get("theme")),
+                           source_url=e.get("source", ""), origin="config"))
     for scope, domains in (cfg.get("scope_overrides") or {}).items():
         for dom in domains:
             o = s.scalar(select(Outlet).where(Outlet.domain == dom))

@@ -19,6 +19,9 @@ ACLED_PASSWORD = os.environ.get("ACLED_PASSWORD")
 UCDP_TOKEN = os.environ.get("UCDP_TOKEN")
 RELIEFWEB_APPNAME = os.environ.get("RELIEFWEB_APPNAME")
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY")
+# Weekly digest model: Haiku per the approved plan (one short call per week). Override to e.g.
+# claude-opus-5-5 for a richer brief.
+DIGEST_MODEL = os.environ.get("DW_DIGEST_MODEL", "claude-haiku-5-5")
 
 # Scoring
 WINDOW_WEEKS = 4            # rolling window per cell

@@ -11,6 +11,8 @@ import Trends from './pages/Trends'
 import Outlets from './pages/Outlets'
 import Admin from './pages/Admin'
 import Me from './pages/Me'
+import DigestPage from './pages/Digest'
+import Timeline from './pages/Timeline'
 import { Invite, Login } from './pages/Auth'
 
 const Ctx = createContext(null)
@@ -23,7 +25,7 @@ export default function App() {
   const [me, setMe] = useState(undefined)
   const loc = useLocation()
   useEffect(() => { api('/api/me').then(setMe).catch(() => setMe(null)) }, [])
-  useEffect(() => { setTracking(!!me && !me.tracking_opt_out) }, [me])
+  useEffect(() => { setTracking(!!me) }, [me])
   useEffect(() => { if (me) track('view', 'page', loc.pathname) }, [loc.pathname, me])
 
   if (me === undefined) return <div className="center-page muted">Loading…</div>
@@ -85,7 +87,9 @@ function Shell({ me, setMe }) {
           <nav className="nav" aria-label="Main">
             <NavLink to="/" end>Map</NavLink>
             <NavLink to="/trends">Trends</NavLink>
+            <NavLink to="/timeline">Timeline</NavLink>
             <NavLink to="/outlets">Outlets</NavLink>
+            <NavLink to="/digest">Digest</NavLink>
             {me.role === 'admin' && <NavLink to="/admin">Admin</NavLink>}
             <NavLink to="/me">Privacy</NavLink>
           </nav>
@@ -106,6 +110,8 @@ function Shell({ me, setMe }) {
             <Route path="/outlets" element={<Outlets />} />
             <Route path="/admin" element={me.role === 'admin' ? <Admin /> : <Navigate to="/" />} />
             <Route path="/me" element={<Me />} />
+            <Route path="/digest" element={<DigestPage />} />
+            <Route path="/timeline" element={<Timeline />} />
             <Route path="*" element={<Navigate to="/" />} />
           </Routes>
         )}

@@ -55,7 +55,9 @@ export default function GeoNetwork({ geo, macroGeo, meta, network, cellsByRegion
     })
     // outside column, grouped by base country, sorted by volume
     const topN = (arr, n) => arr.sort((a, b) => b.articles - a.articles).slice(0, n)
+    // stable order (country, then name) so the column does not reshuffle week to week
     const out = topN(outside.filter((o) => o.articles > 0 || edgesByOutlet.has(o.id)), narrow ? 10 : 18)
+      .sort((a, b) => (a.base_country || '~').localeCompare(b.base_country || '~') || a.name.localeCompare(b.name))
     const colX = narrow ? 0 : mapW + 18
     const colTop = 26
     const colH = narrow ? 0 : mapH - colTop
@@ -63,7 +65,7 @@ export default function GeoNetwork({ geo, macroGeo, meta, network, cellsByRegion
       if (narrow) { o.x = 20 + (i % 5) * ((W - 40) / 4); o.y = mapH + 34 + Math.floor(i / 5) * 34 }
       else { o.x = colX + 10; o.y = colTop + (i + 0.5) * (colH / Math.max(out.length, 1)) }
     })
-    const un = topN(unplaced.filter((o) => o.articles > 0), narrow ? 8 : 14)
+    const un = topN(unplaced.filter((o) => o.articles > 0), narrow ? 8 : 14).sort((a, b) => a.name.localeCompare(b.name))
     const stripY = narrow ? H - 26 : mapH + 40
     un.forEach((o, i) => { o.x = 24 + i * ((mapW - 48) / Math.max(un.length - 1, 1)); o.y = stripY })
 

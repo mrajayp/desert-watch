@@ -10,6 +10,7 @@
   backfill-history SINCE [--themes a,b] [--step DAYS] [--until DATE]
                             Google News date-range backfill + paged outlet feeds + Wikipedia pageviews
   review [DIR] [--themes a,b]  data-quality summary + labelling sample (default DIR: docs/review)
+  digest [--force]          generate the weekly AI digest (needs ANTHROPIC_API_KEY)
   sync-themes               overwrite DB theme terms from config/themes.yaml (bumps versions, re-tags)
 """
 import getpass
@@ -72,6 +73,8 @@ def main(argv: list[str]):
             with SessionLocal() as s:
                 run = run_collector(s, "rss_backfill", lambda sess: rss_mod.backfill(sess, since=since))
                 print("rss_backfill", run.status, run.rows, run.error)
+        if "official" in parts:
+            print("official", collect("official", start=since, end=until, step_days=int(opt("--step", "14"))))
         if "wikipedia" in parts:
             print("wikipedia", collect("wikipedia", days=(_date.today() - since).days))
     elif cmd == "review":
@@ -82,6 +85,9 @@ def main(argv: list[str]):
         out = Path(args[0]) if args and not args[0].startswith("--") else settings.REPO_ROOT / "docs" / "review"
         with SessionLocal() as s:
             print(run_review(s, out, theme_slugs=opt("--themes").split(",") if opt("--themes") else None))
+    elif cmd == "digest":
+        from .jobs import weekly_digest
+        print(weekly_digest(force="--force" in args))
     elif cmd == "alerts-list":
         from pathlib import Path
         from . import settings

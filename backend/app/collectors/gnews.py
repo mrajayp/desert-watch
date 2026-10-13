@@ -19,7 +19,8 @@ MAX_TERMS = 7  # keep queries short; Google truncates long OR lists
 def build_query(country_term: str, terms: list[str], start, end) -> str:
     quoted = [f'"{t}"' if " " in t else t for t in terms[:MAX_TERMS]]
     fmt = lambda d: d.isoformat() if isinstance(d, date) and not isinstance(d, datetime) else d.date().isoformat()  # noqa: E731
-    return f'{country_term} ({" OR ".join(quoted)}) after:{fmt(start)} before:{fmt(end)}'
+    body = f'{country_term} ({" OR ".join(quoted)})' if quoted else country_term
+    return f'{body} after:{fmt(start)} before:{fmt(end)}'
 
 
 def _entries(client, q: str, hl: str, gl: str, ceid: str):

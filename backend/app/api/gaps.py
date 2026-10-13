@@ -3,7 +3,7 @@ from datetime import date, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, select
 from sqlalchemy.orm import Session
 
 from .. import auth, settings
@@ -31,7 +31,9 @@ def meta(country: str = "LY", s: Session = Depends(get_db), _: User = Depends(au
     latest = s.scalar(select(func.max(CellWeek.week_start)).where(CellWeek.country_id == c.id))
     weeks = s.scalars(select(CellWeek.week_start).where(CellWeek.country_id == c.id).distinct()
                       .order_by(CellWeek.week_start)).all()
-    available = {l for (l,) in s.execute(select(CellWeek.lens).where(CellWeek.country_id == c.id).distinct())}
+    # a lens is "available" only when it has at least one scored (sufficient) cell
+    available = {l for (l,) in s.execute(select(CellWeek.lens).where(
+        CellWeek.country_id == c.id, CellWeek.insufficient.is_(False)).distinct())}
     return {
         "country": {"id": c.id, "iso2": c.iso2, "name_en": c.name_en, "name_ar": c.name_ar,
                     "boundaries": c.config.get("boundaries", {}), "district_geo": c.config.get("district_geo", {}),
@@ -51,9 +53,9 @@ def meta(country: str = "LY", s: Session = Depends(get_db), _: User = Depends(au
 
 @router.get("/sources/health")
 def sources_health(s: Session = Depends(get_db), _: User = Depends(auth.current_user)):
-    from ..collectors import COLLECTORS
+    from ..collectors import COLLECTORS, EXTRA_HEALTH
     out = []
-    for key, (_, label) in COLLECTORS.items():
+    for key, label in [*((k, v[1]) for k, v in COLLECTORS.items()), *EXTRA_HEALTH.items()]:
         last = s.scalar(select(SourceRun).where(SourceRun.source_key == key).order_by(SourceRun.id.desc()).limit(1))
         last_ok = s.scalar(select(SourceRun).where(SourceRun.source_key == key, SourceRun.status.in_(("ok", "partial")))
                            .order_by(SourceRun.id.desc()).limit(1))
@@ -152,6 +154,8 @@ def gap_detail(theme_id: int, region_id: int, lens: str = "audience", week: date
     need_kinds = LENSES[lens]["kinds"]
     need_total, need_items = items_query(s, country_id=region.country_id, theme_id=theme_id, region=region,
                                          start=start, end=end, kinds=need_kinds, limit=100)
+    st_total, statements = items_query(s, country_id=region.country_id, theme_id=theme_id, region=region,
+                                       start=start, end=end, kinds=("statement",), limit=30)
     k = gap_key(theme_id, region_id)
     votes = s.scalars(select(GapVote).where(GapVote.theme_id == theme_id, GapVote.region_id == region_id)
                       .order_by(GapVote.created_at.desc())).all()
@@ -164,6 +168,7 @@ def gap_detail(theme_id: int, region_id: int, lens: str = "audience", week: date
         "cell": _cell_json(cell) if cell else None,
         "articles": {"total": total, "items": hydrate_items(s, arts)},
         "need_items": {"total": need_total, "items": hydrate_items(s, need_items)},
+        "statements": {"total": st_total, "items": hydrate_items(s, statements)},
         "votes": [{"user": names.get(v.user_id), "mine": v.user_id == u.id, "vote": v.vote, "note": v.note,
                    "week": v.week_start.isoformat(), "covered_item_id": v.covered_item_id,
                    "at": v.created_at.isoformat()} for v in votes],
@@ -288,3 +293,109 @@ def coverage_monthly(theme_id: int, country: str = "LY", s: Session = Depends(ge
         y, mo = (y + 1, 1) if mo == 12 else (y, mo + 1)
     empty = {"ar": 0, "en": 0, "other": 0}
     return [{"month": m, **out.get(m, empty), "total": sum(out.get(m, empty).values())} for m in months]
+
+
+@router.get("/digests")
+def list_digests(country: str = "LY", s: Session = Depends(get_db), _: User = Depends(auth.current_user)):
+    from ..models import Digest
+    c = country_or_404(s, country)
+    return [{"id": d.id, "week_start": d.week_start.isoformat(), "status": d.status, "model": d.model,
+             "created_at": d.created_at.isoformat()}
+            for d in s.scalars(select(Digest).where(Digest.country_id == c.id).order_by(Digest.week_start.desc()))]
+
+
+@router.get("/digests/{did}")
+def get_digest(did: int, s: Session = Depends(get_db), _: User = Depends(auth.current_user)):
+    from ..models import Digest
+    d = s.get(Digest, did)
+    if not d:
+        raise HTTPException(404, "Unknown digest")
+    return {"id": d.id, "week_start": d.week_start.isoformat(), "status": d.status, "model": d.model,
+            "created_at": d.created_at.isoformat(), "content_md": d.content_md, "facts": d.facts,
+            "usage": d.usage, "error": d.error}
+
+
+# ---------------------------------------------------------------- timeline
+@router.get("/timeline")
+def timeline(country: str = "LY", s: Session = Depends(get_db), _: User = Depends(auth.current_user)):
+    """Monthly counts per theme (media articles), plus official statements and humanitarian
+    reports as separate streams, and the dated key events to overlay."""
+    from ..models import KeyEvent
+    c = country_or_404(s, country)
+    month = func.strftime("%Y-%m", Item.published_at)
+    rows = s.execute(select(month, ItemTheme.theme_id, func.count(func.distinct(Item.id)))
+                     .join(ItemTheme, and_(ItemTheme.item_id == Item.id, ItemTheme.active.is_(True)))
+                     .where(Item.country_id == c.id, Item.relevant.is_(True), Item.kind == "article")
+                     .group_by(month, ItemTheme.theme_id)).all()
+    streams = s.execute(select(month, Item.kind, func.count(Item.id))
+                        .where(Item.country_id == c.id, Item.relevant.is_(True), Item.kind.in_(("statement", "report")))
+                        .group_by(month, Item.kind)).all()
+    present = sorted({m for m, *_ in rows} | {m for m, *_ in streams})
+    months = []
+    if present:
+        y, mo = map(int, present[0].split("-"))
+        ly, lm = map(int, present[-1].split("-"))
+        while (y, mo) <= (ly, lm):
+            months.append(f"{y:04d}-{mo:02d}")
+            y, mo = (y + 1, 1) if mo == 12 else (y, mo + 1)
+    idx = {m: i for i, m in enumerate(months)}
+    themes = defaultdict(lambda: [0] * len(months))
+    official = {"statement": [0] * len(months), "report": [0] * len(months)}
+    for m, tid, n in rows:
+        themes[tid][idx[m]] += n
+    for m, kind, n in streams:
+        official[kind][idx[m]] += n
+    names = {u.id: u.display_name for u in s.scalars(select(User))}
+    events = [{"id": e.id, "day": e.day.isoformat(), "label": e.label, "theme_id": e.theme_id, "source_url": e.source_url,
+               "origin": e.origin, "added_by": names.get(e.added_by)}
+              for e in s.scalars(select(KeyEvent).where(KeyEvent.country_id == c.id).order_by(KeyEvent.day))]
+    return {"months": months, "themes": themes, "statements": official["statement"], "reports": official["report"],
+            "events": events}
+
+
+@router.get("/official")
+def official_items(country: str = "LY", kind: str = "statement", month: str | None = None, theme_id: int | None = None,
+                   limit: int = 50, s: Session = Depends(get_db), _: User = Depends(auth.current_user)):
+    c = country_or_404(s, country)
+    q = select(Item).where(Item.country_id == c.id, Item.kind == kind, Item.relevant.is_(True))
+    if month:
+        q = q.where(func.strftime("%Y-%m", Item.published_at) == month)
+    if theme_id:
+        q = q.where(Item.id.in_(select(ItemTheme.item_id).where(ItemTheme.theme_id == theme_id, ItemTheme.active.is_(True))))
+    return hydrate_items(s, s.scalars(q.order_by(Item.published_at.desc()).limit(min(limit, 200))).all())
+
+
+class KeyEventIn(BaseModel):
+    day: date
+    label: str = Field(min_length=3, max_length=200)
+    theme_id: int | None = None
+    source_url: str = Field(min_length=8, max_length=500)
+
+
+@router.post("/key-events")
+def add_key_event(body: KeyEventIn, country: str = "LY", s: Session = Depends(get_db),
+                  u: User = Depends(auth.current_user)):
+    from ..models import KeyEvent
+    c = country_or_404(s, country)
+    if not body.source_url.startswith(("http://", "https://")):
+        raise HTTPException(400, "Add a source link for the event.")
+    if body.theme_id:
+        theme_or_404(s, body.theme_id)
+    e = KeyEvent(country_id=c.id, day=body.day, label=body.label.strip(), theme_id=body.theme_id,
+                 source_url=body.source_url, origin="user", added_by=u.id)
+    s.add(e)
+    s.commit()
+    return {"id": e.id}
+
+
+@router.delete("/key-events/{eid}")
+def delete_key_event(eid: int, s: Session = Depends(get_db), u: User = Depends(auth.current_user)):
+    from ..models import KeyEvent
+    e = s.get(KeyEvent, eid)
+    if not e:
+        raise HTTPException(404, "Unknown event")
+    if u.role != "admin" and e.added_by != u.id:
+        raise HTTPException(403, "Only the person who added it, or an admin, can remove it")
+    s.delete(e)
+    s.commit()
+    return {"ok": True}

@@ -131,7 +131,8 @@ def store_article(s: Session, country_id: int, rules: Rules, *, url: str, title:
                   lang: str | None = None, outlet_name: str | None = None, outlet_domain: str | None = None,
                   extra: dict | None = None, added_by: int | None = None,
                   forced_theme_ids: tuple[int, ...] = (), outlet_cache: dict | None = None,
-                  require_theme: bool = False) -> tuple[Item | None, bool]:
+                  require_theme: bool = False, kind: str = "article",
+                  assume_relevant: bool = False) -> tuple[Item | None, bool]:
     """Returns (item, created). With require_theme, items matching no theme are skipped
     (outlet RSS feeds are mostly off-topic)."""
     key = url_key(url)
@@ -151,10 +152,12 @@ def store_article(s: Session, country_id: int, rules: Rules, *, url: str, title:
     # not relevant (users can restore it; the decision becomes a label).
     relevant = True
     extra = dict(extra or {})
-    if added_by is None and rules.country_terms and not passes_guard(rules, outlet.id, title, snippet):
+    if assume_relevant:
+        extra["libya_specific_source"] = True
+    elif added_by is None and rules.country_terms and not passes_guard(rules, outlet.id, title, snippet):
         relevant = False
         extra["filtered"] = "no_country_mention"
-    item = Item(country_id=country_id, kind="article", source_key=source_key, dedupe_key=key, url=url,
+    item = Item(country_id=country_id, kind=kind, source_key=source_key, dedupe_key=key, url=url,
                 title=(title or "")[:1000], snippet=(snippet or "")[:600] or None, lang=lang,
                 published_at=published_at, outlet_id=outlet.id, extra=extra, added_by=added_by, relevant=relevant)
     s.add(item)
@@ -178,12 +181,41 @@ def apply_relevance_guard(s: Session, country_id: int) -> int:
     n = 0
     for it in s.scalars(select(Item).where(Item.country_id == country_id, Item.kind == "article",
                                            Item.added_by.is_(None))):
-        if (it.extra or {}).get("user_relevance") is not None:
+        if (it.extra or {}).get("user_relevance") is not None or (it.extra or {}).get("libya_specific_source"):
             continue
         ok = passes_guard(rules, it.outlet_id, it.title, it.snippet)
         if it.relevant != ok:
             it.relevant = ok
             it.extra = {**(it.extra or {}), "filtered": None if ok else "no_country_mention"}
             n += 1
+    s.commit()
+    return n
+
+
+CC_TLD = {"eg": "Egypt", "tn": "Tunisia", "qa": "Qatar", "ae": "United Arab Emirates", "sa": "Saudi Arabia", "tr": "Turkey",
+          "it": "Italy", "fr": "France", "uk": "United Kingdom", "de": "Germany", "gr": "Greece", "mt": "Malta", "lb": "Lebanon",
+          "jo": "Jordan", "ma": "Morocco", "dz": "Algeria", "sd": "Sudan", "ng": "Nigeria", "sy": "Syria", "iq": "Iraq",
+          "ru": "Russia", "es": "Spain", "ch": "Switzerland", "be": "Belgium", "nl": "Netherlands", "kw": "Kuwait",
+          "bh": "Bahrain", "om": "Oman", "ps": "Palestine", "il": "Israel", "td": "Chad", "ne": "Niger", "ml": "Mali",
+          "ua": "Ukraine", "ca": "Canada", "au": "Australia", "in": "India", "pk": "Pakistan", "ir": "Iran",
+          "at": "Austria", "se": "Sweden", "no": "Norway", "dk": "Denmark", "pt": "Portugal", "ye": "Yemen"}
+
+
+def infer_bases(s: Session) -> int:
+    """Fill Outlet.base_country for foreign outlets (config list first, then country-code domain).
+    Never overwrites a value set by an admin. Foreign base + no scope -> scope international."""
+    n = 0
+    for c in s.scalars(select(Country)):
+        explicit = {dom: country for country, doms in (c.config.get("outlet_bases") or {}).items() for dom in doms}
+        for o in s.scalars(select(Outlet).where(Outlet.base_country.is_(None), Outlet.base_city.is_(None))):
+            base = explicit.get(o.domain) or CC_TLD.get(o.domain.rsplit(".", 1)[-1])
+            if not base:
+                continue
+            o.base_country = base
+            n += 1
+            if not s.scalar(select(OutletCategory.id).where(OutletCategory.outlet_id == o.id,
+                                                             OutletCategory.dimension == "scope")):
+                s.add(OutletCategory(outlet_id=o.id, dimension="scope", value="international", confidence="likely",
+                                     evidence_url=f"https://{o.domain}/", note=f"Based in {base} (config or domain)."))
     s.commit()
     return n

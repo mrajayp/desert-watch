@@ -23,8 +23,7 @@ def record_events(s: Session, user: User, session_id: str | None, events: list[d
         t = str(e.get("type", ""))[:24]
         if t not in ALLOWED:
             continue
-        if t in IMPLICIT and user.tracking_opt_out:
-            continue
+        # (tracking opt-out removed 2026-10-13 at the owner's request; users are told on first login)
         ctx = e.get("context") or {}
         if not isinstance(ctx, dict) or len(str(ctx)) > 2000:
             ctx = {}

@@ -4,6 +4,7 @@ import { api, qs, track } from '../api'
 import { useApp } from '../App'
 import Filters from '../components/Filters'
 import GeoNetwork, { GeoLegend } from '../charts/GeoNetwork'
+import RegionalNetwork from '../charts/RegionalNetwork'
 import Heatmap from '../charts/Heatmap'
 import { LanguageBalance } from '../charts/Balance'
 import { INFO_FLAGS, DIMENSIONS, LENS_TEXT, categoryOf, flagText, fmt, gapFill, gapLabel } from '../charts/scales'
@@ -35,6 +36,8 @@ export default function Overview() {
   const [network, setNetwork] = useState(null)
   const [selected, setSelected] = useState(null)
   const [minEdge, setMinEdge] = useState(2)
+  const [mapView, setMapView] = useState(() => { try { return localStorage.getItem('dw_mapview') || 'region' } catch { return 'region' } })
+  const pickView = (v) => { setMapView(v); try { localStorage.setItem('dw_mapview', v) } catch { /* storage blocked */ } }
   const mapSvg = useRef(null), heatSvg = useRef(null), langSvg = useRef(null)
 
   useEffect(() => { loadGeo(meta).then(setGeo) }, [meta])
@@ -127,17 +130,27 @@ export default function Overview() {
                   {unplacedShare != null && ` ${Math.round(unplacedShare * 100)}% of articles name no district.`}</p>
               </div>
               <div className="row">
+                <span className="seg" role="group" aria-label="Map view">
+                  <button aria-pressed={mapView === 'region'} onClick={() => pickView('region')}>Sources by country</button>
+                  <button aria-pressed={mapView === 'libya'} onClick={() => pickView('libya')}>Libya detail</button>
+                </span>
                 <label className="small row">Hide links under
                   <select value={minEdge} onChange={(e) => setMinEdge(+e.target.value)} aria-label="Minimum articles per link">
                     {[1, 2, 3, 5, 10].map((n) => <option key={n} value={n}>{n}</option>)}</select> articles</label>
                 <ExportMenu svgRef={mapSvg} title={`Who covers where in ${meta.country.name_en} — ${themeName}`} caption={caption} filename="who-covers-where" />
               </div>
             </div>
+            {mapView === 'region' ? (
+              <RegionalNetwork geo={geo?.districts} meta={meta} network={network} cellsByRegion={cellsByRegion} mode={mode}
+                svgRef={mapSvg} minEdge={minEdge}
+                onSelectRegion={(rid) => { setSelected(rid); openGap(themeId || meta.themes.find((t) => inScope(t.id))?.id || meta.themes[0].id, rid, { from: 'map' }) }} />
+            ) : <>
             <GeoNetwork geo={geo?.districts} macroGeo={geo?.macro} meta={meta} network={network} cellsByRegion={cellsByRegion}
               colorBy={filters.colorBy} mode={mode} lang={lang} svgRef={mapSvg} selectedRegion={selected} minEdge={minEdge}
               onSelectRegion={(rid) => { setSelected(rid); openGap(themeId || meta.themes.find((t) => inScope(t.id))?.id || meta.themes[0].id, rid, { from: 'map' }) }}
               onSelectOutlet={(o) => openOutlet(+o.id.slice(2))} />
             <GeoLegend mode={mode} colorBy={filters.colorBy} present={presentCats} />
+            </>}
           </section>
         <div className="grid halves" style={{ marginTop: 16 }}>
           <section className="card">

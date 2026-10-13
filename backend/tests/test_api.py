@@ -44,14 +44,16 @@ def test_vote_and_labels(client, users, db):
     assert lab[-1].value["vote"] == "not_newsworthy"
 
 
-def test_opt_out_drops_implicit_events(client, users, db):
+def test_implicit_events_recorded_and_filtered(client, users, db):
+    """Opt-out removed 2026-10-13 (owner decision): implicit events are always stored; unknown
+    event types are still dropped."""
     login(client, "j@example.org", "journo-password-1")
     evs = [{"type": "impression", "object_type": "gap", "object_key": "1:1", "context": {"position": 3}},
            {"type": "dwell", "object_type": "gap", "object_key": "1:1", "context": {"seconds": 30}},
            {"type": "evil", "object_key": "x"}]
     assert client.post("/api/events", json={"events": evs}).json()["stored"] == 2
     client.patch("/api/me", json={"tracking_opt_out": True})
-    assert client.post("/api/events", json={"events": evs}).json()["stored"] == 0
+    assert client.post("/api/events", json={"events": evs}).json()["stored"] == 2  # flag no longer honoured
     assert client.post("/api/events", json={"events": [{"type": "comment"}]}).json()["stored"] == 1
 
 

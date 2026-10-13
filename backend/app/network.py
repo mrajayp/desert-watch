@@ -72,6 +72,9 @@ def cosine(u: dict, v: dict) -> float:
     return dot / (nu * nv) if nu and nv else 0.0
 
 
+SIMILARITY_WEEKS = 12  # clusters and reprints describe the recent window; weekly edges cover all history
+
+
 def compute(s: Session, country_id: int, *, weeks: int = 12, today: date | None = None) -> int:
     today = today or date.today()
     first = week_start(today) - timedelta(weeks=weeks - 1)
@@ -97,13 +100,15 @@ def compute(s: Session, country_id: int, *, weeks: int = 12, today: date | None 
     o_t = Counter()   # (outlet, theme, week)
     profile = defaultdict(Counter)
     titles = {}
+    recent = datetime.combine(week_start(today) - timedelta(weeks=SIMILARITY_WEEKS - 1), datetime.min.time())
     for r in rows:
         wk = week_start(r.published_at.date())
         o_t[(r.outlet_id, r.theme_id, wk)] += 1
-        profile[r.outlet_id][r.theme_id] += 1
         for reg in item_regions.get(r.id, ()):
             o_r[(r.outlet_id, reg, r.theme_id, wk)] += 1
-        titles[r.id] = (r.id, r.outlet_id, r.published_at, r.title or "")
+        if r.published_at >= recent:
+            profile[r.outlet_id][r.theme_id] += 1
+            titles[r.id] = (r.id, r.outlet_id, r.published_at, r.title or "")
 
     s.execute(delete(NetworkEdgeWeek).where(NetworkEdgeWeek.country_id == country_id))
     edges = []

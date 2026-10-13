@@ -3,7 +3,7 @@
 import * as d3 from 'd3'
 import { useRef } from 'react'
 import { fmt } from './scales'
-import { useSize, useTooltip } from './util'
+import { fitLabel, groupedRows, themeLabel, useSize, useTooltip } from './util'
 
 export function LanguageBalance({ themes, cells, lang = 'en', svgRef }) {
   const wrap = useRef(null)
@@ -14,25 +14,34 @@ export function LanguageBalance({ themes, cells, lang = 'en', svgRef }) {
     const l = c?.breakdown?.lang || {}
     return { t, ar: l.ar || 0, en: l.en || 0, other: Object.entries(l).filter(([k]) => k !== 'ar' && k !== 'en').reduce((a, [, v]) => a + v, 0) }
   })
-  const left = Math.min(170, W * 0.36)
+  const left = Math.min(230, Math.max(110, W * 0.36))
   const mid = left + (W - left) / 2
   const max = d3.max(rows, (r) => Math.max(r.ar, r.en)) || 1
-  const x = d3.scaleLinear().domain([0, max]).range([0, (W - left) / 2 - 36])
-  const bh = 16, gap = 14, top = 22
-  const H = top + rows.length * (bh + gap)
+  const numRoom = 38 // space for the count at each bar end
+  const x = d3.scaleLinear().domain([0, max]).range([0, Math.max(10, (W - left) / 2 - numRoom - 6)])
+  const bh = 16, gap = 14, top = 22, hh = 24
+  const layout = groupedRows(rows.map((r) => r.t))
+  const byId = new Map(rows.map((r) => [r.t.id, r]))
+  const ys = []
+  let yy = top
+  layout.forEach((l) => { ys.push(yy); yy += l.header ? hh : bh + gap })
+  const H = yy
   return (
     <div ref={wrap} className="viz" onMouseLeave={tip.hide}>
       <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Arabic versus English coverage by theme">
         <text x={mid - 6} y={12} textAnchor="end" style={{ fontWeight: 600 }}>← Arabic</text>
         <text x={mid + 6} y={12} style={{ fontWeight: 600 }}>English →</text>
         <line x1={mid} x2={mid} y1={top - 4} y2={H} stroke="var(--axis)" />
-        {rows.map((r, i) => {
-          const y = top + i * (bh + gap)
+        {layout.map((l, i) => {
+          if (l.header) return <g key={`h-${l.header}`}><text x={4} y={ys[i] + hh - 10} style={{ fontSize: 11, fontWeight: 700, fill: 'var(--ink-2)', letterSpacing: '.04em' }}>{l.header.toUpperCase()}</text></g>
+          const r = byId.get(l.theme.id)
+          const y = ys[i]
           const total = r.ar + r.en + r.other
           return (
             <g key={r.t.id} onMouseMove={(e) => tip.show(e, <div><b>{r.t.name_en}</b><div>{fmt(r.ar)} Arabic · {fmt(r.en)} English{r.other ? ` · ${fmt(r.other)} other` : ''}</div>
               <div className="small muted">{total ? Math.round((r.ar / total) * 100) : 0}% Arabic</div></div>, wrap.current)}>
-              <text x={left - 8} y={y + bh - 3} textAnchor="end" style={{ fill: 'var(--ink)', fontSize: 12 }}>{lang === 'ar' ? r.t.name_ar : r.t.name_en}</text>
+              <text x={left - 8} y={y + bh - 3} textAnchor="end" style={{ fill: 'var(--ink)', fontSize: 12 }}>
+                <title>{lang === 'ar' ? r.t.name_ar : r.t.name_en}</title>{fitLabel(themeLabel(r.t, lang), left - 14)}</text>
               <rect x={mid - x(r.ar) - 1} y={y} width={Math.max(0, x(r.ar))} height={bh} rx={3} fill="var(--scope-libyan)" />
               <rect x={mid + 1} y={y} width={Math.max(0, x(r.en))} height={bh} rx={3} fill="var(--scope-international)" />
               <text x={mid - x(r.ar) - 6} y={y + bh - 4} textAnchor="end" className="num" style={{ fontSize: 10.5 }}>{fmt(r.ar)}</text>

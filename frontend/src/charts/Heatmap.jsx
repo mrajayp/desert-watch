@@ -3,17 +3,22 @@
 import * as d3 from 'd3'
 import { useRef } from 'react'
 import { INFO_FLAGS, fmt, gapFill, gapLabel, flagText } from './scales'
-import { HatchDefs, useSize, useTooltip } from './util'
+import { HatchDefs, fitLabel, groupedRows, themeLabel, useSize, useTooltip } from './util'
 
 export default function Heatmap({ themes, regions, cells, onSelect, svgRef, unit = 'need', lang = 'en', feedback = {} }) {
   const wrap = useRef(null)
   const W = useSize(wrap, 700)
   const tip = useTooltip()
-  const left = Math.min(190, W * 0.34)
+  const left = Math.min(240, Math.max(120, W * 0.3))
   const top = 34
   const cw = Math.max(44, (W - left) / Math.max(regions.length, 1))
   const ch = 40
-  const H = top + ch * themes.length + 4
+  const hh = 26 // group heading row
+  const rows = groupedRows(themes)
+  const ys = []
+  let yy = top
+  rows.forEach((r) => { ys.push(yy); yy += r.header ? hh : ch })
+  const H = yy + 4
   const byKey = new Map(cells.map((c) => [`${c.theme_id}:${c.region_id}`, c]))
   const nm = (o) => (lang === 'ar' ? o.name_ar : o.name_en) || o.name_en
   return (
@@ -23,9 +28,15 @@ export default function Heatmap({ themes, regions, cells, onSelect, svgRef, unit
         {regions.map((r, j) => (
           <text key={r.id} x={left + j * cw + cw / 2} y={top - 10} textAnchor="middle" style={{ fontSize: 11, fontWeight: 600 }}>
             {nm(r).length > 14 ? nm(r).slice(0, 13) + '…' : nm(r)}</text>))}
-        {themes.map((t, i) => (
-          <g key={t.id} transform={`translate(0,${top + i * ch})`}>
-            <text x={left - 10} y={ch / 2 + 4} textAnchor="end" style={{ fontSize: 12, fill: 'var(--ink)' }}>{nm(t)}</text>
+        {rows.map((row, i) => row.header ? (
+          <g key={`h-${row.header}`} transform={`translate(0,${ys[i]})`}>
+            <text x={4} y={hh - 8} style={{ fontSize: 11, fontWeight: 700, fill: 'var(--ink-2)', letterSpacing: '.04em' }}>{row.header.toUpperCase()}</text>
+            <line x1={4} x2={Math.max(W, left + cw * regions.length)} y1={hh - 2} y2={hh - 2} stroke="var(--grid)" />
+          </g>
+        ) : (() => { const t = row.theme; return (
+          <g key={t.id} transform={`translate(0,${ys[i]})`}>
+            <text x={left - 10} y={ch / 2 + 4} textAnchor="end" style={{ fontSize: 12, fill: 'var(--ink)' }}>
+              <title>{nm(t)}</title>{fitLabel(themeLabel(t, lang), left - 16)}</text>
             {regions.map((r, j) => {
               const c = byKey.get(`${t.id}:${r.id}`)
               const fill = gapFill(c) || (c ? 'url(#hm-hatch)' : 'var(--surface-2)')
@@ -47,7 +58,7 @@ export default function Heatmap({ themes, regions, cells, onSelect, svgRef, unit
                   {fb?.real > 0 && <circle cx={cw - 7} cy={7} r={3} fill="var(--ink)" stroke="var(--surface)" strokeWidth={1.5} />}
                 </g>)
             })}
-          </g>))}
+          </g>) })())}
       </svg>
       {tip.node}
       <div className="legend" style={{ marginTop: 8 }}>

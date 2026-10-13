@@ -339,6 +339,40 @@ class Label(Base):
     source_ref: Mapped[str] = mapped_column(String(60), unique=True)  # idempotency: table:id or event:id
 
 
+# ---------------------------------------------------------------- key events (timeline)
+class KeyEvent(Base):
+    """Dated reference events for the timeline: seeded from config (`events`) and added by users
+    (each needs a source link)."""
+    __tablename__ = "key_event"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    country_id: Mapped[int] = mapped_column(ForeignKey("country.id"))
+    day: Mapped[date] = mapped_column(Date, index=True)
+    label: Mapped[str] = mapped_column(String(200))
+    theme_id: Mapped[int | None] = mapped_column(ForeignKey("theme.id"))
+    source_url: Mapped[str] = mapped_column(String(500))
+    origin: Mapped[str] = mapped_column(String(8), default="config")  # config | user
+    added_by: Mapped[int | None] = mapped_column(ForeignKey("user.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+# ---------------------------------------------------------------- digest
+class Digest(Base):
+    """Weekly AI-written brief. The input facts are stored next to the text so every claim
+    can be checked against the numbers the model was given."""
+    __tablename__ = "digest"
+    __table_args__ = (UniqueConstraint("country_id", "week_start"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    country_id: Mapped[int] = mapped_column(ForeignKey("country.id"))
+    week_start: Mapped[date] = mapped_column(Date)
+    model: Mapped[str] = mapped_column(String(60))
+    status: Mapped[str] = mapped_column(String(12))  # ok | refused | error
+    content_md: Mapped[str | None] = mapped_column(Text)
+    facts: Mapped[dict] = mapped_column(JSON, default=dict)
+    usage: Mapped[dict] = mapped_column(JSON, default=dict)
+    error: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
 # ---------------------------------------------------------------- network
 class NetworkEdgeWeek(Base):
     __tablename__ = "network_edge_week"

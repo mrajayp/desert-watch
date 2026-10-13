@@ -106,6 +106,13 @@ export default function GapPanel({ themeId, regionId }) {
         <button className="btn small" onClick={() => openAdd({ theme_ids: [themeId], region_ids: d.region.level === 'national' ? [] : [regionId] })}>+ Add missing article</button>
       </div>
       <ul className="list">{d.articles.items.map((it) => <ArticleRow key={it.id} item={it} onChanged={load} context={{ themeId, regionId }} />)}</ul>
+      {d.statements?.total > 0 && (
+        <>
+          <h3>Official statements ({fmt(d.statements.total)})</h3>
+          <p className="small muted">UN, embassy and government statements on this theme in the window. Not counted as coverage.</p>
+          <ul className="list small">{d.statements.items.slice(0, 15).map((it) => (
+            <li key={it.id}>{it.published_at.slice(0, 10)} · <a href={it.url} target="_blank" rel="noreferrer noopener" dir="auto">{it.title}</a> <span className="muted">· {it.outlet?.name}</span></li>))}</ul>
+        </>)}
       {d.need_items.total > 0 && (
         <>
           <h3>Need signals ({fmt(d.need_items.total)})</h3>

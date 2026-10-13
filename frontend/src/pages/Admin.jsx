@@ -104,7 +104,7 @@ export default function Admin() {
       <AlertsCard />
       <section className="card" style={{ marginTop: 16 }}>
         <div className="card-head"><h2>Data sources</h2>
-          <div className="row">{['rss', 'galerts', 'gnews', 'gdelt', 'gdelt_timeline', 'wikipedia', 'recompute'].map((j) => <button key={j} className="btn small" onClick={() => run(j)}>Run {j}</button>)}</div></div>
+          <div className="row">{['rss', 'galerts', 'gnews', 'digest', 'gdelt', 'gdelt_timeline', 'wikipedia', 'recompute'].map((j) => <button key={j} className="btn small" onClick={() => run(j)}>Run {j}</button>)}</div></div>
         <SourceHealth />
       </section>
     </main>

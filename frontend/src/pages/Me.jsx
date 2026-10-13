@@ -5,7 +5,6 @@ import { useApp } from '../App'
 export default function Me() {
   const { me, setMe } = useApp()
   const [confirm, setConfirm] = useState('')
-  const toggle = async () => setMe(await api('/api/me', { method: 'PATCH', body: { tracking_opt_out: !me.tracking_opt_out } }))
   const exportData = async () => {
     const data = await api('/api/me/export')
     const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }))
@@ -17,10 +16,10 @@ export default function Me() {
       <section className="card">
         <h2>Privacy & your data</h2>
         <p>Signed in as <b>{me.display_name}</b> ({me.email}).</p>
-        <h3>Behaviour tracking</h3>
-        <p className="small">Views, clicks, time on a gap and filter choices are stored under a pseudonymous ID to improve rankings. Votes, comments, corrections, assessments and added articles are always kept because they are your contributions.</p>
-        <button className="btn" onClick={toggle}>{me.tracking_opt_out ? 'Turn behaviour tracking back on' : 'Opt out of behaviour tracking'}</button>
-        <span className="small muted" style={{ marginLeft: 8 }}>Currently {me.tracking_opt_out ? 'off' : 'on'}.</span>
+        <h3>What is recorded</h3>
+        <p className="small">Your votes, comments, corrections, assessments and added articles, plus the gaps and articles you
+          view, click and spend time on and the filters you use. Stored under a pseudonymous ID; raw activity logs are
+          deleted after 12 months; never shared with third-party analytics.</p>
         <h3>Export</h3>
         <button className="btn" onClick={exportData}>Download everything stored about me (JSON)</button>
         <h3>Delete account</h3>

@@ -143,8 +143,7 @@ def main():
     ev = [{"type": "impression", "object_type": "gap", "object_key": key, "context": {"position": 0}},
           {"type": "dwell", "object_type": "gap", "object_key": key, "context": {"seconds": 25}}]
     check("implicit events stored", j.post("/api/events", json={"session_id": "e2e", "events": ev}).json()["stored"] == 2)
-    j.patch("/api/me", json={"tracking_opt_out": True})
-    check("opt-out drops implicit", j.post("/api/events", json={"events": ev}).json()["stored"] == 0)
+    check("unknown event types dropped", j.post("/api/events", json={"events": [{"type": "evil"}]}).json()["stored"] == 0)
     exp = j.get("/api/me/export").json()
     check("export has my data", len(exp["votes"]) >= 1 and len(exp["comments"]) >= 2 and len(exp["events"]) >= 2)
 

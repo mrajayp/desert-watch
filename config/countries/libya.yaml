@@ -195,3 +195,56 @@ scope_overrides:
     timesofmalta.com, thenationalnews.com, trtworld.com, egypttoday.com, elbalad.news, vetogate.com, noonpost.com,
     africa.businessinsider.com, asharqbusiness.com, erembusiness.com, oilprice.com, jpost.com, ua.news, dailypost.ng,
     northafricapost.com, sudanindependent.com, voiceofemirates.com, ahwal.sa]
+
+# Official sources: a separate stream, not counted as media coverage.
+#   kind: statement = UN / embassy / government statements; report = humanitarian reports (need lens)
+# Feeds verified 2026-10-13. UNSMIL (404), US Embassy (403), Devex (403) block direct feeds, so
+# they come in via Google News site: queries below.
+official_feeds:
+  - {name: ReliefWeb (Libya), domain: reliefweb.int, kind: report, libya_specific: true, url: "https://reliefweb.int/updates/rss.xml?legacy-river=country/lby"}
+  - {name: UN in Libya, domain: libya.un.org, kind: statement, libya_specific: true, url: "https://libya.un.org/en/rss.xml"}
+  - {name: GOV.UK (Libya), domain: gov.uk, kind: statement, libya_specific: true, url: "https://www.gov.uk/search/news-and-communications.atom?world_locations%5B%5D=libya"}
+  - {name: UN News (Africa), domain: news.un.org, kind: statement, url: "https://news.un.org/feed/subscribe/en/news/region/africa/feed/rss.xml"}
+  - {name: UN News (Middle East), domain: news.un.org, kind: statement, url: "https://news.un.org/feed/subscribe/en/news/region/middle-east/feed/rss.xml"}
+# require: a headline must contain one of these to count (statement-ness); exclude: veto words.
+official_statement_words: [بيان, تدين, يدين, ترحب, يرحب, تدعو, يدعو, تعرب, يعرب, تؤكد, يؤكد, أكدت, أكد, تصريح, تحذر, يحذر, تطالب, يطالب,
+  statement, welcomes, condemns, "calls on", urges, expresses, stresses, warns, "press release", remarks]
+official_exclude_words: [Map, Coordinator, Officer, Vacancy, Consultant, Specialist, Assistant, Internship, Intern, "Terms of Reference",
+  وظيفة, مباراة, البطولة, كرة]
+official_queries:
+  - {kind: statement, lang: en, label: UNSMIL, libya_specific: true, query: 'site:unsmil.unmissions.org'}
+  - {kind: statement, lang: en, label: UNSMIL statements, require_statement: true, query: 'UNSMIL (statement OR welcomes OR condemns OR "calls on")'}
+  - {kind: statement, lang: ar, label: UNSMIL statements (AR), require_statement: true, query: '"البعثة الأممية" ليبيا (بيان OR ترحب OR تدين OR تدعو)'}
+  - {kind: statement, lang: en, label: Embassy statements, require_statement: true, query: 'Libya (embassy OR ambassador OR "chargé d''affaires") statement'}
+  - {kind: statement, lang: ar, label: Embassy statements (AR), require_statement: true, query: 'ليبيا (سفارة OR السفير OR "القائم بالأعمال") بيان'}
+  - {kind: statement, lang: en, label: US Embassy, libya_specific: true, query: 'site:ly.usembassy.gov'}
+  - {kind: statement, lang: en, label: EU delegation, query: 'site:eeas.europa.eu Libya'}
+  - {kind: report, lang: en, label: ReliefWeb, query: 'site:reliefweb.int Libya'}
+  - {kind: article, lang: en, label: Devex, query: 'site:devex.com Libya'}
+
+# Base country of foreign outlets (uncontested: where the outlet is headquartered). Used to place
+# outside-Libya sources on the regional map. Unlisted outlets fall back to their country-code
+# domain (.eg, .qa, .tr ...); the rest show as "origin unknown".
+outlet_bases:
+  United Kingdom: [bbc.com, reuters.com, aawsat.com, alaraby.co.uk, alquds.co.uk, middle-east-online.com, independentarabia.com,
+    arabi21.com, alaraby.com, thearabweekly.com, raialyoum.com, newarab.com, middleeasteye.net, gov.uk]
+  Qatar: [aljazeera.net, aljazeera.com, qna.org.qa]
+  United Arab Emirates: [alarabiya.net, skynewsarabia.com, al-ain.com, eremnews.com, almashhad.com, thenationalnews.com,
+    erembusiness.com, voiceofemirates.com]
+  Egypt: [youm7.com, masrawy.com, almasryalyoum.com, akhbarelyom.com, english.ahram.org.eg, gate.ahram.org.eg, shorouknews.com,
+    egypttoday.com, elbalad.news, vetogate.com]
+  Turkey: [aa.com.tr, trtworld.com]
+  France: [france24.com, infomigrants.net, mc-doualiya.com]
+  Italy: [agenzianova.com]
+  Lebanon: [annahar.com, daraj.media, raseef22.net, kohljournal.press]
+  Saudi Arabia: [arabnews.com, ahwal.sa]
+  Greece: [ekathimerini.com]
+  Malta: [timesofmalta.com]
+  Morocco: [hespress.com, northafricapost.com]
+  Syria: [sana.sy]
+  Israel: [jpost.com]
+  Palestine: [alquds.com]
+  Nigeria: [dailypost.ng]
+  Ukraine: [ua.news]
+  United States: [hrw.org, hrw.org/ar, unwomen.org, news.un.org]
+  Switzerland: [ohchr.org]

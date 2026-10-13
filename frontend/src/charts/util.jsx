@@ -112,3 +112,38 @@ export function useLatest(value) {
   r.current = value
   return r
 }
+
+// Theme label without its group prefix ("Gender: violence…" -> "violence…"); the group is shown
+// as a heading row instead.
+export function themeLabel(t, lang = 'en') {
+  const name = (lang === 'ar' ? t.name_ar : t.name_en) || t.name_en
+  return t.group ? name.replace(/^[^:：]+[:：]\s*/, '') : name
+}
+
+// Fit a label into maxPx using canvas text measurement; adds an ellipsis when it must cut.
+let _ctx = null
+export function fitLabel(text, maxPx, font = '12px system-ui, sans-serif') {
+  if (!text) return ''
+  if (!_ctx) _ctx = document.createElement('canvas').getContext('2d')
+  _ctx.font = font
+  if (_ctx.measureText(text).width <= maxPx) return text
+  let lo = 0, hi = text.length
+  while (lo < hi) {
+    const mid = (lo + hi + 1) >> 1
+    if (_ctx.measureText(text.slice(0, mid) + '…').width <= maxPx) lo = mid
+    else hi = mid - 1
+  }
+  return text.slice(0, Math.max(1, lo)).trimEnd() + '…'
+}
+
+// Rows grouped by theme.group: [{header: 'Gender'} | {theme}] in display order (ungrouped first).
+export function groupedRows(themes) {
+  const plain = themes.filter((t) => !t.group)
+  const groups = [...new Set(themes.filter((t) => t.group).map((t) => t.group))]
+  const rows = plain.map((t) => ({ theme: t }))
+  for (const g of groups) {
+    rows.push({ header: g[0].toUpperCase() + g.slice(1) })
+    themes.filter((t) => t.group === g).forEach((t) => rows.push({ theme: t }))
+  }
+  return rows
+}

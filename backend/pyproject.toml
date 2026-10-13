@@ -13,6 +13,7 @@ dependencies = [
   "apscheduler>=3.10,<4",
   "networkx>=3.3",
   "scikit-learn>=1.5",
+  "anthropic>=1.0",
 ]
 
 [dependency-groups]
