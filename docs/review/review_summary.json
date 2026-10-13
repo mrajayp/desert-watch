@@ -1,0 +1,260 @@
+{
+  "country": "LY",
+  "generated": "2026-10-13T09:00:44",
+  "articles_total": 54493,
+  "articles_relevant": 37376,
+  "by_source": {
+    "gnews": 47888,
+    "rss": 6605
+  },
+  "by_language": {
+    "ar": 20230,
+    "en": 17146
+  },
+  "by_month": {
+    "2019-01": 17,
+    "2019-02": 12,
+    "2019-03": 20,
+    "2019-04": 21,
+    "2019-05": 12,
+    "2019-06": 8,
+    "2019-07": 36,
+    "2019-08": 18,
+    "2019-09": 19,
+    "2019-10": 13,
+    "2019-11": 21,
+    "2019-12": 6,
+    "2020-01": 19,
+    "2020-02": 12,
+    "2020-03": 4,
+    "2020-04": 17,
+    "2020-05": 18,
+    "2020-06": 23,
+    "2020-07": 19,
+    "2020-08": 13,
+    "2020-09": 11,
+    "2020-10": 5,
+    "2020-11": 50,
+    "2020-12": 23,
+    "2021-01": 11,
+    "2021-02": 15,
+    "2021-03": 55,
+    "2021-04": 24,
+    "2021-05": 7,
+    "2021-06": 28,
+    "2021-07": 26,
+    "2021-08": 14,
+    "2021-09": 21,
+    "2021-10": 36,
+    "2021-11": 19,
+    "2021-12": 21,
+    "2022-01": 13,
+    "2022-02": 14,
+    "2022-03": 17,
+    "2022-04": 7,
+    "2022-05": 17,
+    "2022-06": 17,
+    "2022-07": 14,
+    "2022-08": 14,
+    "2022-09": 15,
+    "2022-10": 26,
+    "2022-11": 18,
+    "2022-12": 19,
+    "2023-01": 11,
+    "2023-02": 18,
+    "2023-03": 24,
+    "2023-04": 161,
+    "2023-05": 191,
+    "2023-06": 193,
+    "2023-07": 202,
+    "2023-08": 197,
+    "2023-09": 149,
+    "2023-10": 162,
+    "2023-11": 188,
+    "2023-12": 213,
+    "2024-01": 618,
+    "2024-02": 599,
+    "2024-03": 664,
+    "2024-04": 605,
+    "2024-05": 670,
+    "2024-06": 597,
+    "2024-07": 795,
+    "2024-08": 978,
+    "2024-09": 801,
+    "2024-10": 736,
+    "2024-11": 656,
+    "2024-12": 751,
+    "2025-01": 909,
+    "2025-02": 786,
+    "2025-03": 677,
+    "2025-04": 781,
+    "2025-05": 1127,
+    "2025-06": 756,
+    "2025-07": 1013,
+    "2025-08": 1024,
+    "2025-09": 977,
+    "2025-10": 946,
+    "2025-11": 889,
+    "2025-12": 1083,
+    "2026-01": 1010,
+    "2026-02": 1110,
+    "2026-03": 1016,
+    "2026-04": 1525,
+    "2026-05": 1438,
+    "2026-06": 1788,
+    "2026-07": 1759,
+    "2026-08": 2663,
+    "2026-09": 1765,
+    "2026-10": 1270
+  },
+  "filtered_reasons": {
+    "no_country_mention": 17117
+  },
+  "future_dated": 0,
+  "before_2011": 0,
+  "near_duplicate_same_outlet": 163,
+  "language_mismatch": 4,
+  "with_region_share": 0.232,
+  "themes": {
+    "security": {
+      "articles": 8062,
+      "rule_confirmed": 0.404,
+      "arabic_share": 0.62,
+      "with_region": 0.318
+    },
+    "migration": {
+      "articles": 7064,
+      "rule_confirmed": 0.613,
+      "arabic_share": 0.443,
+      "with_region": 0.211
+    },
+    "economy": {
+      "articles": 10636,
+      "rule_confirmed": 0.656,
+      "arabic_share": 0.526,
+      "with_region": 0.179
+    },
+    "services": {
+      "articles": 3813,
+      "rule_confirmed": 0.425,
+      "arabic_share": 0.729,
+      "with_region": 0.351
+    },
+    "health": {
+      "articles": 4243,
+      "rule_confirmed": 0.306,
+      "arabic_share": 0.586,
+      "with_region": 0.301
+    },
+    "governance": {
+      "articles": 14739,
+      "rule_confirmed": 0.584,
+      "arabic_share": 0.462,
+      "with_region": 0.19
+    },
+    "gender_violence": {
+      "articles": 748,
+      "rule_confirmed": 0.166,
+      "arabic_share": 0.341,
+      "with_region": 0.1
+    },
+    "gender_political_participation": {
+      "articles": 813,
+      "rule_confirmed": 0.177,
+      "arabic_share": 0.851,
+      "with_region": 0.207
+    },
+    "gender_legal_status": {
+      "articles": 372,
+      "rule_confirmed": 0.067,
+      "arabic_share": 0.637,
+      "with_region": 0.172
+    },
+    "gender_mobility_morality": {
+      "articles": 111,
+      "rule_confirmed": 0.369,
+      "arabic_share": 0.811,
+      "with_region": 0.216
+    },
+    "gender_migrant_detained_women": {
+      "articles": 198,
+      "rule_confirmed": 0.157,
+      "arabic_share": 0.641,
+      "with_region": 0.081
+    },
+    "gender_economic_health": {
+      "articles": 233,
+      "rule_confirmed": 0.124,
+      "arabic_share": 0.721,
+      "with_region": 0.197
+    },
+    "gender_lgbtq": {
+      "articles": 65,
+      "rule_confirmed": 0.185,
+      "arabic_share": 0.677,
+      "with_region": 0.123
+    }
+  },
+  "top_outlets": [
+    [
+      "Libya Review",
+      6582
+    ],
+    [
+      "Libya Observer",
+      6012
+    ],
+    [
+      "Al Wasat",
+      2274
+    ],
+    [
+      "عين ليبيا",
+      2183
+    ],
+    [
+      "Libya Akhbar",
+      1521
+    ],
+    [
+      "صحيفة الساعة 24",
+      1037
+    ],
+    [
+      "Asharq Al-Awsat",
+      912
+    ],
+    [
+      "Libya Herald",
+      850
+    ],
+    [
+      "Al-Araby Al-Jadeed",
+      825
+    ],
+    [
+      "Al Arabiya",
+      595
+    ],
+    [
+      "Al Jazeera Arabic",
+      510
+    ],
+    [
+      "InfoMigrants",
+      430
+    ],
+    [
+      "العين الإخبارية",
+      331
+    ],
+    [
+      "Agenzia Nova",
+      310
+    ],
+    [
+      "Libya Update",
+      304
+    ]
+  ]
+}

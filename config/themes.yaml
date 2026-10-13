@@ -1,0 +1,140 @@
+# Seed themes. After first seed these live in the database and are edited in the
+# admin UI; editing bumps the theme version and re-scores that theme's history.
+#
+# en_terms  : English terms. Used for RSS matching AND GDELT queries (GDELT only
+#             searches English machine translations, so never put Arabic here).
+# ar_terms  : Arabic terms. RSS / Google News matching only. Write them
+#             un-normalised; the classifier normalises alef/ya/ta-marbuta/diacritics.
+# exclude   : terms that veto a match (both languages).
+# acled_event_types / reliefweb_themes : need-lens mappings, used once keys arrive.
+
+themes:
+  - slug: security
+    name_en: "Security & armed groups"
+    name_ar: "الأمن والجماعات المسلحة"
+    en_terms: [militia, militias, "armed group", "armed groups", clashes, fighting, ceasefire, airstrike, "drone strike", gunmen, kidnapping, abducted, assassination, killed, killing, "prison break", jailbreak, "armed clashes", assassinated, explosion, bomb]
+    ar_terms: ["ميليشيا", "ميليشيات", "مليشيات", "مجموعات مسلحة", "جماعات مسلحة", "اشتباكات", "اشتباك", "وقف إطلاق النار", "غارة", "مسيرة", "مسلحين", "اختطاف", "اغتيال", "مقتل", "قتلى", "قتيل", "سجن", "فرار", "خطف", "انفجار", "عبوة ناسفة", "مسلح", "قوة عسكرية", "الاستخبارات العسكرية"]
+    exclude: [football, "كرة القدم"]
+    acled_event_types: [Battles, "Explosions/Remote violence", "Violence against civilians"]
+    reliefweb_themes: ["Protection and Human Rights", "Mine Action"]
+  - slug: migration
+    name_en: "Migration & detention"
+    name_ar: "الهجرة والاحتجاز"
+    en_terms: [migrant, migrants, refugee, refugees, asylum, "detention centre", "detention center", trafficking, smuggling, "coast guard", shipwreck, deportation, boat, boats, departures, rescued, "missing at sea"]
+    ar_terms: ["مهاجر", "مهاجرين", "المهاجرين", "لاجئ", "لاجئين", "اللجوء", "مركز احتجاز", "مراكز الاحتجاز", "الاتجار بالبشر", "تهريب البشر", "خفر السواحل", "غرق قارب", "ترحيل", "قوارب", "قارب", "الهجرة غير الشرعية", "غير النظامية", "إنقاذ", "مفقودين"]
+    exclude: []
+    acled_event_types: []
+    reliefweb_themes: ["Protection and Human Rights"]
+  - slug: economy
+    name_en: "Oil & economy"
+    name_ar: "النفط والاقتصاد"
+    en_terms: [oil, crude, oilfield, "oil field", NOC, "National Oil Corporation", "central bank", CBL, dinar, budget, salaries, fuel, inflation, exports, refinery, "oil output", "oil production", "exchange rate", liquidity]
+    ar_terms: ["النفط", "نفط", "حقل نفطي", "المؤسسة الوطنية للنفط", "مصرف ليبيا المركزي", "المصرف المركزي", "الدينار", "الميزانية", "المرتبات", "الرواتب", "الوقود", "المحروقات", "التضخم", "الصادرات", "مصفاة", "إنتاج النفط", "سعر الصرف", "السيولة", "الصرف الأجنبي"]
+    exclude: ["olive oil", "زيت الزيتون"]
+    acled_event_types: []
+    reliefweb_themes: ["Food and Nutrition"]
+  - slug: services
+    name_en: "Public services (water & power)"
+    name_ar: "الخدمات العامة (المياه والكهرباء)"
+    en_terms: ["power cut", "power cuts", blackout, electricity, GECOL, "water supply", "Great Man-Made River", "Man-Made River", sewage, desalination, "load shedding", "water shortage", "fuel shortage", diesel, gasoline, queues]
+    ar_terms: ["انقطاع الكهرباء", "الكهرباء", "طرح الأحمال", "الشركة العامة للكهرباء", "إمدادات المياه", "المياه", "النهر الصناعي", "الصرف الصحي", "تحلية المياه", "نقص الوقود", "الديزل", "البنزين", "طوابير", "شح المياه", "انقطاع المياه"]
+    exclude: []
+    acled_event_types: [Protests]
+    reliefweb_themes: ["Water Sanitation Hygiene", "Shelter and Non-Food Items"]
+  - slug: health
+    name_en: "Health"
+    name_ar: "الصحة"
+    en_terms: [hospital, hospitals, "health ministry", medicines, "medical supplies", outbreak, cholera, vaccination, "doctors strike", "cancer patients", medical, doctors, nurses, vaccine, vaccines, disease, epidemic, pharmaceutical, "medical staff"]
+    ar_terms: ["مستشفى", "المستشفيات", "وزارة الصحة", "الأدوية", "المستلزمات الطبية", "تفشي", "الكوليرا", "التطعيم", "إضراب الأطباء", "مرضى الأورام", "طبي", "طبية", "الأطباء", "أطباء", "لقاح", "لقاحات", "اللقاحات", "مرض", "وباء", "الإمداد الطبي", "الصيدلة"]
+    exclude: []
+    acled_event_types: []
+    reliefweb_themes: [Health]
+  - slug: governance
+    name_en: "Governance & elections"
+    name_ar: "الحكم والانتخابات"
+    en_terms: [election, elections, HNEC, "House of Representatives", "High Council of State", "Government of National Unity", GNU, "Presidential Council", "municipal council", corruption, "Audit Bureau", constitution, parliament, minister, strike, protest, protests, "municipal elections"]
+    ar_terms: ["الانتخابات", "انتخابات", "المفوضية الوطنية العليا للانتخابات", "مجلس النواب", "المجلس الأعلى للدولة", "حكومة الوحدة الوطنية", "المجلس الرئاسي", "المجلس البلدي", "الفساد", "ديوان المحاسبة", "الدستور", "البرلمان", "الحكومة", "وزير", "إضراب", "احتجاج", "احتجاجات", "الانتخابات البلدية", "المبعوثة الأممية", "البعثة الأممية"]
+    exclude: []
+    acled_event_types: [Protests, Riots]
+    reliefweb_themes: [Coordination]
+  # ---- Gender (researched 2026-10-12; sources and timeline in docs/research/gender_libya.md)
+  # strict: search results count only when the rules confirm them (review 2026-10-13 found
+  # 15-55% precision for search-only assignment). cooc: women-word AND issue-word.
+  - slug: gender_violence
+    group: gender
+    name_en: "Gender: violence against women & girls"
+    name_ar: "النوع الاجتماعي: العنف ضد النساء والفتيات"
+    en_terms: ["violence against women", "gender-based violence", GBV, "domestic violence", femicide, "killing of women", "woman killed", "honour killing", "honor killing", "sexual violence", rape, "sexual harassment", "online harassment", "cyber blackmail", sextortion, doxxing, "16 Days of Activism", "Elimination of Violence against Women", "law on violence against women", "Article 424"]
+    ar_terms: ["العنف ضد المرأة", "العنف ضد النساء", "العنف القائم على النوع الاجتماعي", "العنف الأسري", "العنف المنزلي", "تعنيف امرأة", "تعنيف زوجته", "قتل زوجته", "مقتل امرأة", "مقتل سيدة", "قتل النساء", "جرائم الشرف", "الاغتصاب", "التحرش الجنسي", "الابتزاز الإلكتروني", "ابتزاز فتاة", "العنف الرقمي", "قانون مناهضة العنف ضد المرأة", "قانون مكافحة العنف ضد المرأة", "اليوم الدولي للقضاء على العنف ضد المرأة"]
+    exclude: ["women's football", "كرة القدم النسائية", "عنف الملاعب"]
+    acled_event_types: ["Violence against civilians"]
+    reliefweb_themes: [Gender, "Protection and Human Rights"]
+    strict: true
+    cooc: [["المرأة", "امرأة", "النساء", "نساء", "سيدة", "سيدات", "فتاة", "فتيات", "طفلة", "الليبيات", "ليبيات", "ناشطة", "ناشطات", "النائبة", "طبيبة", "طبيبات", "صحفية", "صحفيات", "محامية", "مدونة", "معلمات", "زوجته", "زوجة", "ابنته", "ابنتيه", "ابنتها", "أمها", "شقيقته", "النسوية", "نسوية", "نسائية", "النسائية", "الإناث", woman, women, girl, girls, female, wife, daughter, daughters, mother, activist, feminist, "Libyan women", "MP Siham", "lawyer Hanan"], ["قتل", "يقتل", "مقتل", "اغتيال", "تغتال", "اغتيلت", "تعنيف", "تعنف", "معنفة", "عنف", "اغتصاب", "اغتصبت", "اعتداء", "تحرش", "ابتزاز", "خطف", "اختطاف", "تهديد", "حرق", "ذبح", "طعن", "ضرب", killed, murder, murdered, violence, abuse, abused, assault, assaulted, raped, harassment, blackmail, abducted, stabbed, beaten]]
+  - slug: gender_political_participation
+    group: gender
+    name_en: "Gender: women's political & public participation"
+    name_ar: "النوع الاجتماعي: المشاركة السياسية والعامة للمرأة"
+    en_terms: ["women candidates", "female candidates", "women's quota", "gender quota", "seat reserved for women", "women's representation", "women's political participation", "women voters", "women MPs", "female lawmaker", "woman minister", "women's affairs", "women human rights defenders", "women activists", "Women, Peace and Security", "Resolution 1325", "women's empowerment", Sergiwa, Barassi, Bughaighis, "first woman", Mangoush, "Najla El Mangoush", "Leila Ben Khalifa", "Ben Khalifa", "woman candidate", "female presidential candidate"]
+    ar_terms: ["المشاركة السياسية للمرأة", "مشاركة المرأة", "تمثيل المرأة", "الكوتا النسائية", "حصة المرأة", "المقاعد المخصصة للمرأة", "المترشحات", "المرشحات", "الناخبات", "النائبة", "عضوة مجلس النواب", "شؤون المرأة", "تمكين المرأة", "المدافعات عن حقوق الإنسان", "الناشطات", "المرأة والسلام والأمن", "القرار 1325", "سهام سرقيوة", "حنان البرعصي", "سلوى بوقعيقيص", "أول امرأة", "المنقوش", "نجلاء المنقوش", "ليلى بن خليفة", "مرشحة للرئاسة", "مرشحة رئاسية"]
+    exclude: [Meloni, "ميلوني", "رئيسة الوزراء الإيطالية", "Miss Libya", "ملكة جمال", "المبعوثة الأممية", "UN envoy"]
+    acled_event_types: ["Violence against civilians", Protests, "Strategic developments"]
+    reliefweb_themes: [Gender, "Peacekeeping and Peacebuilding"]
+    strict: true
+    cooc: [["المرأة", "امرأة", "النساء", "نساء", "سيدة", "سيدات", "فتاة", "فتيات", "طفلة", "الليبيات", "ليبيات", "ناشطة", "ناشطات", "النائبة", "طبيبة", "طبيبات", "صحفية", "صحفيات", "محامية", "مدونة", "معلمات", "زوجته", "زوجة", "ابنته", "ابنتيه", "ابنتها", "أمها", "شقيقته", "النسوية", "نسوية", "نسائية", "النسائية", "الإناث", woman, women, girl, girls, female, wife, daughter, daughters, mother, activist, feminist, "Libyan women", "MP Siham", "lawyer Hanan"], ["مشاركة", "تمثيل", "ترشح", "المترشحة", "مرشحة", "انتخابات", "الانتخابات", "مقعد", "مقاعد", "البرلمان", "مجلس النواب", "المجلس البلدي", "حكومة", "وزارة", "قيادة", "صنع القرار", "السلام", "تمكين", "المجلس الوطني للمرأة", "مختطفة", "اختفاء", "الاختفاء القسري", election, elections, candidate, candidates, parliament, council, minister, "رئاسة", "الرئاسة", "الرئاسية", presidency, presidential, president, representation, participation, leadership, peace, empowerment, disappeared]]
+  - slug: gender_legal_status
+    group: gender
+    name_en: "Gender: legal status, family & nationality law"
+    name_ar: "النوع الاجتماعي: الوضع القانوني وقوانين الأسرة والجنسية"
+    en_terms: ["personal status law", "family law", "male guardianship", "child marriage", "underage marriage", "early marriage", polygamy, "child custody", "marital rape", "children of Libyan mothers", "Libyan women married to foreigners", "nationality law", "citizenship for children", CEDAW, "gender equality", "inheritance rights"]
+    ar_terms: ["قانون الأحوال الشخصية", "الأحوال الشخصية", "الولاية على المرأة", "زواج القاصرات", "زواج الأطفال", "الزواج المبكر", "تعدد الزوجات", "الحضانة", "النفقة", "أبناء الليبيات", "أبناء الليبيات المتزوجات من أجانب", "الليبيات المتزوجات من أجانب", "زواج الليبيات من أجانب", "قانون الجنسية", "منح الجنسية لأبناء", "سيداو", "المساواة بين الجنسين", "ميراث المرأة", "المادة 424"]
+    exclude: ["طلاق الفنانة", "celebrity divorce"]
+    acled_event_types: ["Strategic developments"]
+    reliefweb_themes: [Gender, "Protection and Human Rights"]
+    strict: true
+    cooc: [["المرأة", "امرأة", "النساء", "نساء", "سيدة", "سيدات", "فتاة", "فتيات", "طفلة", "الليبيات", "ليبيات", "ناشطة", "ناشطات", "النائبة", "طبيبة", "طبيبات", "صحفية", "صحفيات", "محامية", "مدونة", "معلمات", "زوجته", "زوجة", "ابنته", "ابنتيه", "ابنتها", "أمها", "شقيقته", "النسوية", "نسوية", "نسائية", "النسائية", "الإناث", woman, women, girl, girls, female, wife, daughter, daughters, mother, activist, feminist, "Libyan women", "MP Siham", "lawyer Hanan"], ["قانون", "القانون", "تشريع", "تشريعات", "حقوق", "الجنسية", "جنسية", "الزواج", "زواج", "الطلاق", "طلاق", "الحضانة", "النفقة", "الميراث", "الولاية", "المحكمة", "قرار", "القاصرات", "التمييز", law, legal, rights, nationality, citizenship, marriage, divorce, custody, inheritance, court, discrimination, decree]]
+  - slug: gender_mobility_morality
+    group: gender
+    name_en: "Gender: mobility, dress & 'morality' policing"
+    name_ar: "النوع الاجتماعي: تقييد التنقل واللباس و'شرطة الآداب'"
+    en_terms: [mahram, "male guardian", "women travelling alone", "women traveling alone", "travel restrictions on women", "travel form for women", "compulsory hijab", "mandatory hijab", "morality police", "Public Morality Protection", "gender mixing", "guarding virtue"]
+    ar_terms: ["بدون محرم", "دون محرم", "سفر المرأة", "سفر النساء", "إذن ولي الأمر", "موافقة ولي الأمر", "استمارة سفر النساء", "فرض الحجاب", "الحجاب الإلزامي", "إلزام النساء بالحجاب", "شرطة الآداب", "حماية الآداب العامة", "الشرطة النسائية", "منع الاختلاط", "الاختلاط", "اللباس المحتشم", "حماية الفضيلة"]
+    exclude: ["شهر محرم", "رأس السنة الهجرية", "travel ban on officials", "حظر السفر على"]
+    acled_event_types: ["Strategic developments", Protests]
+    reliefweb_themes: [Gender, "Protection and Human Rights"]
+    strict: true
+    cooc: [["المرأة", "امرأة", "النساء", "نساء", "سيدة", "سيدات", "فتاة", "فتيات", "طفلة", "الليبيات", "ليبيات", "ناشطة", "ناشطات", "النائبة", "طبيبة", "طبيبات", "صحفية", "صحفيات", "محامية", "مدونة", "معلمات", "زوجته", "زوجة", "ابنته", "ابنتيه", "ابنتها", "أمها", "شقيقته", "النسوية", "نسوية", "نسائية", "النسائية", "الإناث", woman, women, girl, girls, female, wife, daughter, daughters, mother, activist, feminist, "Libyan women", "MP Siham", "lawyer Hanan"], ["السفر", "سفر", "الحجاب", "حجاب", "الآداب", "الاختلاط", "الفصل بين", "اللباس", "الفضيلة", "ولي الأمر", "المحرم", "محرم", "مرافق", "تصوير", "الشرطة النسائية", travel, hijab, morality, "dress code", guardian, segregation, chaperone, mahram]]
+  - slug: gender_migrant_detained_women
+    group: gender
+    name_en: "Gender: migrant, trafficked & detained women"
+    name_ar: "النوع الاجتماعي: النساء المهاجرات والمحتجزات وضحايا الاتجار"
+    en_terms: ["migrant women", "female migrants", "refugee women", "women detainees", "female detainees", "women's prison", "sexual slavery", "sexual exploitation", "trafficking of women", "sex trafficking", "forced prostitution", "rape in detention", "pregnant migrants", "sex slaves", "sex slavery"]
+    ar_terms: ["المهاجرات", "النساء المهاجرات", "مهاجرات غير نظاميات", "اللاجئات", "المحتجزات", "سجن النساء", "السجينات", "الاستعباد الجنسي", "الاستغلال الجنسي", "الاتجار بالنساء", "الإتجار بالنساء", "الإكراه على الدعارة", "شبكة دعارة", "اغتصاب مهاجرات", "استعباد جنسي", "عبودية جنسية"]
+    exclude: ["تهريب الوقود", "fuel smuggling"]
+    acled_event_types: ["Violence against civilians"]
+    reliefweb_themes: [Gender, "Protection and Human Rights"]
+    strict: true
+    cooc: [["المرأة", "امرأة", "النساء", "نساء", "سيدة", "سيدات", "فتاة", "فتيات", "طفلة", "الليبيات", "ليبيات", "ناشطة", "ناشطات", "النائبة", "طبيبة", "طبيبات", "صحفية", "صحفيات", "محامية", "مدونة", "معلمات", "زوجته", "زوجة", "ابنته", "ابنتيه", "ابنتها", "أمها", "شقيقته", "النسوية", "نسوية", "نسائية", "النسائية", "الإناث", woman, women, girl, girls, female, wife, daughter, daughters, mother, activist, feminist, "Libyan women", "MP Siham", "lawyer Hanan"], ["اغتصاب", "الاغتصاب", "اغتصبت", "جنسي", "الجنسي", "جنسية", "دعارة", "الدعارة", "حوامل", "حامل", "الولادة", "الاستعباد", rape, raped, sexual, sex, prostitution, pregnant, brothel, slavery, sexually]]
+  - slug: gender_economic_health
+    group: gender
+    name_en: "Gender: women's economic & health rights"
+    name_ar: "النوع الاجتماعي: الحقوق الاقتصادية والصحية للمرأة"
+    en_terms: ["women workers", "working women", "women's employment", "female unemployment", "maternity leave", "women entrepreneurs", businesswomen, "women's economic empowerment", "maternal health", "maternal mortality", "reproductive health", midwives, "breast cancer", "women's health", "female-headed households", widows]
+    ar_terms: ["المرأة العاملة", "النساء العاملات", "عمل المرأة", "تشغيل النساء", "رائدات الأعمال", "سيدات الأعمال", "التمكين الاقتصادي للمرأة", "إجازة الأمومة", "صحة الأم", "وفيات الأمهات", "الصحة الإنجابية", "القابلات", "سرطان الثدي", "صحة المرأة", "الأرامل", "الأسر التي تعولها نساء"]
+    exclude: ["women's football", "منتخب السيدات", "fashion week", "عروض أزياء"]
+    acled_event_types: []
+    reliefweb_themes: [Gender, Health]
+    strict: true
+    cooc: [["المرأة", "امرأة", "النساء", "نساء", "سيدة", "سيدات", "فتاة", "فتيات", "طفلة", "الليبيات", "ليبيات", "ناشطة", "ناشطات", "النائبة", "طبيبة", "طبيبات", "صحفية", "صحفيات", "محامية", "مدونة", "معلمات", "زوجته", "زوجة", "ابنته", "ابنتيه", "ابنتها", "أمها", "شقيقته", "النسوية", "نسوية", "نسائية", "النسائية", "الإناث", woman, women, girl, girls, female, wife, daughter, daughters, mother, activist, feminist, "Libyan women", "MP Siham", "lawyer Hanan"], ["العمل", "عمل", "توظيف", "رواتب", "مشاريع", "ريادة", "اقتصادي", "اقتصادية", "صحة", "الصحة", "الولادة", "الحوامل", "الأمومة", "سرطان", "المستشفى", "علاج", work, jobs, employment, economic, business, entrepreneurs, health, maternal, pregnant, cancer, hospital]]
+  - slug: gender_lgbtq
+    group: gender
+    name_en: "Gender: LGBTQ+ persecution"
+    name_ar: "النوع الاجتماعي: ملاحقة مجتمع الميم"
+    en_terms: [LGBT, LGBTQ, LGBTI, homosexuality, homosexual, same-sex, transgender, queer, "sexual orientation", "gender identity", "rainbow flag", "promoting homosexuality"]
+    ar_terms: ["المثلية الجنسية", "المثليين", "المثليون", "مثليي الجنس", "مجتمع الميم", "العابرين جنسياً", "التحول الجنسي", "الشذوذ الجنسي", "الشواذ", "الترويج للمثلية", "الترويج للشذوذ", "علم المثليين", "الميول الجنسية", "الهوية الجندرية"]
+    exclude: ["Marvin Gaye"]
+    acled_event_types: ["Violence against civilians", "Strategic developments"]
+    reliefweb_themes: ["Protection and Human Rights"]
+    strict: true
+    require_country: true
+    cooc: []

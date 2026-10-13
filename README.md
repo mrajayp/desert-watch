@@ -1,0 +1,44 @@
+# Desert Watch
+
+Finds **information deserts**: topics and places where there is evidence of need
+(events, humanitarian reporting, audience interest, journalists' own flags) but little
+monitored media coverage. Built for journalists deciding what to cover. Libya first;
+countries and themes are config.
+
+Plan and rationale: `C:\Users\paler\.claude\plans\i-want-to-create-atomic-lamport.md`.
+
+## How it works
+
+| Step | Where | Notes |
+|---|---|---|
+| Collect coverage | `backend/app/collectors/` | Google News RSS (Arabic + English), outlet RSS, GDELT (English translations only). No keys needed. |
+| Collect need | same | Wikipedia pageviews now; ACLED / UCDP / ReliefWeb switch on when keys are set (`ACLED_EMAIL`+`ACLED_PASSWORD`, `UCDP_TOKEN`, `RELIEFWEB_APPNAME`). |
+| Tag | `classify.py`, `ingest.py` | Arabic-normalised keyword rules per theme; place-name tagging to 22 districts and 3 regions; relevance guard (must name Libya / a Libyan place or come from a Libyan outlet). |
+| Score | `scoring.py` | Per theme × region × week × lens, 4-week window: `gap = ln(reference ratio / shrunk coverage ratio)`. Insufficient evidence, cold start and partial windows are never scored. |
+| Network | `network.py` | Outlet→district and outlet→theme edges per week, outlet similarity on theme specialisation (Louvain clusters), reprint detection on headlines. |
+| Learn | `learning.py` | Behaviour log (pseudonymous, opt-out) + explicit actions → `label` table. Models switch on above label thresholds (Phase 5). |
+| UI | `frontend/` | React + D3. Map/network ("who covers where"), heatmap, trends, outlets network, gap/item/outlet panels with votes, comments, corrections, assessments. |
+
+LLM use: none yet. The weekly digest (Phase 6) is the only planned use.
+
+## Run locally
+
+```bash
+cd backend && uv sync --python 3.13 && .venv/Scripts/python -m app.cli init
+.venv/Scripts/python -m app.cli create-admin you@example.org "Your Name"
+.venv/Scripts/python -m app.cli backfill 12      # ~15 min: Google News, Wikipedia, GDELT history, RSS
+.venv/Scripts/python -m app.cli recompute
+cd ../frontend && npm install && npm run build
+cd ../backend && .venv/Scripts/python -m uvicorn app.main:app --port 8090
+```
+
+Dev frontend with hot reload: `npm run dev` (port 5190, proxies `/api` to 8090).
+Tests: `cd backend && .venv/Scripts/python -m pytest -q`.
+
+## Known limits (by design, shown in the UI)
+
+- Coverage = **monitored** coverage. Facebook/Telegram-only reporting is invisible; journalists add it with "Add article" / "Already covered".
+- Google News returns ≤100 results per query; windows are split down to one day when capped, and remaining capped days are reported in the source health strip.
+- GDELT throttles aggressively (1 request / 5 s, and sometimes blocks); the app runs without it.
+- Outlet base locations and political alignment are not seeded: they are contested and must be added with evidence.
+- The audience lens is national-only; regional gaps need the events / humanitarian lenses (keys pending).

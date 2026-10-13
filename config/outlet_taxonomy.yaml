@@ -1,0 +1,26 @@
+# Outlet category dimensions. Values are editable per country in the admin UI.
+# Every assignment of a contested dimension needs an evidence URL, a confidence
+# level and dates. See plan: "Handling contested labels".
+dimensions:
+  - key: type
+    name: Ownership type
+    contested: false
+    values: [state, private, public_service, ngo_un, citizen_collective, international, unknown]
+  - key: scope
+    name: Scope
+    contested: false
+    values: [libyan, diaspora, international, unknown]
+  - key: alignment
+    name: Political alignment
+    contested: true
+    country: LY
+    values: [tripoli_gnu_aligned, east_lna_aligned, independent, islamist_leaning, tribal_local, unknown]
+  - key: medium
+    name: Medium
+    contested: false
+    values: [website, tv, radio, facebook, telegram, x, print]
+  - key: reach
+    name: Reach tier
+    contested: false
+    values: [national, regional, local, niche, unknown]
+confidence_levels: [reported, likely, disputed, unverified]

@@ -1,0 +1,197 @@
+# Libya country config. Adding a country = adding a file like this one.
+iso2: LY
+iso3: LBY
+name_en: Libya
+name_ar: ليبيا
+demonyms: [Libyan, Libyans, ليبي, ليبية, الليبي, الليبية, الليبيين]
+gdelt:
+  country_term: Libya            # added to every GDELT query (English translations)
+  sourcecountry: LY              # FIPS code used by GDELT for outlets based in Libya
+gnews:
+  country_term_ar: ليبيا
+  hl: ar
+  gl: LY
+  ceid: "LY:ar"
+acled: {country: Libya}
+ucdp: {country_id: 620}
+reliefweb: {country_iso3: lby}
+boundaries:
+  # geoBoundaries gbHumanitarian LBY (source: UNITAR-UNOSAT, Libyan Bureau of Statistics,
+  # WFP, IOM via HDX; licence CC BY 3.0 IGO). Files live in config/geo, served at /geo/.
+  districts_geojson: libya_districts.geojson   # ADM2, 22 shabiyat; matched on `geo` below
+  macro_geojson: libya_macro.geojson           # ADM1 East / West / South
+  macro_geo_names: {tripolitania: West, cyrenaica: East, fezzan: South}
+  attribution: "Boundaries: UNITAR-UNOSAT, Libyan Bureau of Statistics, WFP, IOM via HDX / geoBoundaries (CC BY 3.0 IGO)"
+
+# Regions: macro (historic) regions -> districts (shabiyat, 2007 system).
+# Jufra placed in Fezzan and Sirte in Tripolitania by convention; both are
+# borderline and can be moved here without code changes.
+macro_regions:
+  - {slug: tripolitania, name_en: Tripolitania, name_ar: طرابلس الغرب}
+  - {slug: cyrenaica, name_en: Cyrenaica, name_ar: برقة}
+  - {slug: fezzan, name_en: Fezzan, name_ar: فزان}
+
+districts:
+  - {slug: tripoli, macro: tripolitania, geo: "Tripoli", name_en: Tripoli, name_ar: طرابلس, aliases: [Tripoli, Tajoura, Janzour, طرابلس, تاجوراء, جنزور]}
+  - {slug: jafara, macro: tripolitania, geo: "Aljfara", name_en: Jafara, name_ar: الجفارة, aliases: [Jafara, Aziziya, Al-Aziziya, Qasr bin Ghashir, الجفارة, العزيزية, قصر بن غشير]}
+  - {slug: zawiya, macro: tripolitania, geo: "Azzawya", name_en: Zawiya, name_ar: الزاوية, aliases: [Zawiya, Zawia, Sabratha, Surman, الزاوية, صبراتة, صرمان]}
+  - {slug: nuqat_al_khams, macro: tripolitania, geo: "Zwara", name_en: Nuqat al Khams, name_ar: النقاط الخمس, aliases: [Zuwara, Zuwarah, Ras Ajdir, Al-Jamil, النقاط الخمس, زوارة, رأس اجدير, الجميل]}
+  - {slug: nalut, macro: tripolitania, geo: "Nalut", name_en: Nalut, name_ar: نالوت, aliases: [Nalut, Ghadames, Wazzin, نالوت, غدامس, وازن]}
+  - {slug: jabal_al_gharbi, macro: tripolitania, geo: "Al Jabal Al Gharbi", name_en: Jabal al Gharbi, name_ar: الجبل الغربي, aliases: [Gharyan, Zintan, Yafran, Nafusa Mountains, Western Mountains, غريان, الزنتان, يفرن, جبل نفوسة, الجبل الغربي]}
+  - {slug: murqub, macro: tripolitania, geo: "Almargeb", name_en: Murqub, name_ar: المرقب, aliases: [Khoms, Al-Khums, Zliten, Tarhuna, Msallata, المرقب, الخمس, زليتن, ترهونة, مسلاتة]}
+  - {slug: misrata, macro: tripolitania, geo: "Misrata", name_en: Misrata, name_ar: مصراتة, aliases: [Misrata, Misurata, Bani Walid, مصراتة, بني وليد]}
+  - {slug: sirte, macro: tripolitania, geo: "Sirt", name_en: Sirte, name_ar: سرت, aliases: [Sirte, Sirt, Ras Lanuf, Bin Jawad, سرت, راس لانوف, بن جواد]}
+  - {slug: jufra, macro: fezzan, geo: "Aljufra", name_en: Jufra, name_ar: الجفرة, aliases: [Jufra, Hun, Houn, Waddan, Sokna, الجفرة, هون, ودان, سوكنة]}
+  - {slug: wadi_al_shatii, macro: fezzan, geo: "Wadi Ashshati", name_en: Wadi al Shatii, name_ar: وادي الشاطئ, aliases: [Brak, Brak al-Shati, Wadi al-Shati, براك, براك الشاطئ, وادي الشاطئ]}
+  - {slug: sabha, macro: fezzan, geo: "Sebha", name_en: Sabha, name_ar: سبها, aliases: [Sabha, Sebha, سبها]}
+  - {slug: wadi_al_hayaa, macro: fezzan, geo: "Ubari", name_en: Wadi al Hayaa, name_ar: وادي الحياة, aliases: [Ubari, Awbari, Germa, أوباري, اوباري, جرمة, وادي الحياة]}
+  - {slug: ghat, macro: fezzan, geo: "Ghat", name_en: Ghat, name_ar: غات, aliases: [Ghat, غات]}
+  - {slug: murzuq, macro: fezzan, geo: "Murzuq", name_en: Murzuq, name_ar: مرزق, aliases: [Murzuq, Murzuk, Qatrun, Al-Qatrun, مرزق, القطرون]}
+  - {slug: kufra, macro: cyrenaica, geo: "Alkufra", name_en: Kufra, name_ar: الكفرة, aliases: [Kufra, Al-Kufra, الكفرة]}
+  - {slug: al_wahat, macro: cyrenaica, geo: "Ejdabia", name_en: Al Wahat, name_ar: الواحات, aliases: [Ajdabiya, Jalu, Awjila, Brega, Marsa al-Brega, أجدابيا, اجدابيا, جالو, أوجلة, البريقة]}
+  - {slug: benghazi, macro: cyrenaica, geo: "Benghazi", name_en: Benghazi, name_ar: بنغازي, aliases: [Benghazi, بنغازي]}
+  - {slug: marj, macro: cyrenaica, geo: "Almarj", name_en: Marj, name_ar: المرج, aliases: [Al-Marj, Marj, المرج]}
+  - {slug: jabal_al_akhdar, macro: cyrenaica, geo: "Al Jabal Al Akhdar", name_en: Jabal al Akhdar, name_ar: الجبل الأخضر, aliases: [Bayda, Al-Bayda, Shahhat, Cyrene, Green Mountain, البيضاء, شحات, الجبل الأخضر]}
+  - {slug: derna, macro: cyrenaica, geo: "Derna", name_en: Derna, name_ar: درنة, aliases: [Derna, Darnah, درنة]}
+  - {slug: butnan, macro: cyrenaica, geo: "Tobruk", name_en: Butnan, name_ar: البطنان, aliases: [Tobruk, Tubruq, Bardia, Jaghbub, طبرق, البردية, الجغبوب, البطنان]}
+
+# Approximate city coordinates, used to place outlets and region nodes.
+cities:
+  Tripoli: [32.887, 13.191]
+  Benghazi: [32.117, 20.068]
+  Misrata: [32.377, 15.092]
+  Sabha: [27.038, 14.426]
+  Derna: [32.767, 22.637]
+  Tobruk: [32.076, 23.961]
+  Sirte: [31.205, 16.588]
+  Bayda: [32.762, 21.755]
+  Zawiya: [32.757, 12.728]
+  Kufra: [24.180, 23.290]
+  Ajdabiya: [30.756, 20.226]
+
+# Wikimedia pageview articles per theme (titles verified 2026-10-12).
+# National-level audience lens only.
+wikipedia:
+  security:
+    en: [Libyan_National_Army, "Libyan_crisis_(2011–present)"]
+    ar: [الجيش_الوطني_الليبي, الأزمة_الليبية]
+  migration:
+    en: [Human_trafficking_in_Libya, Libyan_Coast_Guard]
+    ar: []
+  economy:
+    en: [Economy_of_Libya, National_Oil_Corporation, Central_Bank_of_Libya]
+    ar: [اقتصاد_ليبيا, مصرف_ليبيا_المركزي]
+  services:
+    en: [Great_Man-Made_River]
+    ar: [النهر_الصناعي_العظيم]
+  health:
+    en: [Health_in_Libya]
+    ar: [الصحة_في_ليبيا]
+  governance:
+    en: ["Government_of_National_Unity_(Libya)", "House_of_Representatives_(Libya)", Elections_in_Libya]
+    ar: ["حكومة_الوحدة_الوطنية_(ليبيا)", مجلس_النواب_الليبي]
+  # Gender (titles verified via the Wikipedia API, 2026-10-12)
+  gender_violence:
+    en: [Women_in_Libya]
+    ar: [المرأة_في_ليبيا]
+  gender_political_participation:
+    en: [Seham_Sergiwa, Hanan_al-Barassi, Salwa_Bughaighis, Najla_El_Mangoush]
+    ar: [سهام_سرقيوة, حنان_البرعصي, سلوى_بوقعيقيص, نجلاء_المنقوش]
+  gender_legal_status:
+    en: [Women_in_Libya]
+    ar: [المرأة_في_ليبيا]
+  gender_mobility_morality:
+    en: [Human_rights_in_Libya]
+    ar: [حقوق_الإنسان_في_ليبيا]
+  gender_migrant_detained_women:
+    en: [Human_trafficking_in_Libya]
+    ar: [الإتجار_بالبشر_في_ليبيا]
+  gender_lgbtq:
+    en: [LGBTQ_rights_in_Libya]
+    ar: [معاملة_المثليين_في_ليبيا]
+
+# Outlets. Only uncontested facts are seeded here (name, domain, language,
+# medium, scope). Base city and political alignment are left for admins to
+# fill in WITH evidence. Outlets placed by base city with confidence
+# "unverified" show as such until someone confirms them. Outlets seen via
+# Google News / GDELT are auto-created as "unclassified".
+# rss: feeds verified working 2026-10-12. Al Wasat, Al Marsad and InfoMigrants
+# returned 403; Libya Observer and LANA feeds 404. These are still covered via
+# Google News.
+outlets:
+  - {name: Libya Herald, domain: libyaherald.com, languages: [en], medium: website, scope: libyan, rss: "https://www.libyaherald.com/feed/"}
+  - {name: Libya Review, domain: libyareview.com, languages: [en], medium: website, scope: libyan, rss: "https://libyareview.com/feed/"}
+  - {name: Libya Update, domain: libyaupdate.com, languages: [en], medium: website, scope: libyan, rss: "https://libyaupdate.com/feed/"}
+  - {name: Libya Akhbar, domain: libyaakhbar.com, languages: [ar], medium: website, scope: libyan, rss: "https://www.libyaakhbar.com/feed/"}
+  - {name: Libya Observer, domain: libyaobserver.ly, languages: [en, ar], medium: website, scope: libyan}
+  - {name: Al Wasat, domain: alwasat.ly, languages: [ar, en], medium: website, scope: libyan}
+  - {name: Al Marsad, domain: almarsad.co, languages: [ar], medium: website, scope: libyan}
+  - {name: LANA, domain: lana.gov.ly, languages: [ar, en], medium: website, scope: libyan, type: state}
+  - {name: BBC Arabic, domain: bbc.com, languages: [ar], medium: website, scope: international, base_country: United Kingdom, rss: "https://feeds.bbci.co.uk/arabic/rss.xml"}
+  - {name: Al Jazeera Arabic, domain: aljazeera.net, languages: [ar], medium: website, scope: international, base_country: Qatar, rss: "https://www.aljazeera.net/aljazeerarss/a7c186be-1baa-4bd4-9d80-a84db769f779/73d0e1b4-532f-45ef-b135-bfdff8b8cab9"}
+  - {name: Reuters, domain: reuters.com, languages: [en, ar], medium: website, scope: international, base_country: United Kingdom}
+  - {name: Asharq Al-Awsat, domain: aawsat.com, languages: [ar, en], medium: website, scope: international, base_country: United Kingdom}
+  - {name: Al Arabiya, domain: alarabiya.net, languages: [ar], medium: website, scope: international, base_country: United Arab Emirates}
+  - {name: Al-Araby Al-Jadeed, domain: alaraby.co.uk, languages: [ar], medium: website, scope: international, base_country: United Kingdom}
+  - {name: Agenzia Nova, domain: agenzianova.com, languages: [it, en], medium: website, scope: international, base_country: Italy}
+  # Added for gender coverage (feeds verified with curl 2026-10-12). Global/regional feeds are
+  # filtered by the Libya relevance guard and must match a theme.
+  - {name: Libya Al Ahrar TV, domain: libyaalahrar.tv, languages: [ar], medium: tv, scope: libyan, rss: "https://www.libyaalahrar.tv/feed/"}
+  - {name: Sharika wa Laken, domain: sharikawalaken.media, languages: [ar], medium: website, scope: international, rss: "https://www.sharikawalaken.media/feed/"}
+  - {name: Daraj, domain: daraj.media, languages: [ar, en], medium: website, scope: international, base_country: Lebanon, rss: "https://daraj.media/feed/"}
+  - {name: Raseef22, domain: raseef22.net, languages: [ar], medium: website, scope: international, base_country: Lebanon, rss: "https://raseef22.net/feed"}
+  - {name: Kohl journal, domain: kohljournal.press, languages: [en, ar], medium: website, scope: international, rss: "https://kohljournal.press/rss.xml"}
+  - {name: CIHRS, domain: cihrs.org, languages: [ar, en], medium: website, scope: international, type: ngo_un, rss: "https://cihrs.org/feed/"}
+  - {name: Human Rights Watch, domain: hrw.org, languages: [en, ar], medium: website, scope: international, type: ngo_un, rss: "https://www.hrw.org/rss/news"}
+  - {name: Human Rights Watch (Arabic), domain: hrw.org/ar, languages: [ar], medium: website, scope: international, type: ngo_un, rss: "https://www.hrw.org/ar/rss/news"}
+  - {name: UN Women, domain: unwomen.org, languages: [en], medium: website, scope: international, type: ngo_un, rss: "https://www.unwomen.org/en/rss-feeds/news"}
+  - {name: UNFPA Libya, domain: libya.unfpa.org, languages: [en], medium: website, scope: international, type: ngo_un, rss: "https://libya.unfpa.org/en/rss.xml"}
+  - {name: OHCHR, domain: ohchr.org, languages: [en], medium: website, scope: international, type: ngo_un, rss: "https://www.ohchr.org/en/rss.xml"}
+
+# Hand-written Google Alerts aimed at likely deserts (south, minorities, recovery).
+# Generated district/theme alerts come from the lists above; see `python -m app.cli alerts-list`.
+extra_alerts:
+  - {key: south_services, lang: ar, region: fezzan, theme: services, label: "Fezzan public services (AR)", query: '(فزان OR "الجنوب الليبي") (كهرباء OR وقود OR مستشفى OR مياه)'}
+  - {key: south_services, lang: en, region: fezzan, theme: services, label: "Fezzan public services (EN)", query: '(Fezzan OR "southern Libya") (electricity OR fuel OR hospital OR water)'}
+  - {key: kufra_migration, lang: ar, region: kufra, theme: migration, label: "Kufra migration (AR)", query: 'الكفرة (مهاجرين OR السودانيين OR لاجئين)'}
+  - {key: kufra_migration, lang: en, region: kufra, theme: migration, label: "Kufra migration (EN)", query: 'Kufra (migrants OR Sudanese OR refugees)'}
+  - {key: tebu_tuareg, lang: ar, label: "Tebu & Tuareg communities (AR)", query: '(التبو OR الطوارق) ليبيا'}
+  - {key: tebu_tuareg, lang: en, label: "Tebu & Tuareg communities (EN)", query: '(Tebu OR Toubou OR Tuareg) Libya'}
+  - {key: amazigh, lang: ar, label: "Amazigh (AR)", query: '(الأمازيغ OR الأمازيغية) ليبيا'}
+  - {key: amazigh, lang: en, label: "Amazigh (EN)", query: '(Amazigh OR Berber) Libya'}
+  - {key: derna_recovery, lang: ar, region: derna, label: "Derna recovery (AR)", query: 'درنة (الإعمار OR السيول OR السد)'}
+  - {key: derna_recovery, lang: en, region: derna, label: "Derna recovery (EN)", query: 'Derna (reconstruction OR flood OR dam)'}
+
+# Dated reference events: annotate trend charts and validate that coverage spikes appear.
+# Sources: docs/research/gender_libya.md. "verified: false" = not confirmed from a primary page.
+events:
+  - {date: 2014-06-25, theme: gender_political_participation, label: "Salwa Bughaighis killed (Benghazi)", source: "https://www.amnesty.org/en/latest/news/2018/06/libya-women-human-rights-defenders-still-under-attack-four-years-after-activists-assassination/"}
+  - {date: 2019-07-17, theme: gender_political_participation, label: "MP Seham Sergiwa abducted (Benghazi)", source: "https://edition.cnn.com/2019/07/20/africa/libya-sergewa-intl"}
+  - {date: 2020-11-10, theme: gender_violence, label: "Lawyer Hanan al-Barassi killed (Benghazi)", source: "https://dppa.dfs.un.org/en/unsmil-statement-killing-of-lawyer-hanan-al-barassi"}
+  - {date: 2021-11-22, theme: gender_political_participation, label: "Leila Ben Khalifa: first woman presidential candidate", source: "https://gulfnews.com/world/africa/libya-leila-bin-khalifa-becomes-first-woman-to-run-for-presidency-1.1637609131473"}
+  - {date: 2022-10-28, theme: gender_legal_status, label: "Decree on children of Libyan mothers (HRW critique)", source: "https://www.hrw.org/ar/news/2022/10/28/decree-libyan-womens-non-citizen-children-fails-discrimination-test"}
+  - {date: 2022-12-23, theme: gender_violence, label: "UN Special Rapporteur on VAW visit ends", source: "https://documents.un.org/doc/undoc/gen/g23/084/92/pdf/g2308492.pdf"}
+  - {date: 2023-03-27, theme: gender_migrant_detained_women, label: "UN Fact-Finding Mission: sexual slavery of migrants", source: "https://news.un.org/en/node/1135052"}
+  - {date: 2023-05-01, theme: gender_mobility_morality, label: "ISA travel form for women (Mitiga), approx. date", source: "https://www.libyanjustice.org/news/crushing-liberty-relentless-restrictions-on-libyan-women-and-enforced-male-guardianship"}
+  - {date: 2023-07-15, theme: gender_mobility_morality, label: "UN experts condemn travel restrictions", source: "https://news.un.org/en/story/2023/07/1138932"}
+  - {date: 2023-08-27, theme: gender_political_participation, label: "FM Najla El Mangoush suspended", source: "https://www.al-monitor.com/originals/2023/08/libyan-foreign-minister-suspended-over-talks-israeli-counterpart"}
+  - {date: 2023-09-10, theme: null, label: "Storm Daniel / Derna floods", source: "https://reliefweb.int/report/libya/unfpa-libya-flood-response-situation-report-1-15-september-2023"}
+  - {date: 2023-12-28, theme: gender_lgbtq, label: "ISA 'confession' videos (14 people)", source: "https://www.amnesty.org/en/latest/news/2024/02/libya-internal-security-agency-must-end-abuses-in-name-of-guarding-virtue/"}
+  - {date: 2024-04-15, theme: gender_violence, label: "Amnesty report: VAW law, Article 424", source: "https://www.amnesty.org/en/wp-content/uploads/2024/04/MDE1978582024ENGLISH.pdf"}
+  - {date: 2024-11-06, theme: gender_mobility_morality, label: "Interior Minister: hijab, guardian consent, morality police", source: "https://www.hrw.org/news/2024/11/13/libyan-ministers-morality-measures-would-violate-womens-rights"}
+  - {date: 2024-11-16, theme: gender_political_participation, label: "Municipal elections phase 1 (29% women voters)", source: "https://www.idea.int/democracytracker/report/libya/november-2024"}
+  - {date: 2025-11-21, theme: gender_violence, label: "Blogger Khansa Mujahid killed (Janzour)", source: "https://aawsat.com/node/5211624"}
+
+# Scope for outlets auto-discovered via search (uncontested: where the outlet is based/focused).
+# Applied with confidence "likely" and the homepage as evidence; never overrides an existing
+# scope. Political alignment is NOT set here.
+scope_overrides:
+  libyan: [eanlibya.com, alsaaa24.com, libyanexpress.com, libyaobserver.ly, alwasat.ly, libyaakhbar.com, almarsad.co, 218tv.net, libyaalahrar.tv, lana.gov.ly]
+  international: [aa.com.tr, infomigrants.net, youm7.com, alquds.co.uk, middle-east-online.com, al-ain.com, ekathimerini.com,
+    independentarabia.com, attaqa.net, france24.com, skynewsarabia.com, arabi21.com, eremnews.com, masrawy.com,
+    almasryalyoum.com, alaraby.com, annahar.com, aljazeera.com, thearabweekly.com, alquds.com, qna.org.qa, hespress.com,
+    africanews.com, asharq.com, almashhad.com, akhbarelyom.com, english.ahram.org.eg, gate.ahram.org.eg, reliefweb.int,
+    shorouknews.com, mc-doualiya.com, sana.sy, raialyoum.com, arabnews.com, newarab.com, news.un.org, middleeasteye.net,
+    timesofmalta.com, thenationalnews.com, trtworld.com, egypttoday.com, elbalad.news, vetogate.com, noonpost.com,
+    africa.businessinsider.com, asharqbusiness.com, erembusiness.com, oilprice.com, jpost.com, ua.news, dailypost.ng,
+    northafricapost.com, sudanindependent.com, voiceofemirates.com, ahwal.sa]

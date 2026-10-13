@@ -1,0 +1,238 @@
+from collections import Counter
+from datetime import timedelta
+
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from pydantic import BaseModel, Field
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session
+
+from .. import auth
+from ..classify import ThemeRule, classify_themes
+from ..db import SessionLocal, get_db
+from ..models import (Event, GapVote, Invite, Item, ItemTheme, Label, Suggestion, Theme, User, utcnow)
+from ..textnorm import normalise
+
+router = APIRouter(prefix="/api")
+
+
+# ---------------------------------------------------------------- themes (any user can read, admins edit)
+class ThemeIn(BaseModel):
+    group: str | None = Field(default=None, max_length=40)
+    cooc: list[list[str]] = Field(default_factory=list)
+    strict: bool = False
+    name_en: str = Field(min_length=2, max_length=120)
+    name_ar: str = Field(default="", max_length=120)
+    en_terms: list[str] = Field(default_factory=list)
+    ar_terms: list[str] = Field(default_factory=list)
+    exclude: list[str] = Field(default_factory=list)
+    acled_event_types: list[str] = Field(default_factory=list)
+    reliefweb_themes: list[str] = Field(default_factory=list)
+    active: bool = True
+
+
+def _theme_json(t: Theme) -> dict:
+    return {c.name: getattr(t, c.name) for c in Theme.__table__.columns if c.name != "updated_at"} | {
+        "updated_at": t.updated_at.isoformat()}
+
+
+@router.get("/themes")
+def list_themes(s: Session = Depends(get_db), _: User = Depends(auth.current_user)):
+    return [_theme_json(t) for t in s.scalars(select(Theme).order_by(Theme.id))]
+
+
+@router.post("/themes/preview")
+def preview_theme(body: ThemeIn, days: int = 30, s: Session = Depends(get_db), _: User = Depends(auth.current_user)):
+    """What would these terms match over recent articles? Includes user labels so admins
+    can see precision against human judgement before saving."""
+    rule = ThemeRule.build(0, "preview", 0, body.en_terms, body.ar_terms, body.exclude, body.cooc, body.strict)
+    since = utcnow() - timedelta(days=days)
+    rows = s.scalars(select(Item).where(Item.kind == "article", Item.published_at >= since)
+                     .order_by(Item.published_at.desc()).limit(5000)).all()
+    matched = []
+    for it in rows:
+        hits = rule.matches(normalise(f"{it.title or ''} {it.snippet or ''}"))
+        if hits:
+            matched.append((it, hits))
+    term_counts = Counter(h for _, hs in matched for h in hs)
+    return {"scanned": len(rows), "matched": len(matched),
+            "top_terms": term_counts.most_common(20),
+            "samples": [{"id": it.id, "title": it.title, "lang": it.lang, "hits": hs, "relevant": it.relevant}
+                        for it, hs in matched[:40]]}
+
+
+def _retag_theme(theme_id: int, recompute: bool = True):
+    """Re-run rule tagging for one theme over all articles; user decisions are kept."""
+    from ..ingest import ThemeRule as _TR  # noqa: F401
+    from ..scoring import compute_all
+    with SessionLocal() as s:
+        t = s.get(Theme, theme_id)
+        rule = ThemeRule.build(t.id, t.slug, t.version, t.en_terms, t.ar_terms, t.exclude, t.cooc, t.strict, t.require_country)
+        from ..ingest import load_rules
+        crules = load_rules(s, s.scalar(select(Item.country_id).limit(1))) if t.require_country else None
+        links = {lk.item_id: lk for lk in s.scalars(select(ItemTheme).where(ItemTheme.theme_id == theme_id))}
+        for it in s.scalars(select(Item).where(Item.kind == "article")):
+            text = f"{it.title or ''} {it.snippet or ''}"
+            hit = bool(classify_themes(text, [rule])) and (crules is None or crules.mentions_country(text))
+            lk = links.get(it.id)
+            if lk and lk.method == "user":
+                continue
+            if lk and lk.method == "query":
+                lk.active, lk.theme_version = (hit or not t.strict), t.version
+                continue
+            if hit and not lk:
+                s.add(ItemTheme(item_id=it.id, theme_id=theme_id, method="rule", theme_version=t.version))
+            elif lk and lk.method == "rule":
+                lk.active, lk.theme_version = hit, t.version
+        s.commit()
+        if recompute:
+            compute_all(s)
+
+
+@router.post("/themes")
+def create_theme(body: ThemeIn, bg: BackgroundTasks, s: Session = Depends(get_db), u: User = Depends(auth.require_admin)):
+    slug = normalise(body.name_en).strip().replace(" ", "_")[:60]
+    if s.scalar(select(Theme).where(Theme.slug == slug)):
+        raise HTTPException(400, "A theme with that name exists")
+    t = Theme(slug=slug, **body.model_dump())
+    s.add(t)
+    s.commit()
+    bg.add_task(_retag_theme, t.id)
+    return _theme_json(t)
+
+
+@router.put("/themes/{tid}")
+def update_theme(tid: int, body: ThemeIn, bg: BackgroundTasks, s: Session = Depends(get_db),
+                 u: User = Depends(auth.require_admin)):
+    t = s.get(Theme, tid)
+    if not t:
+        raise HTTPException(404, "Unknown theme")
+    for k, v in body.model_dump().items():
+        setattr(t, k, v)
+    t.version += 1
+    t.updated_at = utcnow()
+    s.commit()
+    bg.add_task(_retag_theme, t.id)
+    return _theme_json(t)
+
+
+# ---------------------------------------------------------------- invites / users
+class InviteIn(BaseModel):
+    email: str
+    role: str = "journalist"
+
+
+@router.post("/admin/invites")
+def invite(body: InviteIn, s: Session = Depends(get_db), u: User = Depends(auth.require_admin)):
+    if body.role not in ("journalist", "admin"):
+        raise HTTPException(400, "Unknown role")
+    token = auth.create_invite(s, body.email, body.role, u.id)
+    s.commit()
+    return {"invite_path": f"/invite/{token}", "expires_days": 7}
+
+
+@router.get("/admin/users")
+def users(s: Session = Depends(get_db), _: User = Depends(auth.require_admin)):
+    return [{"id": x.id, "email": x.email, "display_name": x.display_name, "role": x.role, "active": x.active,
+             "created_at": x.created_at.isoformat()} for x in s.scalars(select(User))]
+
+
+# ---------------------------------------------------------------- suggestions queue
+@router.get("/admin/suggestions")
+def suggestions(status: str = "pending", s: Session = Depends(get_db), _: User = Depends(auth.require_admin)):
+    names = {x.id: x.display_name for x in s.scalars(select(User))}
+    return [{"id": g.id, "kind": g.kind, "payload": g.payload, "status": g.status, "origin": g.origin,
+             "user": names.get(g.user_id), "at": g.created_at.isoformat()}
+            for g in s.scalars(select(Suggestion).where(Suggestion.status == status).order_by(Suggestion.id.desc()))]
+
+
+class ReviewIn(BaseModel):
+    accept: bool
+
+
+@router.post("/admin/suggestions/{sid}")
+def review_suggestion(sid: int, body: ReviewIn, s: Session = Depends(get_db), u: User = Depends(auth.require_admin)):
+    g = s.get(Suggestion, sid)
+    if not g:
+        raise HTTPException(404, "Unknown suggestion")
+    g.status, g.reviewed_by = ("accepted" if body.accept else "rejected"), u.id
+    if body.accept and g.kind == "keyword":
+        t = s.get(Theme, int(g.payload.get("theme_id", 0)))
+        term, lang = g.payload.get("term"), g.payload.get("lang", "en")
+        if t and term:
+            attr = "ar_terms" if lang == "ar" else "en_terms"
+            setattr(t, attr, [*getattr(t, attr), term])
+            t.version += 1
+    s.commit()
+    return {"ok": True}
+
+
+# ---------------------------------------------------------------- jobs
+@router.post("/admin/run/{job}")
+def run_job(job: str, bg: BackgroundTasks, _: User = Depends(auth.require_admin)):
+    from ..jobs import JOBS
+    if job not in JOBS:
+        raise HTTPException(404, "Unknown job")
+    bg.add_task(JOBS[job])
+    return {"queued": job}
+
+
+# ---------------------------------------------------------------- learning overview
+@router.get("/admin/learning")
+def learning(s: Session = Depends(get_db), _: User = Depends(auth.require_admin)):
+    labels = dict(s.execute(select(Label.label_type, func.count(Label.id)).group_by(Label.label_type)).all())
+    by_origin = dict(s.execute(select(Label.origin, func.count(Label.id)).group_by(Label.origin)).all())
+    events = dict(s.execute(select(Event.type, func.count(Event.id)).group_by(Event.type)).all())
+    # agreement on gap votes: share of gaps (with >=2 votes) where all votes agree
+    votes: dict = {}
+    for v in s.scalars(select(GapVote)):
+        votes.setdefault((v.theme_id, v.region_id, v.week_start), []).append(v.vote)
+    multi = [vs for vs in votes.values() if len(vs) >= 2]
+    agree = sum(1 for vs in multi if len(set(vs)) == 1)
+    weekly = s.execute(select(func.strftime("%Y-%W", Label.created_at), func.count(Label.id))
+                       .group_by(func.strftime("%Y-%W", Label.created_at)).order_by(func.strftime("%Y-%W", Label.created_at))).all()
+    # Precision proxy: share of search-sourced items whose query theme is confirmed by the rules.
+    from ..ingest import load_rules
+    from ..models import Country
+    confirm = {}
+    country = s.scalar(select(Country))
+    if country:
+        rules = load_rules(s, country.id)
+        slug2id = {t.slug: t.id for t in s.scalars(select(Theme))}
+        tot, hit = Counter(), Counter()
+        since = utcnow() - timedelta(days=28)
+        for it in s.scalars(select(Item).where(Item.kind == "article", Item.source_key.in_(("gnews", "gdelt")),
+                                               Item.relevant.is_(True), Item.published_at >= since)):
+            q = (it.extra or {}).get("query_theme")
+            if q in slug2id:
+                k = f"{q}/{it.lang}"
+                tot[k] += 1
+                hit[k] += slug2id[q] in classify_themes(f"{it.title or ''} {it.snippet or ''}", rules.themes)
+        confirm = {k: {"n": tot[k], "confirmed": round(hit[k] / tot[k], 2)} for k in sorted(tot)}
+    from ..jobs import THRESHOLDS
+    return {"labels": labels, "by_origin": by_origin, "events": events,
+            "vote_agreement": {"gaps_with_multiple_votes": len(multi), "unanimous": agree},
+            "labels_per_week": [{"week": w, "n": n} for w, n in weekly],
+            "thresholds": THRESHOLDS, "rule_confirmation": confirm,
+            "models": [], "note": "Learned models switch on once label thresholds are met (Phase 5)."}
+
+
+# ---------------------------------------------------------------- Google Alerts
+class AlertFeedsIn(BaseModel):
+    lines: str = Field(max_length=100_000)
+
+
+@router.get("/admin/alerts")
+def list_alerts(s: Session = Depends(get_db), _: User = Depends(auth.require_admin)):
+    from ..alerts import SETTINGS
+    from ..models import AlertFeed
+    rows = s.scalars(select(AlertFeed).order_by(AlertFeed.key)).all()
+    return {"settings": SETTINGS, "alerts": [
+        {"key": a.key, "label": a.label, "lang": a.lang, "query": a.query, "feed_url": a.feed_url, "active": a.active,
+         "last_ok_at": a.last_ok_at.isoformat() if a.last_ok_at else None, "last_items": a.last_items,
+         "last_error": a.last_error} for a in rows]}
+
+
+@router.post("/admin/alerts")
+def attach_alerts(body: AlertFeedsIn, s: Session = Depends(get_db), _: User = Depends(auth.require_admin)):
+    from ..alerts import attach_feeds
+    return attach_feeds(s, body.lines)

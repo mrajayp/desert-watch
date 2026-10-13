@@ -1,0 +1,10 @@
+data/
+.dev.local
+backend/.venv/
+frontend/node_modules/
+frontend/dist/
+__pycache__/
+*.log
+.pytest_cache/
+*.db
+*.db-*

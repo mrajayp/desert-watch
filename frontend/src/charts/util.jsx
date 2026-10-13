@@ -1,0 +1,114 @@
+import { useEffect, useRef, useState } from 'react'
+
+export function useSize(ref, fallback = 800) {
+  const [w, setW] = useState(fallback)
+  useEffect(() => {
+    if (!ref.current) return
+    const ro = new ResizeObserver(([e]) => setW(Math.max(260, Math.floor(e.contentRect.width))))
+    ro.observe(ref.current)
+    return () => ro.disconnect()
+  }, [ref])
+  return w
+}
+
+export function useTooltip() {
+  const [tip, setTip] = useState(null)
+  const show = (evt, content, container) => {
+    const box = container.getBoundingClientRect()
+    let x = evt.clientX - box.left + 14
+    let y = evt.clientY - box.top + 14
+    if (x > box.width - 290) x = Math.max(4, x - 300)
+    setTip({ x, y, content })
+  }
+  const node = tip ? <div className="tooltip" style={{ left: tip.x, top: tip.y }} role="status">{tip.content}</div> : null
+  return { show, hide: () => setTip(null), node }
+}
+
+// Hatch pattern for "insufficient evidence" (texture = never colour-alone).
+export function HatchDefs({ id = 'hatch' }) {
+  return (
+    <defs>
+      <pattern id={id} width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+        <rect width="6" height="6" fill="var(--surface)" />
+        <line x1="0" y1="0" x2="0" y2="6" stroke="var(--hatch)" strokeWidth="1.5" />
+      </pattern>
+    </defs>
+  )
+}
+
+// Export an SVG node (with computed colours inlined) plus a caption with source + method note.
+export function exportSvg(svgEl, { title, caption, filename = 'desert-watch-chart', format = 'svg' }) {
+  const clone = svgEl.cloneNode(true)
+  const vb = svgEl.viewBox.baseVal
+  const w = vb && vb.width ? vb.width : svgEl.clientWidth
+  const h = vb && vb.height ? vb.height : svgEl.clientHeight
+  const extra = 64
+  // inline resolved CSS variables so the file renders standalone
+  const src = svgEl.querySelectorAll('*')
+  clone.querySelectorAll('*').forEach((n, i) => {
+    const cs = getComputedStyle(src[i])
+    for (const p of ['fill', 'stroke', 'opacity', 'font-size', 'font-family', 'font-weight', 'stroke-width', 'fill-opacity', 'stroke-opacity']) {
+      const v = cs.getPropertyValue(p)
+      if (v) n.style.setProperty(p, v)
+    }
+  })
+  const bg = getComputedStyle(document.documentElement).getPropertyValue('--surface').trim() || '#fff'
+  const ink = getComputedStyle(document.documentElement).getPropertyValue('--ink-2').trim() || '#333'
+  const ns = 'http://www.w3.org/2000/svg'
+  const wrap = document.createElementNS(ns, 'svg')
+  wrap.setAttribute('xmlns', ns)
+  wrap.setAttribute('viewBox', `0 0 ${w} ${h + extra + 28}`)
+  wrap.setAttribute('width', w)
+  wrap.setAttribute('height', h + extra + 28)
+  const rect = document.createElementNS(ns, 'rect')
+  rect.setAttribute('width', '100%'); rect.setAttribute('height', '100%'); rect.setAttribute('fill', bg)
+  wrap.appendChild(rect)
+  const t = document.createElementNS(ns, 'text')
+  t.setAttribute('x', 8); t.setAttribute('y', 20); t.setAttribute('font-size', 15); t.setAttribute('font-weight', 600)
+  t.setAttribute('fill', ink); t.setAttribute('font-family', 'system-ui, sans-serif'); t.textContent = title
+  wrap.appendChild(t)
+  const g = document.createElementNS(ns, 'g')
+  g.setAttribute('transform', 'translate(0,28)')
+  clone.removeAttribute('class')
+  g.appendChild(clone)
+  wrap.appendChild(g)
+  caption.split('\n').forEach((line, i) => {
+    const c = document.createElementNS(ns, 'text')
+    c.setAttribute('x', 8); c.setAttribute('y', h + 28 + 22 + i * 15); c.setAttribute('font-size', 11)
+    c.setAttribute('fill', ink); c.setAttribute('font-family', 'system-ui, sans-serif'); c.textContent = line
+    wrap.appendChild(c)
+  })
+  const xml = new XMLSerializer().serializeToString(wrap)
+  const download = (href, ext) => {
+    const a = document.createElement('a'); a.href = href; a.download = `${filename}.${ext}`; a.click()
+  }
+  if (format === 'svg') {
+    const url = URL.createObjectURL(new Blob([xml], { type: 'image/svg+xml' }))
+    download(url, 'svg'); setTimeout(() => URL.revokeObjectURL(url), 2000)
+    return
+  }
+  const img = new Image()
+  img.onload = () => {
+    const scale = 2
+    const canvas = document.createElement('canvas')
+    canvas.width = w * scale; canvas.height = (h + extra + 28) * scale
+    const ctx = canvas.getContext('2d'); ctx.scale(scale, scale); ctx.drawImage(img, 0, 0)
+    download(canvas.toDataURL('image/png'), 'png')
+  }
+  img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(xml)
+}
+
+export function ExportMenu({ svgRef, title, caption, filename }) {
+  return (
+    <span className="row">
+      <button className="btn small ghost" onClick={() => exportSvg(svgRef.current, { title, caption, filename, format: 'svg' })} title="Download SVG with source and method note">SVG</button>
+      <button className="btn small ghost" onClick={() => exportSvg(svgRef.current, { title, caption, filename, format: 'png' })} title="Download PNG with source and method note">PNG</button>
+    </span>
+  )
+}
+
+export function useLatest(value) {
+  const r = useRef(value)
+  r.current = value
+  return r
+}
