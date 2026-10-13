@@ -26,6 +26,29 @@ def make_engine(url: str | None = None):
     return engine
 
 
+def _swap_in_uploaded_db():
+    """Boot-time data load: if `incoming.db.gz` was uploaded to the data dir (fly ssh sftp),
+    replace the database with it before anything connects, then delete the upload."""
+    import gzip
+    import logging
+    import os
+    import shutil
+    src = settings.DATA_DIR / "incoming.db.gz"
+    if not src.exists() or not settings.DATABASE_URL.startswith("sqlite:///"):
+        return
+    target = settings.DATABASE_URL.removeprefix("sqlite:///")
+    tmp = target + ".incoming"
+    with gzip.open(src, "rb") as fin, open(tmp, "wb") as fout:
+        shutil.copyfileobj(fin, fout)
+    for suffix in ("-wal", "-shm"):
+        if os.path.exists(target + suffix):
+            os.remove(target + suffix)
+    os.replace(tmp, target)
+    os.remove(src)
+    logging.getLogger("desert_watch").warning("Loaded uploaded database from %s", src)
+
+
+_swap_in_uploaded_db()
 engine = make_engine()
 SessionLocal = sessionmaker(bind=engine, expire_on_commit=False)
 
