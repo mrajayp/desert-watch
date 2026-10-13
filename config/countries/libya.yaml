@@ -144,7 +144,7 @@ outlets:
   - {name: CIHRS, domain: cihrs.org, languages: [ar, en], medium: website, scope: international, type: ngo_un, rss: "https://cihrs.org/feed/"}
   - {name: Human Rights Watch, domain: hrw.org, languages: [en, ar], medium: website, scope: international, type: ngo_un, rss: "https://www.hrw.org/rss/news"}
   - {name: Human Rights Watch (Arabic), domain: hrw.org/ar, languages: [ar], medium: website, scope: international, type: ngo_un, rss: "https://www.hrw.org/ar/rss/news"}
-  - {name: UN Women, domain: unwomen.org, languages: [en], medium: website, scope: international, type: ngo_un, rss: "https://www.unwomen.org/en/rss-feeds/news"}
+  - {name: UN Women, domain: unwomen.org, languages: [en], medium: website, scope: international, type: ngo_un}  # feed 403s from Fly IPs (2026-10-13); comes in via Google News
   - {name: UNFPA Libya, domain: libya.unfpa.org, languages: [en], medium: website, scope: international, type: ngo_un, rss: "https://libya.unfpa.org/en/rss.xml"}
   - {name: OHCHR, domain: ohchr.org, languages: [en], medium: website, scope: international, type: ngo_un, rss: "https://www.ohchr.org/en/rss.xml"}
 
