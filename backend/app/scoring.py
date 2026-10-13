@@ -123,7 +123,8 @@ def compute(s: Session, country_id: int, *, weeks: int = 12, today: date | None 
                ItemTheme.theme_id)
         .join(ItemTheme, and_(ItemTheme.item_id == Item.id, ItemTheme.active.is_(True)))
         .where(Item.country_id == country_id, Item.relevant.is_(True),
-               Item.published_at >= datetime.combine(history_from, datetime.min.time()))
+               Item.published_at >= datetime.combine(history_from, datetime.min.time()),
+               Item.published_at < datetime.combine(last + timedelta(days=7), datetime.min.time()))
     ).all()
     item_regions: dict[int, list[int]] = defaultdict(list)
     ids = {r.id for r in rows}
@@ -173,7 +174,7 @@ def compute(s: Session, country_id: int, *, weeks: int = 12, today: date | None 
 
     lenses = lenses or tuple(LENSES)
     s.execute(delete(CellWeek).where(CellWeek.country_id == country_id, CellWeek.week_start >= first,
-                                     CellWeek.lens.in_(lenses)))
+                                     CellWeek.week_start <= last, CellWeek.lens.in_(lenses)))
     n = 0
     region_ids = [r.id for r in by_id.values()]
     wk = first
@@ -236,5 +237,23 @@ def compute(s: Session, country_id: int, *, weeks: int = 12, today: date | None 
     return n
 
 
+CHUNK_WEEKS = 26  # long recomputes run in chunks so memory stays bounded (512 MB machine)
+
+
+def compute_chunked(s: Session, country_id: int, *, weeks: int = 12, today: date | None = None, **kw) -> int:
+    """Score `weeks` weeks ending at `today` in CHUNK_WEEKS-sized pieces, oldest first. Each piece
+    loads only the items its windows need (its weeks plus baseline history)."""
+    today = today or date.today()
+    last = week_start(today)
+    n, done = 0, 0
+    while done < weeks:
+        size = min(CHUNK_WEEKS, weeks - done)
+        chunk_end = last - timedelta(weeks=weeks - done - size)
+        n += compute(s, country_id, weeks=size, today=chunk_end, **kw)
+        s.expunge_all()
+        done += size
+    return n
+
+
 def compute_all(s: Session, **kw) -> int:
-    return sum(compute(s, c.id, **kw) for c in s.scalars(select(Country)))
+    return sum(compute_chunked(s, c.id, **kw) for c in s.scalars(select(Country)))
