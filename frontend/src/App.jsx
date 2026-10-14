@@ -14,6 +14,7 @@ import Admin from './pages/Admin'
 import Me from './pages/Me'
 import DigestPage from './pages/Digest'
 import Timeline from './pages/Timeline'
+import Articles from './pages/Articles'
 import { Invite, Login } from './pages/Auth'
 
 const Ctx = createContext(null)
@@ -94,6 +95,7 @@ function Shell({ me, setMe }) {
             <NavLink to="/" end>Map</NavLink>
             <NavLink to="/trends">Trends</NavLink>
             <NavLink to="/timeline">Timeline</NavLink>
+            <NavLink to="/articles">Articles</NavLink>
             <NavLink to="/outlets">Outlets</NavLink>
             <NavLink to="/digest">Digest</NavLink>
             {me.role === 'admin' && <NavLink to="/admin">Admin{pending > 0 && <span className="pill flag" style={{ marginLeft: 4 }}>{pending}</span>}</NavLink>}
@@ -119,6 +121,7 @@ function Shell({ me, setMe }) {
             <Route path="/me" element={<Me />} />
             <Route path="/digest" element={<DigestPage />} />
             <Route path="/timeline" element={<Timeline />} />
+            <Route path="/articles" element={<Articles />} />
             <Route path="*" element={<Navigate to="/" />} />
           </Routes>
         )}

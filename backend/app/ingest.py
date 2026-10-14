@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .classify import PlaceRule, ThemeRule, classify_themes, tag_places
@@ -24,6 +24,46 @@ def normalise_url(url: str) -> str:
 def domain_of(url: str) -> str:
     host = urlsplit(url).netloc.lower().split(":")[0]
     return host.removeprefix("www.").removeprefix("m.").removeprefix("amp.")
+
+
+# Social platforms: a post is attributed to its page/account ("facebook.com/<page>"), not to the
+# platform, so Facebook pages show up as outlets (and match the Facebook blind-spot register).
+SOCIAL = {"facebook.com": "facebook", "fb.com": "facebook", "instagram.com": "instagram", "x.com": "x",
+          "twitter.com": "x", "tiktok.com": "tiktok", "youtube.com": "youtube", "t.me": "telegram"}
+_SOCIAL_CANON = {"fb.com": "facebook.com", "twitter.com": "x.com", "mobile.twitter.com": "x.com"}
+# first path segments that are not an account
+_SOCIAL_RESERVED = {"watch", "reel", "reels", "share", "story.php", "photo.php", "photo", "video.php", "events",
+                    "hashtag", "p", "tv", "explore", "i", "search", "home", "intent", "shorts", "results",
+                    "playlist", "embed", "s", "login", "marketplace", "people", "pages", "profile.php",
+                    "permalink.php", "media", "stories", "live", "channel", "c", "user", "status", "tag", "discover"}
+
+
+def social_outlet(url: str) -> tuple[str, str] | None:
+    """('facebook.com/<page>', platform) for a post on a social platform, or None. Returns the bare
+    platform domain when the account cannot be read from the URL (e.g. facebook.com/reel/123)."""
+    p = urlsplit(url)
+    host = domain_of(url)
+    host = _SOCIAL_CANON.get(host, host)
+    if host not in SOCIAL:
+        return None
+    segs = [x for x in p.path.split("/") if x]
+    q = dict(parse_qsl(p.query))
+    account = None
+    if host == "facebook.com":
+        if segs[:1] == ["groups"] and len(segs) > 1:
+            account = f"groups/{segs[1]}"
+        elif segs and segs[0] in ("permalink.php", "story.php", "profile.php") and q.get("id"):
+            account = q["id"]
+        elif segs and segs[0].lower() not in _SOCIAL_RESERVED:
+            account = segs[0]
+    elif host in ("tiktok.com", "youtube.com"):
+        if segs and segs[0].startswith("@"):
+            account = segs[0]
+        elif host == "youtube.com" and len(segs) > 1 and segs[0] in ("channel", "c", "user"):
+            account = f"{segs[0]}/{segs[1]}"
+    elif segs and segs[0].lower() not in _SOCIAL_RESERVED:
+        account = segs[0]
+    return (f"{host}/{account}" if account else host), SOCIAL[host]
 
 
 def url_key(url: str) -> str:
@@ -65,20 +105,47 @@ def resolve_outlet(s: Session, country_id: int, domain: str, name: str | None, l
                    cache: dict) -> Outlet:
     if domain in cache:
         return cache[domain]
-    o = s.scalar(select(Outlet).where(Outlet.domain == domain))
-    if not o:
+    social = "/" in domain  # a page on a social platform (see social_outlet)
+    if social:  # page names are case-insensitive (the scrape has "LibyaAlAhrarTV", links may not)
+        o = s.scalar(select(Outlet).where(func.lower(Outlet.domain) == domain.lower()).limit(1))
+    else:
+        o = s.scalar(select(Outlet).where(Outlet.domain == domain))
+    if not o and not social:
         # Strip a subdomain level for things like arabic.cnn.com -> cnn.com if we know the parent.
         parts = domain.split(".")
         if len(parts) > 2:
             o = s.scalar(select(Outlet).where(Outlet.domain == ".".join(parts[-2:])))
     if not o:
-        o = Outlet(country_id=country_id, name=name or domain, domain=domain,
+        platform = SOCIAL.get(domain.split("/")[0])
+        o = Outlet(country_id=country_id, name=(domain.split("/", 1)[1] if social else name or domain), domain=domain,
                    languages=[lang] if lang and lang != "und" else [], created_via="auto")
         s.add(o)
         s.flush()
+        if platform:
+            s.add(OutletCategory(outlet_id=o.id, dimension="medium", value=platform, confidence="reported",
+                                 evidence_url=f"https://{domain}", note="Inferred from the link."))
         infer_scope(s, o)
     cache[domain] = o
     return o
+
+
+def reassign_social(s: Session) -> dict:
+    """Move posts that were filed under a whole platform (facebook.com, x.com ...) to their page."""
+    platforms = [o for o in s.scalars(select(Outlet).where(Outlet.domain.in_(list(SOCIAL))))]
+    cache: dict = {}
+    moved = pages = 0
+    for plat in platforms:
+        for it in s.scalars(select(Item).where(Item.outlet_id == plat.id, Item.url.is_not(None))).all():
+            social = social_outlet(it.url)
+            if not social or social[0] == plat.domain:
+                continue
+            before = len(cache)
+            o = resolve_outlet(s, it.country_id, social[0], None, it.lang, cache)
+            pages += len(cache) > before
+            it.outlet_id = o.id
+            moved += 1
+    s.commit()
+    return {"moved": moved, "pages": pages}
 
 
 def infer_scope(s: Session, o: Outlet) -> bool:
@@ -145,7 +212,10 @@ def store_article(s: Session, country_id: int, rules: Rules, *, url: str, title:
     if require_theme and not forced_theme_ids:
         if not classify_themes(" ".join(x for x in (title, snippet) if x), rules.themes):
             return None, False
-    outlet = resolve_outlet(s, country_id, outlet_domain or domain_of(url), outlet_name, lang,
+    social = social_outlet(url)
+    # a social post belongs to its page even when a search result names the platform as the source
+    domain = social[0] if social else (outlet_domain or domain_of(url))
+    outlet = resolve_outlet(s, country_id, domain, None if social else outlet_name, lang,
                             outlet_cache if outlet_cache is not None else {})
     # Relevance guard for search-sourced items: the text must name the country or one of its
     # places, or come from an outlet scoped to the country. Otherwise keep it but mark it

@@ -66,9 +66,29 @@ def window_bounds(week: date, weeks: int):
 
 
 def items_query(s: Session, *, country_id: int, theme_id: int | None, region: Region | None, start, end,
-                kinds=("article",), limit=200, offset=0, outlet_id: int | None = None, q: str | None = None):
+                kinds=("article",), limit=200, offset=0, outlet_id: int | None = None, q: str | None = None,
+                source: str | None = None, lang: str | None = None, with_sources: bool = False):
+    """(total, rows) or, with_sources, (total, rows, {source_key: count}) where the source counts
+    ignore the `source` filter so a UI can show every option with its count."""
+    stmt = _items_stmt(s, country_id=country_id, theme_id=theme_id, region=region, start=start, end=end,
+                       kinds=kinds, outlet_id=outlet_id, q=q, lang=lang)
+    by_source = None
+    if with_sources:
+        sub = stmt.subquery()
+        by_source = dict(s.execute(select(sub.c.source_key, func.count()).group_by(sub.c.source_key)).all())
+    if source:
+        stmt = stmt.where(Item.source_key == source)
+    total = s.scalar(select(func.count()).select_from(stmt.subquery()))
+    rows = s.scalars(stmt.order_by(Item.published_at.desc()).limit(limit).offset(offset)).all()
+    return (total, rows, by_source) if with_sources else (total, rows)
+
+
+def _items_stmt(s: Session, *, country_id: int, theme_id: int | None, region: Region | None, start, end,
+                kinds, outlet_id: int | None, q: str | None, lang: str | None):
     stmt = select(Item).where(Item.country_id == country_id, Item.kind.in_(kinds), Item.relevant.is_(True),
                               Item.published_at >= start, Item.published_at < end)
+    if lang:
+        stmt = stmt.where(Item.lang == lang)
     if theme_id:
         stmt = stmt.where(Item.id.in_(select(ItemTheme.item_id).where(ItemTheme.theme_id == theme_id,
                                                                       ItemTheme.active.is_(True))))
@@ -79,9 +99,7 @@ def items_query(s: Session, *, country_id: int, theme_id: int | None, region: Re
         stmt = stmt.where(Item.outlet_id == outlet_id)
     if q:
         stmt = stmt.where(Item.title.ilike(f"%{q}%"))
-    total = s.scalar(select(func.count()).select_from(stmt.subquery()))
-    rows = s.scalars(stmt.order_by(Item.published_at.desc()).limit(limit).offset(offset)).all()
-    return total, rows
+    return stmt
 
 
 def hydrate_items(s: Session, rows: list[Item]) -> list[dict]:

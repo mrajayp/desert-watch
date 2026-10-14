@@ -18,7 +18,7 @@ dimensions:
   - key: medium
     name: Medium
     contested: false
-    values: [website, tv, radio, facebook, telegram, x, print]
+    values: [website, tv, radio, facebook, instagram, telegram, x, tiktok, youtube, print]
   - key: reach
     name: Reach tier
     contested: false

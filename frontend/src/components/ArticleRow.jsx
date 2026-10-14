@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { api, track } from '../api'
 import { useApp } from '../App'
-import { DIMENSIONS } from '../charts/scales'
+import { DIMENSIONS, sourceLabel } from '../charts/scales'
 
 // One article with inline corrections. Every correction is a training label.
 export default function ArticleRow({ item, onChanged, context = {} }) {
@@ -18,7 +18,7 @@ export default function ArticleRow({ item, onChanged, context = {} }) {
           <a href={item.url} target="_blank" rel="noreferrer noopener" dir="auto" onClick={() => track('click', 'item', item.id, { ...context, out: true })}>{item.title}</a>
           <div className="small muted">
             {item.published_at.slice(0, 10)} · <button className="btn small ghost" style={{ padding: 0 }} onClick={() => item.outlet && openOutlet(item.outlet.id)}>{item.outlet?.name || '—'}</button>
-            {scope && ` · ${DIMENSIONS.scope.values[scope] || scope}`} · {item.lang?.toUpperCase()} · via {item.source}{item.user_added && ' · added by team'}
+            {scope && ` · ${DIMENSIONS.scope.values[scope] || scope}`} · {item.lang?.toUpperCase()} · via {sourceLabel(item.source)}{item.user_added && ' · added by team'}
           </div>
           <div className="row small" style={{ marginTop: 3 }}>
             {item.theme_ids.map((t) => <span key={t} className="pill">{lang === 'ar' ? themes.get(t)?.name_ar : themes.get(t)?.name_en}</span>)}

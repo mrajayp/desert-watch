@@ -100,13 +100,16 @@ def add_item(body: AddIn, s: Session = Depends(get_db), u: User = Depends(auth.r
 @router.get("/items")
 def list_items(country: str = "LY", theme_id: int | None = None, region_id: int | None = None,
                outlet_id: int | None = None, q: str | None = None, days: int = 28, kind: str = "article",
+               source: str | None = None, lang: str | None = None,
                limit: int = 50, offset: int = 0, s: Session = Depends(get_db), _: User = Depends(auth.current_user)):
     c = country_or_404(s, country)
     region = region_or_404(s, region_id) if region_id else None
     end = utcnow() + timedelta(days=1)
-    total, rows = items_query(s, country_id=c.id, theme_id=theme_id, region=region, start=end - timedelta(days=days + 1),
-                              end=end, kinds=(kind,), limit=min(limit, 200), offset=offset, outlet_id=outlet_id, q=q)
-    return {"total": total, "items": hydrate_items(s, rows)}
+    total, rows, by_source = items_query(
+        s, country_id=c.id, theme_id=theme_id, region=region, start=end - timedelta(days=days + 1), end=end,
+        kinds=(kind,), limit=min(limit, 200), offset=offset, outlet_id=outlet_id, q=q, source=source, lang=lang,
+        with_sources=True)
+    return {"total": total, "items": hydrate_items(s, rows), "by_source": by_source}
 
 
 @router.get("/items/{item_id}")

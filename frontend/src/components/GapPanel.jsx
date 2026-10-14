@@ -6,6 +6,7 @@ import { INFO_FLAGS, DIMENSIONS, LENS_TEXT, flagText, fmt, gapLabel } from '../c
 import Comments from './Comments'
 import ArticleRow from './ArticleRow'
 import BlindSpots from './BlindSpots'
+import SourceFilter from './SourceFilter'
 
 const VOTES = [
   ['real', 'Real gap', 'This is under-reported and worth covering'],
@@ -21,8 +22,9 @@ export default function GapPanel({ themeId, regionId }) {
   const [pending, setPending] = useState(null)
   const [err, setErr] = useState(null)
   const [claimUrl, setClaimUrl] = useState('')
-  const load = () => api('/api/gap' + qs({ theme_id: themeId, region_id: regionId, lens: filters.lens, week: filters.week })).then(setD)
-  useEffect(() => { load() }, [themeId, regionId, filters.lens, filters.week])
+  const [source, setSource] = useState('')
+  const load = () => api('/api/gap' + qs({ theme_id: themeId, region_id: regionId, lens: filters.lens, week: filters.week, source: source || undefined })).then(setD)
+  useEffect(() => { load() }, [themeId, regionId, filters.lens, filters.week, source])
   useEffect(() => dwell('gap', `${themeId}:${regionId}`, { lens: filters.lens }), [themeId, regionId, filters.lens])
 
   if (!d) return <aside className="drawer" aria-label="Gap detail"><div className="empty">Loading…</div></aside>
@@ -107,6 +109,7 @@ export default function GapPanel({ themeId, regionId }) {
         <h3>Articles in window ({fmt(d.articles.total)})</h3>
         <button className="btn small" onClick={() => openAdd({ theme_ids: [themeId], region_ids: d.region.level === 'national' ? [] : [regionId] })}>+ Add missing article</button>
       </div>
+      <SourceFilter counts={d.articles.by_source} value={source} onChange={setSource} />
       <ul className="list">{d.articles.items.map((it) => <ArticleRow key={it.id} item={it} onChanged={load} context={{ themeId, regionId }} />)}</ul>
       {d.statements?.total > 0 && (
         <>

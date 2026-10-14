@@ -143,14 +143,14 @@ def coverage_history(theme_id: int, s: Session = Depends(get_db), _: User = Depe
 
 @router.get("/gap")
 def gap_detail(theme_id: int, region_id: int, lens: str = "audience", week: date | None = None,
-               s: Session = Depends(get_db), u: User = Depends(auth.current_user)):
+               source: str | None = None, s: Session = Depends(get_db), u: User = Depends(auth.current_user)):
     theme, region = theme_or_404(s, theme_id), region_or_404(s, region_id)
     week = week or s.scalar(select(func.max(CellWeek.week_start)).where(CellWeek.country_id == region.country_id))
     cell = s.scalar(select(CellWeek).where(CellWeek.theme_id == theme_id, CellWeek.region_id == region_id,
                                            CellWeek.lens == lens, CellWeek.week_start == week)) if week else None
     start, end = window_bounds(week or week_start(date.today()), settings.WINDOW_WEEKS)
-    total, arts = items_query(s, country_id=region.country_id, theme_id=theme_id, region=region, start=start, end=end,
-                              limit=150)
+    total, arts, by_source = items_query(s, country_id=region.country_id, theme_id=theme_id, region=region,
+                                         start=start, end=end, limit=150, source=source, with_sources=True)
     need_kinds = LENSES[lens]["kinds"]
     need_total, need_items = items_query(s, country_id=region.country_id, theme_id=theme_id, region=region,
                                          start=start, end=end, kinds=need_kinds, limit=100)
@@ -166,7 +166,7 @@ def gap_detail(theme_id: int, region_id: int, lens: str = "audience", week: date
         "region": {"id": region.id, "name_en": region.name_en, "name_ar": region.name_ar, "level": region.level},
         "week": week.isoformat() if week else None, "window": [start.date().isoformat(), end.date().isoformat()],
         "cell": _cell_json(cell) if cell else None,
-        "articles": {"total": total, "items": hydrate_items(s, arts)},
+        "articles": {"total": total, "items": hydrate_items(s, arts), "by_source": by_source},
         "need_items": {"total": need_total, "items": hydrate_items(s, need_items)},
         "statements": {"total": st_total, "items": hydrate_items(s, statements)},
         "votes": [{"user": names.get(v.user_id), "mine": v.user_id == u.id, "vote": v.vote, "note": v.note,

@@ -83,3 +83,10 @@ export const LENS_TEXT = {
 }
 
 export const fmt = (n) => n == null ? '–' : n >= 1e6 ? `${(n / 1e6).toFixed(n >= 1e7 ? 0 : 1)}M` : n >= 10000 ? `${(n / 1000).toFixed(n >= 100000 ? 0 : 1)}K` : Math.round(n).toLocaleString()
+
+// Where an article came from (item.source = collector key)
+export const SOURCE_LABELS = {
+  galerts: 'Google Alerts', gnews: 'Google News', rss: 'Outlet RSS', gdelt: 'GDELT',
+  official: 'Official / ReliefWeb', user: 'Added by team',
+}
+export const sourceLabel = (k) => SOURCE_LABELS[k] || k
