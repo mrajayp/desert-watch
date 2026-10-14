@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import BlindSpots from '../components/BlindSpots'
 import { api, qs } from '../api'
 import { useApp } from '../App'
 import Filters from '../components/Filters'
@@ -83,6 +84,7 @@ export default function Outlets() {
           {clusters && <ClusterDistrictTable clusters={clusters.clusters} districts={clusters.districts} regions={meta.regions} lang={lang} highlight={highlight}
             onSelectDistrict={(rid) => openGap(meta.themes[0].id, rid, { from: 'cluster_table' })} />}
         </section>
+        <BlindSpots />
         <section className="card" style={{ marginTop: 16 }}>
           <div className="card-head">
             <h2>Outlets ({shown.length})</h2>
@@ -93,7 +95,7 @@ export default function Outlets() {
           </div>
           <div className="scroll">
             <table className="data">
-              <thead><tr><th>Outlet</th><th className="num">Articles (12 wk)</th><th>Arabic share</th><th>Base</th><th>Scope</th><th>Alignment</th><th>Quality</th><th /></tr></thead>
+              <thead><tr><th>Outlet</th><th className="num">Articles (12 wk)</th><th>Arabic share</th><th>Base</th><th>Scope</th><th>Alignment</th><th title="Social Media scraped data, Oct 2023 to Aug 2024">Scrape 2023–24</th><th>Quality</th><th /></tr></thead>
               <tbody>{shown.map((r) => {
                 const total = Object.values(r.lang_mix).reduce((a, b) => a + b, 0) || 1
                 return (
@@ -104,6 +106,9 @@ export default function Outlets() {
                     <td>{r.base_city || r.base_country || <span className="muted">–</span>}</td>
                     <td>{r.categories.scope ? DIMENSIONS.scope.values[r.categories.scope.value] : <span className="muted">–</span>}</td>
                     <td>{r.categories.alignment ? <>{DIMENSIONS.alignment.values[r.categories.alignment.value]} <span className="pill">{r.categories.alignment.confidence}</span></> : <span className="muted">–</span>}</td>
+                    <td className="small">{r.external?.social_media_scrape ? <>
+                      {fmt(r.external.social_media_scrape.articles)} art. · {fmt(r.external.social_media_scrape.fb_engagement)} FB eng.
+                      {r.categories.scrape_affiliation && <div className="muted">labelled {r.categories.scrape_affiliation.value} <span className="pill">disputed</span></div>}</> : '–'}</td>
                     <td className="small">{r.quality ? `${r.quality.accuracy}/${r.quality.depth}/${r.quality.local_sourcing} (n=${r.quality.n})` : '–'}</td>
                     <td><button className="btn small" onClick={() => openOutlet(r.id)}>Open{r.pending_changes ? ` · ${r.pending_changes} pending` : ''}</button></td>
                   </tr>)

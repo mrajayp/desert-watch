@@ -5,6 +5,7 @@ import { MixBar } from '../charts/Balance'
 import { INFO_FLAGS, DIMENSIONS, LENS_TEXT, flagText, fmt, gapLabel } from '../charts/scales'
 import Comments from './Comments'
 import ArticleRow from './ArticleRow'
+import BlindSpots from './BlindSpots'
 
 const VOTES = [
   ['real', 'Real gap', 'This is under-reported and worth covering'],
@@ -70,6 +71,7 @@ export default function GapPanel({ themeId, regionId }) {
           <div style={{ height: 8 }} />
           <MixBar parts={b.lang || {}} labels={{ ar: 'Arabic', en: 'English', und: 'Unknown' }}
             colors={{ ar: 'var(--scope-libyan)', en: 'var(--scope-international)' }} />
+          <BlindSpots compact />
           <p className="small muted">Previous 4 weeks: {fmt(b.prev_coverage)} articles vs {fmt(b.prev_need)} {lensInfo.unit}. Monitored sources only.</p>
         </>)}
 

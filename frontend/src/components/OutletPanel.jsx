@@ -50,8 +50,14 @@ export default function OutletPanel({ id }) {
         {tax.dimensions.map((d) => {
           const c = o.categories[d.key]
           return <tr key={d.key}><th>{d.name}{d.contested && <span className="muted small"> (contested)</span>}</th>
-            <td>{c ? <>{label(d.key, c.value)} <span className="pill">{c.confidence}</span> <a className="small" href={c.evidence_url} target="_blank" rel="noreferrer noopener">evidence ↗</a></> : <span className="muted">unclassified</span>}</td></tr>
+            <td>{c ? <>{d.third_party && <span className="muted small">as published: </span>}{label(d.key, c.value)} <span className="pill">{c.confidence}</span>{' '}
+              {c.evidence_url?.startsWith('http') ? <a className="small" href={c.evidence_url} target="_blank" rel="noreferrer noopener">evidence ↗</a>
+                : <span className="small muted">source: Social Media scraped data (2023–24)</span>}</> : <span className="muted">unclassified</span>}</td></tr>
         })}
+        {o.monitored === false && <tr><th>Collection</th><td><span className="pill flag">not monitored</span> <span className="small muted">Facebook page: Desert Watch cannot collect its posts</span></td></tr>}
+        {o.external?.social_media_scrape && <tr><th>Social-media scrape</th><td className="small">
+          {Object.entries(o.external.social_media_scrape).filter(([k]) => !['source', 'period', 'link', 'kind'].includes(k)).map(([k, v]) => `${k.replace('_', ' ')} ${Number(v).toLocaleString()}`).join(' · ')}
+          <div className="muted">Social Media scraped data, {o.external.social_media_scrape.period?.from} to {o.external.social_media_scrape.period?.to}</div></td></tr>}
         {o.quality && <tr><th>Quality (team)</th><td>accuracy {o.quality.accuracy} · depth {o.quality.depth} · local voices {o.quality.local_sourcing} <span className="muted">(n={o.quality.n})</span></td></tr>}
       </tbody></table>
 

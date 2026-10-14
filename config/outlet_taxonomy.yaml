@@ -23,4 +23,16 @@ dimensions:
     name: Reach tier
     contested: false
     values: [national, regional, local, niche, unknown]
+  # Labels as published in the 2023-24 social-media scrape ("Social Media scraped data").
+  # Kept apart from `alignment`: they never drive filters or the partisan-only flag.
+  - key: scrape_source_type
+    name: "Social-media scrape: source type (2023-24)"
+    contested: true
+    third_party: true
+    values: [authentic, inauthentic]
+  - key: scrape_affiliation
+    name: "Social-media scrape: affiliation (2023-24)"
+    contested: true
+    third_party: true
+    values: [Pro-LNA, Anti-LNA, Pro-GNU, Anti-GNU, Pro-Gaddafi, Tribal, Egypt, KSA, Turkey, UAE, Unavailable]
 confidence_levels: [reported, likely, disputed, unverified]

@@ -56,7 +56,8 @@ def list_outlets(country: str = "LY", days: int = 84, min_articles: int = 0, s: 
             continue
         out.append({"id": o.id, "name": o.name, "domain": o.domain, "languages": o.languages, "rss": bool(o.rss_url),
                     "base_city": o.base_city, "base_country": o.base_country, "lat": o.lat, "lon": o.lon,
-                    "created_via": o.created_via, "articles": n, "lang_mix": dict(langs.get(o.id, {})),
+                    "created_via": o.created_via, "monitored": o.monitored is not False,
+                    "external": o.external or {}, "articles": n, "lang_mix": dict(langs.get(o.id, {})),
                     "categories": cats.get(o.id, {}), "pending_changes": pending.get(o.id, 0),
                     "quality": q.get(o.id)})
     out.sort(key=lambda x: -x["articles"])
@@ -329,3 +330,21 @@ def cluster_periods(country: str = "LY", period_weeks: int = 4, s: Session = Dep
         per_cluster_theme[comm[e.source_node]][idx][int(e.target_node[2:])] += e.weight
     return {"periods": periods, "outlets": per_outlet,
             "clusters": {k: {"articles": v, "themes": [dict(x) for x in per_cluster_theme[k]]} for k, v in per_cluster.items()}}
+
+
+@router.get("/outlets/blind-spots")
+def blind_spots(country: str = "LY", s: Session = Depends(get_db), _: User = Depends(auth.current_user)):
+    """Known outlets we cannot collect from (Facebook pages), with their reach in the period the
+    external dataset covers, and any third-party labels as published."""
+    c = country_or_404(s, country)
+    rows = s.scalars(select(Outlet).where(Outlet.country_id == c.id, Outlet.monitored.is_(False))).all()
+    cats = outlet_categories(s, [r.id for r in rows])
+    out = []
+    for r in rows:
+        ext = (r.external or {}).get("social_media_scrape", {})
+        out.append({"id": r.id, "name": r.name, "domain": r.domain, "kind": ext.get("kind"), "posts": ext.get("posts"),
+                    "interactions": ext.get("interactions"), "comments": ext.get("comments"), "shares": ext.get("shares"),
+                    "link": ext.get("link"), "period": ext.get("period"), "source": ext.get("source"),
+                    "labels": {k: v["value"] for k, v in cats.get(r.id, {}).items() if k.startswith("scrape_")}})
+    out.sort(key=lambda x: -(x["interactions"] or 0))
+    return out

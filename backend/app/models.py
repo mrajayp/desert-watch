@@ -84,7 +84,11 @@ class Outlet(Base):
     base_country: Mapped[str | None] = mapped_column(String(100))
     lat: Mapped[float | None] = mapped_column(Float)
     lon: Mapped[float | None] = mapped_column(Float)
-    created_via: Mapped[str] = mapped_column(String(10), default="seed")  # seed | auto | user
+    created_via: Mapped[str] = mapped_column(String(10), default="seed")  # seed | auto | user | import
+    # False = known outlet we cannot collect from (e.g. Facebook pages): a visible blind spot
+    monitored: Mapped[bool | None] = mapped_column(Boolean, default=True)
+    # metrics from external datasets, keyed by source, e.g. {"social_media_scrape": {...}}
+    external: Mapped[dict | None] = mapped_column(JSON, default=dict)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 

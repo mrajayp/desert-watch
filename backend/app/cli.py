@@ -11,6 +11,7 @@
                             Google News date-range backfill + paged outlet feeds + Wikipedia pageviews
   review [DIR] [--themes a,b]  data-quality summary + labelling sample (default DIR: docs/review)
   digest [--force]          generate the weekly AI digest (needs ANTHROPIC_API_KEY)
+  import-social-scrape PATH load the converted social-media scrape JSON (outlets, Facebook register, labels)
   sync-themes               overwrite DB theme terms from config/themes.yaml (bumps versions, re-tags)
 """
 import getpass
@@ -85,6 +86,11 @@ def main(argv: list[str]):
         out = Path(args[0]) if args and not args[0].startswith("--") else settings.REPO_ROOT / "docs" / "review"
         with SessionLocal() as s:
             print(run_review(s, out, theme_slugs=opt("--themes").split(",") if opt("--themes") else None))
+    elif cmd == "import-social-scrape":
+        from pathlib import Path
+        from .imports.social_scrape import run as run_import
+        with SessionLocal() as s:
+            print(run_import(s, Path(args[0])))
     elif cmd == "digest":
         from .jobs import weekly_digest
         print(weekly_digest(force="--force" in args))
