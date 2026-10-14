@@ -82,4 +82,4 @@ export const LENS_TEXT = {
   journalist: { label: 'Journalists', unit: 'flags', blurb: 'Gaps flagged by your team vs coverage' },
 }
 
-export const fmt = (n) => n == null ? '–' : n >= 10000 ? `${(n / 1000).toFixed(n >= 100000 ? 0 : 1)}K` : Math.round(n).toLocaleString()
+export const fmt = (n) => n == null ? '–' : n >= 1e6 ? `${(n / 1e6).toFixed(n >= 1e7 ? 0 : 1)}M` : n >= 10000 ? `${(n / 1000).toFixed(n >= 100000 ? 0 : 1)}K` : Math.round(n).toLocaleString()

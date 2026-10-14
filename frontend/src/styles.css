@@ -71,12 +71,12 @@ button, input, select, textarea { font: inherit; color: inherit; }
 [dir="rtl"], .ar { font-family: var(--sans); }
 
 /* ---- shell */
-.shell { display: grid; grid-template-rows: auto auto 1fr; min-height: 100vh; }
+.shell { display: grid; grid-template-rows: auto auto 1fr; grid-template-columns: minmax(0, 1fr); min-height: 100vh; }
 .topbar { display: flex; align-items: center; gap: 16px; padding: 10px 20px; background: var(--surface); border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 20; }
 .brand { font-weight: 650; letter-spacing: .01em; display: flex; align-items: center; gap: 8px; white-space: nowrap; }
 .brand-mark { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--gap-5); display: inline-grid; place-items: center; }
 .brand-mark::after { content: ""; width: 4px; height: 4px; border-radius: 50%; background: var(--gap-5); }
-.nav { display: flex; gap: 2px; overflow-x: auto; flex: 1; }
+.nav { display: flex; gap: 2px; overflow-x: auto; flex: 1; min-width: 0; }
 .nav a { padding: 6px 10px; border-radius: 6px; color: var(--ink-2); white-space: nowrap; }
 .nav a.active { background: var(--surface-2); color: var(--ink); font-weight: 600; }
 .nav a:hover { text-decoration: none; background: var(--surface-2); }
@@ -97,6 +97,7 @@ textarea { width: 100%; min-height: 70px; resize: vertical; }
 
 main.page { padding: 20px; max-width: 1500px; width: 100%; margin: 0 auto; }
 .grid { display: grid; gap: 16px; }
+@media (max-width: 1100px) { .topbar { flex-wrap: wrap; row-gap: 6px; } .topbar .nav { order: 3; flex-basis: 100%; } }
 .grid.two { grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr); }
 .grid.halves { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
 @media (max-width: 1000px) { .grid.two, .grid.halves { grid-template-columns: minmax(0, 1fr); } }
