@@ -1,4 +1,5 @@
 """Backfill coverage from a list of article links (e.g. a media-monitoring review's citations).
+Rows may be prefetched elsewhere (a "meta" dict or an "error"), so a small server only stores them.
 
 Input JSON: [{"url", "date" (YYYY-MM-DD the link was cited), "outlet" (name or null),
               "ref": {...internal labels, never shown}}]
@@ -98,6 +99,11 @@ def run(s: Session, path: Path, *, max_ratio: float = 0.2, limit: int | None = N
     last: dict[str, float] = {}
 
     def get(r):
+        # rows fetched elsewhere carry "meta" (or "error"): store them without touching the network
+        if "meta" in r:
+            return r, r["meta"], None
+        if "error" in r:
+            return r, None, r["error"]
         d = domain_of(r["url"])
         with locks[d]:  # one request at a time per site, spaced out
             wait = per_domain_interval - (time.monotonic() - last.get(d, 0))

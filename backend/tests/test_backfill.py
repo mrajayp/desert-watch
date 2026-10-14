@@ -65,3 +65,15 @@ def test_backfill_survives_expunge_after_200(db, tmp_path):
     fake = lambda url: {"title": f"اشتباكات في طرابلس ليبيا رقم {url[-4:]}", "lang": "ar"}  # noqa: E731
     out = run(db, p, fetch=fake, per_domain_interval=0)
     assert out["stored"] == 410
+
+
+def test_prefetched_rows_need_no_network(db, tmp_path):
+    day = (utcnow().date() - timedelta(days=3)).isoformat()
+    rows = [{"url": "https://pre.ly/1", "date": day, "meta": {"title": "انقطاع الكهرباء في سبها ليبيا", "lang": "ar"}},
+            {"url": "https://pre.ly/2", "date": day, "error": "The site answered 403."}]
+    p = tmp_path / "pre.json"
+    p.write_text(json.dumps(rows), encoding="utf-8")
+    def boom(url):
+        raise AssertionError("network used")
+    out = run(db, p, fetch=boom, per_domain_interval=0)
+    assert out["stored"] == 1 and out["failed"] == 1
