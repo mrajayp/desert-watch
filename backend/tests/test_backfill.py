@@ -48,3 +48,8 @@ def test_backfill_only_under_collected_outlets(db, tmp_path):
     calls.clear()
     out2 = run(db, p, fetch=fake_fetch, per_domain_interval=0)
     assert out2["to_fetch"] == 1 and out2["stored"] == 0
+
+
+def test_junk_titles_rejected():
+    for t in ("Contact Support", "Just a moment...", "404", "Access denied", "الرئيسية", "short"):
+        assert _clean_title(t, None) is None, t

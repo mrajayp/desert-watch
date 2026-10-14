@@ -41,8 +41,14 @@ def _published(meta_published: str | None, cited: date) -> datetime:
     return datetime.combine(cited - timedelta(days=1), datetime.min.time()).replace(hour=12)
 
 
+# bot walls, error pages and homepages: not an article title
+_JUNK = ("contact support", "just a moment", "access denied", "attention required", "forbidden", "not found",
+         "page not found", "404", "403", "error", "security check", "are you a robot", "captcha", "403 forbidden",
+         "service unavailable", "just a moment...", "الصفحة غير موجودة", "خطأ", "الرئيسية")
+
+
 def _clean_title(title: str | None, site: str | None) -> str | None:
-    if not title:
+    if not title or title.strip().lower() in _JUNK or len(title.strip()) < 12:
         return None
     for sep in (" | ", " - ", " – ", " — "):
         if sep in title:
