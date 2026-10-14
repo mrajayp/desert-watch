@@ -44,12 +44,24 @@ def test_backfill_only_under_collected_outlets(db, tmp_path):
     it = db.scalar(select(Item).where(Item.source_key == "backfill").limit(1))
     assert it.extra["ref"] == {"section": "Health"} and it.relevant
     assert db.get(Outlet, it.outlet_id).name == "Missing (Arabic)"
-    # resumable: a second run fetches only the failed link
+    # resumable: a second run skips stored links and the link that failed before
     calls.clear()
     out2 = run(db, p, fetch=fake_fetch, per_domain_interval=0)
-    assert out2["to_fetch"] == 1 and out2["stored"] == 0
+    assert out2["to_fetch"] == 1 and out2["skipped_failed_before"] == 1 and calls == []
+    out3 = run(db, p, fetch=fake_fetch, per_domain_interval=0, retry_failed=True)
+    assert len(calls) == 1 and out3["failed"] == 1
 
 
 def test_junk_titles_rejected():
     for t in ("Contact Support", "Just a moment...", "404", "Access denied", "الرئيسية", "short"):
         assert _clean_title(t, None) is None, t
+
+
+def test_backfill_survives_expunge_after_200(db, tmp_path):
+    day = (utcnow().date() - timedelta(days=3)).isoformat()
+    rows = [{"url": f"https://big.ly/a{i}", "date": day, "outlet": None} for i in range(410)]
+    p = tmp_path / "links.json"
+    p.write_text(json.dumps(rows), encoding="utf-8")
+    fake = lambda url: {"title": f"اشتباكات في طرابلس ليبيا رقم {url[-4:]}", "lang": "ar"}  # noqa: E731
+    out = run(db, p, fetch=fake, per_domain_interval=0)
+    assert out["stored"] == 410

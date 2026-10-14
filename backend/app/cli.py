@@ -94,7 +94,8 @@ def main(argv: list[str]):
         opt = lambda k, d=None: args[args.index(k) + 1] if k in args else d  # noqa: E731
         with SessionLocal() as s:
             print(run_backfill(s, Path(args[0]), max_ratio=float(opt("--max-ratio") or 0.2),
-                               limit=int(opt("--limit")) if opt("--limit") else None))
+                               limit=int(opt("--limit")) if opt("--limit") else None,
+                               retry_failed="--retry-failed" in args))
     elif cmd == "reassign-social":
         from .ingest import reassign_social
         with SessionLocal() as s:

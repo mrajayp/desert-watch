@@ -80,13 +80,19 @@ def select_links(s: Session, rows: list[dict], max_ratio: float) -> tuple[list[d
 
 
 def run(s: Session, path: Path, *, max_ratio: float = 0.2, limit: int | None = None, workers: int = 8,
-        per_domain_interval: float = 1.0, fetch=fetch_meta) -> dict:
+        per_domain_interval: float = 1.0, fetch=fetch_meta, retry_failed: bool = False) -> dict:
     rows = json.loads(Path(path).read_text(encoding="utf-8"))
-    c = s.scalar(select(Country).where(Country.iso2 == "LY"))
+    cid = s.scalar(select(Country.id).where(Country.iso2 == "LY"))  # a plain id: survives expunge_all
     todo, stats = select_links(s, rows, max_ratio)
+    # links that failed before (blocked site, removed page) are skipped unless retry_failed
+    failed_path = Path(path).with_suffix(".failed.json")
+    failed_urls = set(json.loads(failed_path.read_text(encoding="utf-8"))) if failed_path.exists() else set()
+    if not retry_failed:
+        todo = [r for r in todo if r["url"] not in failed_urls]
+    stats["skipped_failed_before"] = stats["to_fetch"] - len(todo)
     if limit:
         todo = todo[:limit]
-    rules = load_rules(s, c.id)
+    rules = load_rules(s, cid)
     cache: dict = {}
     locks: dict[str, threading.Lock] = defaultdict(threading.Lock)
     last: dict[str, float] = {}
@@ -115,6 +121,7 @@ def run(s: Session, path: Path, *, max_ratio: float = 0.2, limit: int | None = N
         for n, (r, meta, err) in enumerate(pool.map(get, order), 1):
             if err or not meta:
                 failed += 1
+                failed_urls.add(r["url"])
                 errors[f"{domain_of(r['url'])}: {err}"[:80]] += 1
             else:
                 cited = date.fromisoformat(r["date"])
@@ -123,7 +130,7 @@ def run(s: Session, path: Path, *, max_ratio: float = 0.2, limit: int | None = N
                     untitled += 1
                 else:
                     _, created = store_article(
-                        s, c.id, rules, url=r["url"], title=title, snippet=(meta.get("description") or "")[:600] or None,
+                        s, cid, rules, url=r["url"], title=title, snippet=(meta.get("description") or "")[:600] or None,
                         published_at=_published(meta.get("published"), cited), source_key=SOURCE,
                         lang=meta.get("lang") if meta.get("lang") in ("ar", "en") else None,
                         outlet_name=r.get("outlet"), extra={"ref": r.get("ref", {})}, outlet_cache=cache,
@@ -131,8 +138,13 @@ def run(s: Session, path: Path, *, max_ratio: float = 0.2, limit: int | None = N
                     ok += created
             if n % 200 == 0:
                 s.commit()
+                # keep memory flat on the 512 MB machine: drop ORM objects and the outlet cache
+                s.expunge_all()
+                cache.clear()
+                failed_path.write_text(json.dumps(sorted(failed_urls)), encoding="utf-8")
                 log.warning("backfill %d/%d stored=%d failed=%d", n, len(order), ok, failed)
     s.commit()
+    failed_path.write_text(json.dumps(sorted(failed_urls)), encoding="utf-8")
     return {**stats, "stored": ok, "failed": failed, "no_title": untitled, "top_errors": errors.most_common(8)}
 
 
