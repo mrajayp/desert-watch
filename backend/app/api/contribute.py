@@ -15,6 +15,7 @@ from .common import country_or_404, hydrate_items, outlet_categories
 router = APIRouter(prefix="/api")
 
 RECENT_DAYS = 14
+GAP_MIN = 0.15  # same threshold as the UI's "less coverage than expected" label (charts/scales.js gapLabel)
 
 
 @router.get("/contribute")
@@ -37,7 +38,7 @@ def contribute(country: str = "LY", s: Session = Depends(get_db), u: User = Depe
         voted = {(v.theme_id, v.region_id, v.week_start) for v in s.scalars(select(GapVote).where(GapVote.week_start >= first))}
         for cell in s.scalars(select(CellWeek).where(
                 CellWeek.country_id == c.id, CellWeek.week_start >= first, CellWeek.insufficient.is_(False),
-                CellWeek.gap.is_not(None), CellWeek.gap > 0).order_by(CellWeek.gap.desc()).limit(200)):
+                CellWeek.gap.is_not(None), CellWeek.gap >= GAP_MIN).order_by(CellWeek.gap.desc()).limit(200)):
             if (cell.theme_id, cell.region_id, cell.week_start) in voted or any(
                     g["theme_id"] == cell.theme_id and g["region_id"] == cell.region_id for g in gaps):
                 continue
