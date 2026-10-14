@@ -14,8 +14,10 @@ const VOTES = [
   ['not_newsworthy', 'Not newsworthy', 'The signal is real but not a story'],
 ]
 
-export default function GapPanel({ themeId, regionId }) {
-  const { meta, filters, lang, closePanel, refresh, openAdd } = useApp()
+export default function GapPanel({ themeId, regionId, week: weekProp, lens: lensProp }) {
+  const { meta, filters: f0, lang, closePanel, refresh, openAdd } = useApp()
+  // a chart can open the panel at a given week/lens without changing the page-wide filters
+  const filters = { ...f0, lens: lensProp || f0.lens, week: weekProp || f0.week }
   const [d, setD] = useState(null)
   const [voteNote, setVoteNote] = useState('')
   const [coveredUrl, setCoveredUrl] = useState('')

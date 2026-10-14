@@ -64,3 +64,15 @@ def test_items_source_filter_and_counts(client, users, db):
     assert r["by_source"] == {"galerts": 2, "rss": 1}
     r = client.get("/api/items", params={"lang": "en", "days": 7}).json()
     assert r["total"] == 0
+
+
+def test_items_date_range(client, users, db):
+    c = db.scalar(select(Country))
+    rules = load_rules(db, c.id)
+    from datetime import datetime
+    store_article(db, c.id, rules, url="https://ex.ly/mar", title="طرابلس ليبيا", published_at=datetime(2026, 3, 15, 10), source_key="rss")
+    store_article(db, c.id, rules, url="https://ex.ly/apr", title="طرابلس ليبيا", published_at=datetime(2026, 4, 1, 0, 5), source_key="rss")
+    db.commit()
+    login(client, "admin@example.org", "admin-password-1")
+    r = client.get("/api/items", params={"start": "2026-03-01", "end": "2026-03-31"}).json()
+    assert [x["url"] for x in r["items"]] == ["https://ex.ly/mar"]

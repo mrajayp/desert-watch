@@ -4,6 +4,7 @@ import { api, setTracking, track } from './api'
 import GapPanel from './components/GapPanel'
 import ItemPanel from './components/ItemPanel'
 import OutletPanel from './components/OutletPanel'
+import ArticlesPanel from './components/ArticlesPanel'
 import AddArticle from './components/AddArticle'
 import TrackingNotice from './components/TrackingNotice'
 import PageFeedback from './components/PageFeedback'
@@ -77,7 +78,8 @@ function Shell({ me, setMe }) {
 
   const value = useMemo(() => ({
     me, setMe, meta, lang, setLang, filters, setFilters, version, refresh: () => setVersion((v) => v + 1),
-    openGap: (theme_id, region_id, ctx = {}) => { track('click', 'gap', `${theme_id}:${region_id}`, ctx); setPanel({ kind: 'gap', theme_id, region_id }) },
+    openGap: (theme_id, region_id, ctx = {}) => { track('click', 'gap', `${theme_id}:${region_id}`, ctx); setPanel({ kind: 'gap', theme_id, region_id, week: ctx.week, lens: ctx.lens }) },
+    openArticles: (spec) => { track('click', 'chart', spec.title, spec.query); setPanel({ kind: 'articles', ...spec }) },
     openItem: (id) => { track('click', 'item', id); setPanel({ kind: 'item', id }) },
     openOutlet: (id) => { track('click', 'outlet', id); setPanel({ kind: 'outlet', id }) },
     openAdd: (preset = {}) => setPanel({ kind: 'add', preset }),
@@ -132,7 +134,8 @@ function Shell({ me, setMe }) {
       </div>
       {!me.tracking_notice_ack && <TrackingNotice />}
       {panel && <div className="drawer-backdrop" onClick={value.closePanel} />}
-      {panel?.kind === 'gap' && <GapPanel key={`${panel.theme_id}:${panel.region_id}`} themeId={panel.theme_id} regionId={panel.region_id} />}
+      {panel?.kind === 'gap' && <GapPanel key={`${panel.theme_id}:${panel.region_id}:${panel.week}`} themeId={panel.theme_id} regionId={panel.region_id} week={panel.week} lens={panel.lens} />}
+      {panel?.kind === 'articles' && <ArticlesPanel key={JSON.stringify(panel.query)} title={panel.title} subtitle={panel.subtitle} query={panel.query} note={panel.note} />}
       {panel?.kind === 'item' && <ItemPanel key={panel.id} id={panel.id} />}
       {panel?.kind === 'outlet' && <OutletPanel key={panel.id} id={panel.id} />}
       {panel?.kind === 'add' && <AddArticle preset={panel.preset} />}

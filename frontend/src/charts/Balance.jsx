@@ -75,7 +75,7 @@ export function MixBar({ parts, colors, labels, height = 12 }) {
   )
 }
 
-export function HistoryLine({ data, svgRef, markers = [] }) {
+export function HistoryLine({ data, svgRef, markers = [], onPick }) {
   const wrap = useRef(null)
   const W = useSize(wrap, 700)
   const H = 190
@@ -91,11 +91,18 @@ export function HistoryLine({ data, svgRef, markers = [] }) {
   return (
     <div ref={wrap} className="viz" onMouseLeave={tip.hide}>
       <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Daily article volume, 7-day average"
+        style={{ cursor: onPick ? 'pointer' : undefined }}
+        onClick={(e) => {
+          if (!onPick) return
+          const box = e.currentTarget.getBoundingClientRect()
+          const dt = x.invert(((e.clientX - box.left) / box.width) * W)
+          onPick(roll[d3.bisector((d) => d.date).center(roll, dt)].date.toISOString().slice(0, 10))
+        }}
         onMouseMove={(e) => {
           const box = e.currentTarget.getBoundingClientRect()
           const dt = x.invert(((e.clientX - box.left) / box.width) * W)
           const i = d3.bisector((d) => d.date).center(roll, dt)
-          tip.show(e, <div><b>{roll[i].date.toISOString().slice(0, 10)}</b><div>{fmt(roll[i].v)} articles/day (7-day avg)</div></div>, wrap.current)
+          tip.show(e, <div><b>{roll[i].date.toISOString().slice(0, 10)}</b><div>{fmt(roll[i].v)} articles/day (7-day avg)</div>{onPick && <div className="small muted">click for our articles that week</div>}</div>, wrap.current)
         }}>
         {y.ticks(4).map((v) => <g key={v}><line x1={36} x2={W - 10} y1={y(v)} y2={y(v)} stroke="var(--grid)" /><text x={32} y={y(v) + 3} textAnchor="end">{fmt(v)}</text></g>)}
         {x.ticks(W < 500 ? 4 : 8).map((t) => <text key={+t} x={x(t)} y={H - 6} textAnchor="middle">{d3.utcFormat('%b %y')(t)}</text>)}
@@ -110,7 +117,7 @@ export function HistoryLine({ data, svgRef, markers = [] }) {
 }
 
 // Monthly collected articles (stacked Arabic | English), with dated event markers.
-export function MonthlyCoverage({ rows, markers = [], svgRef }) {
+export function MonthlyCoverage({ rows, markers = [], svgRef, onPick }) {
   const wrap = useRef(null)
   const W = useSize(wrap, 800)
   const H = 220
@@ -125,7 +132,9 @@ export function MonthlyCoverage({ rows, markers = [], svgRef }) {
       <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Monthly collected articles, Arabic and English">
         {y.ticks(4).map((v) => <g key={v}><line x1={36} x2={W - 8} y1={y(v)} y2={y(v)} stroke="var(--grid)" /><text x={32} y={y(v) + 3} textAnchor="end">{fmt(v)}</text></g>)}
         {data.map((d, i) => (
-          <g key={d.month} onMouseMove={(e) => tip.show(e, <div><b>{d.month}</b><div>{fmt(d.total)} articles · {fmt(d.ar)} Arabic · {fmt(d.en)} English</div></div>, wrap.current)}>
+          <g key={d.month} style={{ cursor: onPick ? 'pointer' : undefined }} onClick={() => onPick?.(d.month)}
+            onMouseMove={(e) => tip.show(e, <div><b>{d.month}</b><div>{fmt(d.total)} articles · {fmt(d.ar)} Arabic · {fmt(d.en)} English</div>{onPick && <div className="small muted">click to list them</div>}</div>, wrap.current)}>
+            <rect x={x(d.month)} y={14} width={x.bandwidth()} height={H - 38} fill="transparent" />
             <rect x={x(d.month)} y={y(d.ar)} width={x.bandwidth()} height={Math.max(0, y(0) - y(d.ar))} fill="var(--scope-libyan)" />
             <rect x={x(d.month)} y={y(d.ar + d.en + d.other)} width={x.bandwidth()} height={Math.max(0, y(d.ar) - y(d.ar + d.en + d.other) - (d.en + d.other ? 1 : 0))} rx={2} fill="var(--scope-international)" />
             {i % step === 0 && <text x={x(d.month) + x.bandwidth() / 2} y={H - 8} textAnchor="middle">{d.month}</text>}

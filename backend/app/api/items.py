@@ -1,4 +1,4 @@
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -101,12 +101,19 @@ def add_item(body: AddIn, s: Session = Depends(get_db), u: User = Depends(auth.r
 def list_items(country: str = "LY", theme_id: int | None = None, region_id: int | None = None,
                outlet_id: int | None = None, q: str | None = None, days: int = 28, kind: str = "article",
                source: str | None = None, lang: str | None = None,
+               start: date | None = None, end: date | None = None,
                limit: int = 50, offset: int = 0, s: Session = Depends(get_db), _: User = Depends(auth.current_user)):
     c = country_or_404(s, country)
     region = region_or_404(s, region_id) if region_id else None
-    end = utcnow() + timedelta(days=1)
+    # an explicit date range (inclusive, e.g. one month of a chart) wins over `days`
+    if start or end:
+        lo = datetime.combine(start or date(2000, 1, 1), time.min)
+        hi = datetime.combine(end or utcnow().date(), time.min) + timedelta(days=1)
+    else:
+        hi = utcnow() + timedelta(days=1)
+        lo = hi - timedelta(days=days + 1)
     total, rows, by_source = items_query(
-        s, country_id=c.id, theme_id=theme_id, region=region, start=end - timedelta(days=days + 1), end=end,
+        s, country_id=c.id, theme_id=theme_id, region=region, start=lo, end=hi,
         kinds=(kind,), limit=min(limit, 200), offset=offset, outlet_id=outlet_id, q=q, source=source, lang=lang,
         with_sources=True)
     return {"total": total, "items": hydrate_items(s, rows), "by_source": by_source}

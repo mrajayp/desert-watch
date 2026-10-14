@@ -72,7 +72,7 @@ export default function Heatmap({ themes, regions, cells, onSelect, svgRef, unit
 }
 
 // Need and coverage share one axis by indexing each to its own mean (=100): no dual axis.
-export function TrendMultiples({ themes, series, onSelect, lang = 'en', unit }) {
+export function TrendMultiples({ themes, series, onSelect, onPickWeek, lang = 'en', unit }) {
   const wrap = useRef(null)
   const W = useSize(wrap, 900)
   const cols = W < 560 ? 1 : W < 900 ? 2 : 3
@@ -94,18 +94,25 @@ export function TrendMultiples({ themes, series, onSelect, lang = 'en', unit }) 
           return (
             <div key={t.id} className="card" style={{ padding: 10, cursor: 'pointer' }} onClick={() => onSelect?.(t.id)}>
               <div className="row" style={{ justifyContent: 'space-between' }}>
-                <b style={{ fontSize: 13 }}>{lang === 'ar' ? t.name_ar : t.name_en}</b>
+                <b style={{ fontSize: 13, textDecoration: onSelect ? 'underline dotted' : 'none' }}>{lang === 'ar' ? t.name_ar : t.name_en}</b>
                 <span className="small muted">{last ? (last.insufficient ? 'insufficient' : last.gap >= 0.4 ? <span className="pill flag">gap</span> : 'ok') : ''}</span>
               </div>
               {rows.length < 2 ? <div className="empty small">Not enough weeks yet</div> : (
                 <svg viewBox={`0 0 ${cw} ${ch}`} style={{ width: '100%' }}
+                  onClick={(e) => {
+                    if (!onPickWeek) return
+                    e.stopPropagation()
+                    const box = e.currentTarget.getBoundingClientRect()
+                    const px = ((e.clientX - box.left) / box.width) * cw
+                    onPickWeek(t.id, rows[d3.minIndex(rows, (r) => Math.abs(x(r.week) - px))].week)
+                  }}
                   onMouseMove={(e) => {
                     const box = e.currentTarget.getBoundingClientRect()
                     const px = ((e.clientX - box.left) / box.width) * cw
                     const i = d3.minIndex(rows, (r) => Math.abs(x(r.week) - px))
                     const r = rows[i]
                     tip.show(e, <div><b>Week of {r.week}</b><div>{fmt(r.coverage)} articles · {fmt(r.need)} {unit}</div>
-                      <div className="small muted">4-week window</div></div>, wrap.current)
+                      <div className="small muted">4-week window{onPickWeek ? ' · click for the articles' : ''}</div></div>, wrap.current)
                   }}>
                   {y.ticks(3).map((v) => <g key={v}><line x1={30} x2={cw - 8} y1={y(v)} y2={y(v)} stroke="var(--grid)" />
                     <text x={26} y={y(v) + 3} textAnchor="end" style={{ fontSize: 9 }}>{v}</text></g>)}
@@ -123,7 +130,7 @@ export function TrendMultiples({ themes, series, onSelect, lang = 'en', unit }) 
       <div className="legend" style={{ marginTop: 10 }}>
         <span><span className="sw" style={{ background: 'var(--ink-2)', height: 3 }} />Need ({unit})</span>
         <span><span className="sw" style={{ background: 'var(--accent)', height: 3 }} />Monitored coverage</span>
-        <span className="muted">Last 52 weeks. Both indexed to their own average = 100, so they share one axis.</span>
+        <span className="muted">Last 52 weeks. Both indexed to their own average = 100, so they share one axis.{onPickWeek ? ' Click a week to see the articles and need signals behind it; click a panel title for its long-run history.' : ''}</span>
       </div>
     </div>
   )
