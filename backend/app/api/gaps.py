@@ -189,7 +189,7 @@ class VoteIn(BaseModel):
 
 
 @router.post("/gap/vote")
-def vote(body: VoteIn, s: Session = Depends(get_db), u: User = Depends(auth.current_user)):
+def vote(body: VoteIn, s: Session = Depends(get_db), u: User = Depends(auth.require_contributor)):
     if body.vote not in VOTES:
         raise HTTPException(400, "vote must be real, covered or not_newsworthy")
     theme, region = theme_or_404(s, body.theme_id), region_or_404(s, body.region_id)
@@ -220,7 +220,7 @@ class ClaimIn(BaseModel):
 
 
 @router.post("/gap/claim")
-def claim(body: ClaimIn, s: Session = Depends(get_db), u: User = Depends(auth.current_user)):
+def claim(body: ClaimIn, s: Session = Depends(get_db), u: User = Depends(auth.require_contributor)):
     if body.status not in ("working", "published", "dropped"):
         raise HTTPException(400, "Unknown status")
     region = region_or_404(s, body.region_id)
@@ -245,7 +245,7 @@ class SuggestIn(BaseModel):
 
 
 @router.post("/suggestions")
-def suggest(body: SuggestIn, s: Session = Depends(get_db), u: User = Depends(auth.current_user)):
+def suggest(body: SuggestIn, s: Session = Depends(get_db), u: User = Depends(auth.require_contributor)):
     if body.kind not in ("gap", "keyword", "source", "alias", "outlet_category"):
         raise HTTPException(400, "Unknown suggestion kind")
     sug = Suggestion(user_id=u.id, kind=body.kind, payload=body.payload)
@@ -374,7 +374,7 @@ class KeyEventIn(BaseModel):
 
 @router.post("/key-events")
 def add_key_event(body: KeyEventIn, country: str = "LY", s: Session = Depends(get_db),
-                  u: User = Depends(auth.current_user)):
+                  u: User = Depends(auth.require_contributor)):
     from ..models import KeyEvent
     c = country_or_404(s, country)
     if not body.source_url.startswith(("http://", "https://")):

@@ -101,6 +101,8 @@ export default function Admin() {
             </div>)}
         </section>
       </div>
+      <UsersCard />
+      <FeedbackCard />
       <AlertsCard />
       <section className="card" style={{ marginTop: 16 }}>
         <div className="card-head"><h2>Data sources</h2>
@@ -147,6 +149,102 @@ function AlertsCard() {
         <button className="btn primary" disabled={!lines.trim()} onClick={save}>Connect</button>
         {result && <span className="small">{result.attached} connected{result.problems.length ? ` · problems: ${result.problems.join('; ')}` : ''}</span>}
       </div>
+    </section>
+  )
+}
+
+function UsersCard() {
+  const { me, refresh } = useApp()
+  const [users, setUsers] = useState([])
+  const [err, setErr] = useState(null)
+  const [show, setShow] = useState('all')
+  const load = () => api('/api/admin/users').then(setUsers)
+  useEffect(() => { load() }, [])
+  const patch = async (u, body) => {
+    setErr(null)
+    try { await api(`/api/admin/users/${u.id}`, { method: 'PATCH', body }); load(); refresh() } catch (e) { setErr(e.message) }
+  }
+  const pending = users.filter((u) => u.status === 'pending')
+  const rest = users.filter((u) => u.status !== 'pending' && (show === 'all' || u.status === show))
+  const ROLE_HELP = { admin: 'everything, incl. users & themes', journalist: 'vote, comment, add & correct', viewer: 'read-only' }
+  return (
+    <section className="card" style={{ marginTop: 16 }}>
+      <h2>Users and access</h2>
+      <p className="sub">People can request access from the sign-in page. Approve them with a role, or reject. Roles: {Object.entries(ROLE_HELP).map(([r, h]) => `${r} (${h})`).join(' · ')}.</p>
+      {err && <p className="err">{err}</p>}
+      <h3>Access requests ({pending.length})</h3>
+      {pending.length === 0 ? <p className="small muted">No pending requests.</p> : (
+        <ul className="list">{pending.map((u) => <PendingRow key={u.id} u={u} onDecide={patch} />)}</ul>)}
+      <div className="row" style={{ justifyContent: 'space-between', marginTop: 12 }}>
+        <h3 style={{ margin: 0 }}>All users ({users.length - pending.length})</h3>
+        <span className="seg">{['all', 'active', 'disabled', 'rejected'].map((k) => <button key={k} aria-pressed={show === k} onClick={() => setShow(k)}>{k}</button>)}</span>
+      </div>
+      <div className="scroll" style={{ maxHeight: 420 }}>
+        <table className="data">
+          <thead><tr><th>Name</th><th>Email</th><th>Organisation</th><th>Role</th><th>Status</th><th>Since</th><th /></tr></thead>
+          <tbody>{rest.map((u) => (
+            <tr key={u.id}>
+              <td><b>{u.display_name}</b>{u.id === me.id && <span className="muted small"> (you)</span>}</td>
+              <td className="small">{u.email}</td><td className="small">{u.organisation || '–'}</td>
+              <td><select value={u.role} disabled={u.id === me.id} aria-label={`Role for ${u.display_name}`}
+                onChange={(e) => patch(u, { role: e.target.value })}>{['admin', 'journalist', 'viewer'].map((r) => <option key={r}>{r}</option>)}</select></td>
+              <td className="small">{u.status}{u.approved_by && <span className="muted"> · approved by {u.approved_by}</span>}</td>
+              <td className="small mono">{u.created_at.slice(0, 10)}</td>
+              <td>{u.id !== me.id && (u.status === 'active'
+                ? <button className="btn small ghost" onClick={() => patch(u, { status: 'disabled' })}>Disable</button>
+                : <button className="btn small" onClick={() => patch(u, { status: 'active' })}>Re-enable</button>)}</td>
+            </tr>))}</tbody>
+        </table>
+      </div>
+    </section>
+  )
+}
+
+function PendingRow({ u, onDecide }) {
+  const [role, setRole] = useState('journalist')
+  return (
+    <li>
+      <div className="row" style={{ justifyContent: 'space-between', alignItems: 'flex-start' }}>
+        <div><b>{u.display_name}</b> <span className="small muted">{u.email} · {u.organisation || 'no organisation given'} · requested {u.created_at.slice(0, 10)}</span>
+          {u.note && <div className="small" dir="auto" style={{ marginTop: 4 }}>“{u.note}”</div>}</div>
+        <div className="row">
+          <select value={role} onChange={(e) => setRole(e.target.value)} aria-label="Role to grant">
+            {['viewer', 'journalist', 'admin'].map((r) => <option key={r}>{r}</option>)}</select>
+          <button className="btn small primary" onClick={() => onDecide(u, { status: 'active', role })}>Approve</button>
+          <button className="btn small ghost" onClick={() => onDecide(u, { status: 'rejected' })}>Reject</button>
+        </div>
+      </div>
+    </li>
+  )
+}
+
+function FeedbackCard() {
+  const [rows, setRows] = useState([])
+  const [filter, setFilter] = useState('new')
+  const [drafts, setDrafts] = useState({})
+  const load = () => api('/api/admin/feedback' + (filter === 'all' ? '' : `?status=${filter}`)).then(setRows)
+  useEffect(() => { load() }, [filter])
+  const save = async (f, body) => { await api(`/api/admin/feedback/${f.id}`, { method: 'PATCH', body }); setDrafts({ ...drafts, [f.id]: '' }); load() }
+  return (
+    <section className="card" style={{ marginTop: 16 }}>
+      <div className="card-head">
+        <div><h2>Suggestions and questions</h2><p className="sub">Left at the bottom of each page. Replies are shown to the person who wrote them.</p></div>
+        <span className="seg">{['new', 'answered', 'planned', 'done', 'all'].map((k) => <button key={k} aria-pressed={filter === k} onClick={() => setFilter(k)}>{k}</button>)}</span>
+      </div>
+      {rows.length === 0 ? <p className="small muted">Nothing here.</p> : (
+        <ul className="list">{rows.map((f) => (
+          <li key={f.id}>
+            <div className="small muted"><span className="pill">{f.kind}</span> {f.user || 'deleted user'} · page <span className="mono">{f.page}</span> · {f.at.slice(0, 16).replace('T', ' ')} · {f.status}</div>
+            <div dir="auto" style={{ margin: '4px 0' }}>{f.body}</div>
+            {f.reply && <div className="comment"><span className="meta">Reply by {f.replied_by}</span><div dir="auto">{f.reply}</div></div>}
+            <div className="row">
+              <input type="text" dir="auto" placeholder="Reply (shown to the author)" value={drafts[f.id] || ''} style={{ flex: 1 }}
+                onChange={(e) => setDrafts({ ...drafts, [f.id]: e.target.value })} />
+              <button className="btn small" disabled={!(drafts[f.id] || '').trim()} onClick={() => save(f, { reply: drafts[f.id] })}>Reply</button>
+              <select value={f.status} onChange={(e) => save(f, { status: e.target.value })} aria-label="Status">
+                {['new', 'answered', 'planned', 'done', 'closed'].map((st) => <option key={st}>{st}</option>)}</select>
+            </div>
+          </li>))}</ul>)}
     </section>
   )
 }

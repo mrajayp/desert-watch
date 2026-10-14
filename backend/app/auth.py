@@ -77,8 +77,17 @@ def current_user(dw_session: str | None = Cookie(default=None), s: Session = Dep
     if not sess or sess.expires_at < utcnow():
         raise HTTPException(401, "Session expired")
     u = s.get(User, sess.user_id)
-    if not u or not u.active:
-        raise HTTPException(401, "Account disabled")
+    if not u or not u.active or (u.status or "active") != "active":
+        raise HTTPException(401, "Account not active")
+    return u
+
+
+ROLES = ("admin", "journalist", "viewer")
+
+
+def require_contributor(u: User = Depends(current_user)) -> User:
+    if u.role == "viewer":
+        raise HTTPException(403, "Your role is read-only. Ask an admin for contributor access.")
     return u
 
 

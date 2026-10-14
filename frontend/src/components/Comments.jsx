@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react'
 import { api, qs } from '../api'
+import { useApp } from '../App'
 
 const TAGS = { '': 'Comment', agree: 'Agree', disagree: 'Disagree', missing_context: 'Missing context', source_tip: 'Source tip', safety: 'Safety concern' }
 
 export default function Comments({ objectType, objectKey }) {
+  const { me } = useApp()
   const [rows, setRows] = useState([])
   const [body, setBody] = useState('')
   const [tag, setTag] = useState('')
@@ -40,6 +42,7 @@ export default function Comments({ objectType, objectKey }) {
     <div>
       {top.length === 0 && <p className="muted small">No comments yet. Visible to your team only.</p>}
       {top.map((c) => one(c, false))}
+      {me.role === 'viewer' ? <p className="small muted">Your account is read-only, so you can’t comment. Ask an admin for contributor access.</p> : (
       <form className="form" onSubmit={submit} style={{ marginTop: 8 }}>
         {replyTo && <div className="small muted">Replying · <button type="button" className="btn small ghost" onClick={() => setReplyTo(null)}>cancel</button></div>}
         <textarea dir="auto" value={body} onChange={(e) => setBody(e.target.value)} placeholder="Add context, a source tip, or why you agree/disagree… Use @name to mention." aria-label="Comment" />
@@ -51,7 +54,7 @@ export default function Comments({ objectType, objectKey }) {
           {err && <span className="err">{err}</span>}
           <button className="btn primary" type="submit" disabled={!body.trim()}>Post</button>
         </div>
-      </form>
+      </form>)}
     </div>
   )
 }

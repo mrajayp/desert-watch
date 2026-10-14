@@ -130,10 +130,53 @@ def invite(body: InviteIn, s: Session = Depends(get_db), u: User = Depends(auth.
     return {"invite_path": f"/invite/{token}", "expires_days": 7}
 
 
+def _user_json(x: User, names: dict) -> dict:
+    return {"id": x.id, "email": x.email, "display_name": x.display_name, "role": x.role, "active": x.active,
+            "status": x.status or "active", "organisation": x.organisation, "note": x.signup_note,
+            "approved_by": names.get(x.approved_by), "created_at": x.created_at.isoformat()}
+
+
 @router.get("/admin/users")
 def users(s: Session = Depends(get_db), _: User = Depends(auth.require_admin)):
-    return [{"id": x.id, "email": x.email, "display_name": x.display_name, "role": x.role, "active": x.active,
-             "created_at": x.created_at.isoformat()} for x in s.scalars(select(User))]
+    rows = s.scalars(select(User).order_by(User.created_at.desc())).all()
+    names = {x.id: x.display_name for x in rows}
+    return [_user_json(x, names) for x in rows if not x.email.startswith("deleted-")]
+
+
+class UserPatch(BaseModel):
+    role: str | None = None
+    status: str | None = None  # active | rejected | disabled
+
+
+@router.patch("/admin/users/{uid}")
+def patch_user(uid: int, body: UserPatch, s: Session = Depends(get_db), me: User = Depends(auth.require_admin)):
+    """Approve / reject access requests, change roles, disable or re-enable accounts.
+    Admins cannot demote or disable themselves (prevents locking everyone out)."""
+    from ..models import AuthSession
+    from sqlalchemy import delete
+    u = s.get(User, uid)
+    if not u:
+        raise HTTPException(404, "Unknown user")
+    if body.role is not None:
+        if body.role not in auth.ROLES:
+            raise HTTPException(400, "Role must be admin, journalist or viewer")
+        if u.id == me.id and body.role != "admin":
+            raise HTTPException(400, "You cannot remove your own admin role")
+        u.role = body.role
+    if body.status is not None:
+        if body.status not in ("active", "rejected", "disabled"):
+            raise HTTPException(400, "Status must be active, rejected or disabled")
+        if u.id == me.id and body.status != "active":
+            raise HTTPException(400, "You cannot disable your own account")
+        if body.status == "active" and (u.status or "active") == "pending":
+            u.approved_by = me.id
+        u.status = body.status
+        u.active = body.status == "active"
+        if body.status != "active":
+            s.execute(delete(AuthSession).where(AuthSession.user_id == u.id))  # sign them out everywhere
+    s.commit()
+    names = {x.id: x.display_name for x in s.scalars(select(User))}
+    return _user_json(u, names)
 
 
 # ---------------------------------------------------------------- suggestions queue
@@ -236,3 +279,40 @@ def list_alerts(s: Session = Depends(get_db), _: User = Depends(auth.require_adm
 def attach_alerts(body: AlertFeedsIn, s: Session = Depends(get_db), _: User = Depends(auth.require_admin)):
     from ..alerts import attach_feeds
     return attach_feeds(s, body.lines)
+
+
+# ---------------------------------------------------------------- page feedback (admin side)
+@router.get("/admin/feedback")
+def feedback_queue(status: str | None = None, s: Session = Depends(get_db), _: User = Depends(auth.require_admin)):
+    from ..models import Feedback
+    names = {x.id: x.display_name for x in s.scalars(select(User))}
+    q = select(Feedback).order_by(Feedback.created_at.desc())
+    if status:
+        q = q.where(Feedback.status == status)
+    return [{"id": f.id, "page": f.page, "kind": f.kind, "body": f.body, "status": f.status, "reply": f.reply,
+             "user": names.get(f.user_id), "replied_by": names.get(f.replied_by), "at": f.created_at.isoformat()}
+            for f in s.scalars(q.limit(300))]
+
+
+class FeedbackReply(BaseModel):
+    status: str | None = None
+    reply: str | None = Field(default=None, max_length=4000)
+
+
+@router.patch("/admin/feedback/{fid}")
+def answer_feedback(fid: int, body: FeedbackReply, s: Session = Depends(get_db), me: User = Depends(auth.require_admin)):
+    from ..models import Feedback
+    f = s.get(Feedback, fid)
+    if not f:
+        raise HTTPException(404, "Unknown feedback")
+    if body.status:
+        if body.status not in ("new", "answered", "planned", "done", "closed"):
+            raise HTTPException(400, "Unknown status")
+        f.status = body.status
+    if body.reply is not None:
+        f.reply, f.replied_by = body.reply.strip() or None, me.id
+        if f.reply and f.status == "new":
+            f.status = "answered"
+    f.updated_at = utcnow()
+    s.commit()
+    return {"ok": True}

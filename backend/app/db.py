@@ -54,7 +54,11 @@ SessionLocal = sessionmaker(bind=engine, expire_on_commit=False)
 
 
 # Additive columns added after first release: create_all() does not alter existing tables.
-ADDED_COLUMNS = {"theme": {"group": "VARCHAR(40)", "cooc": "JSON", "strict": "BOOLEAN DEFAULT 0", "require_country": "BOOLEAN DEFAULT 0"}}
+ADDED_COLUMNS = {
+    "theme": {"group": "VARCHAR(40)", "cooc": "JSON", "strict": "BOOLEAN DEFAULT 0", "require_country": "BOOLEAN DEFAULT 0"},
+    "user": {"status": "VARCHAR(10) DEFAULT 'active'", "organisation": "VARCHAR(200)", "signup_note": "TEXT",
+             "approved_by": "INTEGER"},
+}
 
 
 def init_db(bind=None):
@@ -68,7 +72,7 @@ def init_db(bind=None):
             have = {c["name"] for c in insp.get_columns(table)}
             for col, ddl in cols.items():
                 if col not in have:
-                    conn.execute(text(f'ALTER TABLE {table} ADD COLUMN "{col}" {ddl}'))
+                    conn.execute(text(f'ALTER TABLE "{table}" ADD COLUMN "{col}" {ddl}'))
 
 
 @contextmanager

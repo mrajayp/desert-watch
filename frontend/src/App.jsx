@@ -6,6 +6,7 @@ import ItemPanel from './components/ItemPanel'
 import OutletPanel from './components/OutletPanel'
 import AddArticle from './components/AddArticle'
 import TrackingNotice from './components/TrackingNotice'
+import PageFeedback from './components/PageFeedback'
 import Overview from './pages/Overview'
 import Trends from './pages/Trends'
 import Outlets from './pages/Outlets'
@@ -47,6 +48,11 @@ function Shell({ me, setMe }) {
   const [panel, setPanel] = useState(null) // {kind, ...}
   const [version, setVersion] = useState(0) // bump to refetch after feedback
   const nav = useNavigate()
+  const [pending, setPending] = useState(0)
+  useEffect(() => {
+    if (me.role !== 'admin') return
+    api('/api/admin/users').then((us) => setPending(us.filter((u) => u.status === 'pending').length)).catch(() => {})
+  }, [me.role, version])
 
   useEffect(() => { api('/api/meta').then((m) => {
     setMeta(m)
@@ -90,11 +96,12 @@ function Shell({ me, setMe }) {
             <NavLink to="/timeline">Timeline</NavLink>
             <NavLink to="/outlets">Outlets</NavLink>
             <NavLink to="/digest">Digest</NavLink>
-            {me.role === 'admin' && <NavLink to="/admin">Admin</NavLink>}
+            {me.role === 'admin' && <NavLink to="/admin">Admin{pending > 0 && <span className="pill flag" style={{ marginLeft: 4 }}>{pending}</span>}</NavLink>}
             <NavLink to="/me">Privacy</NavLink>
           </nav>
           <div className="who">
-            <button className="btn small primary" onClick={() => value.openAdd()}>+ Add article</button>
+            {me.role !== 'viewer' && <button className="btn small primary" onClick={() => value.openAdd()}>+ Add article</button>}
+            {me.role === 'viewer' && <span className="pill" title="Read-only account: an admin can give you contributor access">read-only</span>}
             <div className="seg" role="group" aria-label="Label language">
               <button aria-pressed={lang === 'en'} onClick={() => setLang('en')}>EN</button>
               <button aria-pressed={lang === 'ar'} onClick={() => setLang('ar')}>عربي</button>
@@ -115,6 +122,7 @@ function Shell({ me, setMe }) {
             <Route path="*" element={<Navigate to="/" />} />
           </Routes>
         )}
+        {meta && <PageFeedback />}
       </div>
       {!me.tracking_notice_ack && <TrackingNotice />}
       {panel && <div className="drawer-backdrop" onClick={value.closePanel} />}

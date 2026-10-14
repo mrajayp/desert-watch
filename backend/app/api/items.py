@@ -85,7 +85,7 @@ class AddIn(BaseModel):
 
 
 @router.post("/items")
-def add_item(body: AddIn, s: Session = Depends(get_db), u: User = Depends(auth.current_user)):
+def add_item(body: AddIn, s: Session = Depends(get_db), u: User = Depends(auth.require_contributor)):
     c = country_or_404(s, body.country)
     for t in body.theme_ids:
         theme_or_404(s, t)
@@ -136,7 +136,7 @@ class CorrectionIn(BaseModel):
 
 
 @router.post("/items/{item_id}/correction")
-def correct(item_id: int, body: CorrectionIn, s: Session = Depends(get_db), u: User = Depends(auth.current_user)):
+def correct(item_id: int, body: CorrectionIn, s: Session = Depends(get_db), u: User = Depends(auth.require_contributor)):
     it = s.get(Item, item_id)
     if not it:
         raise HTTPException(404, "Unknown item")
@@ -176,7 +176,7 @@ class AssessIn(BaseModel):
 
 
 @router.post("/items/{item_id}/assessment")
-def assess(item_id: int, body: AssessIn, s: Session = Depends(get_db), u: User = Depends(auth.current_user)):
+def assess(item_id: int, body: AssessIn, s: Session = Depends(get_db), u: User = Depends(auth.require_contributor)):
     if not s.get(Item, item_id):
         raise HTTPException(404, "Unknown item")
     a = s.scalar(select(ArticleAssessment).where(ArticleAssessment.item_id == item_id,

@@ -216,7 +216,12 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(200), unique=True)
     display_name: Mapped[str] = mapped_column(String(100))
     pw_hash: Mapped[str] = mapped_column(String(300))
-    role: Mapped[str] = mapped_column(String(12), default="journalist")  # admin | journalist
+    role: Mapped[str] = mapped_column(String(12), default="journalist")  # admin | journalist | viewer
+    # pending (self-signup awaiting approval) | active | rejected | disabled
+    status: Mapped[str | None] = mapped_column(String(10), default="active")
+    organisation: Mapped[str | None] = mapped_column(String(200))
+    signup_note: Mapped[str | None] = mapped_column(Text)
+    approved_by: Mapped[int | None] = mapped_column(Integer)
     pseudo_id: Mapped[str] = mapped_column(String(32), unique=True)
     tracking_opt_out: Mapped[bool] = mapped_column(Boolean, default=False)
     tracking_notice_ack_at: Mapped[datetime | None] = mapped_column(DateTime)
@@ -337,6 +342,22 @@ class Label(Base):
     origin: Mapped[str] = mapped_column(String(8))  # explicit | implicit
     weight: Mapped[float] = mapped_column(Float, default=1.0)
     source_ref: Mapped[str] = mapped_column(String(60), unique=True)  # idempotency: table:id or event:id
+
+
+# ---------------------------------------------------------------- page feedback
+class Feedback(Base):
+    """Suggestions, questions and bug reports left at the bottom of any page."""
+    __tablename__ = "feedback"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("user.id", ondelete="SET NULL"))
+    page: Mapped[str] = mapped_column(String(80))
+    kind: Mapped[str] = mapped_column(String(12))  # suggestion | question | problem
+    body: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(10), default="new")  # new | answered | planned | done | closed
+    reply: Mapped[str | None] = mapped_column(Text)
+    replied_by: Mapped[int | None] = mapped_column(ForeignKey("user.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
 # ---------------------------------------------------------------- key events (timeline)

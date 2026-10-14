@@ -91,7 +91,7 @@ def _activate(s: Session, cat: OutletCategory):
 
 
 @router.post("/outlets/{oid}/categories")
-def set_category(oid: int, body: CategoryIn, s: Session = Depends(get_db), u: User = Depends(auth.current_user)):
+def set_category(oid: int, body: CategoryIn, s: Session = Depends(get_db), u: User = Depends(auth.require_contributor)):
     """Admins apply directly (previous value is closed, not overwritten); journalists propose."""
     if not s.get(Outlet, oid):
         raise HTTPException(404, "Unknown outlet")

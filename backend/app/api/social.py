@@ -44,7 +44,7 @@ def list_comments(object_type: str, object_key: str, s: Session = Depends(get_db
 
 
 @router.post("/comments")
-def add_comment(body: CommentIn, s: Session = Depends(get_db), u: User = Depends(auth.current_user)):
+def add_comment(body: CommentIn, s: Session = Depends(get_db), u: User = Depends(auth.require_contributor)):
     if body.object_type not in OBJECT_TYPES or body.tag not in TAGS:
         raise HTTPException(400, "Unknown object type or tag")
     if body.parent_id:
@@ -85,3 +85,31 @@ def delete_comment(cid: int, s: Session = Depends(get_db), u: User = Depends(aut
     c.deleted, c.body = True, ""
     s.commit()
     return {"ok": True}
+
+
+# ---------------------------------------------------------------- page feedback
+class FeedbackIn(BaseModel):
+    page: str = Field(min_length=1, max_length=80)
+    kind: str
+    body: str = Field(min_length=3, max_length=4000)
+
+
+@router.post("/feedback")
+def leave_feedback(body: FeedbackIn, s: Session = Depends(get_db), u: User = Depends(auth.current_user)):
+    from ..models import Feedback
+    if body.kind not in ("suggestion", "question", "problem"):
+        raise HTTPException(400, "Kind must be suggestion, question or problem")
+    f = Feedback(user_id=u.id, page=body.page, kind=body.kind, body=body.body.strip())
+    s.add(f)
+    s.commit()
+    return {"ok": True, "id": f.id}
+
+
+@router.get("/feedback/mine")
+def my_feedback(page: str | None = None, s: Session = Depends(get_db), u: User = Depends(auth.current_user)):
+    from ..models import Feedback
+    q = select(Feedback).where(Feedback.user_id == u.id).order_by(Feedback.created_at.desc())
+    if page:
+        q = q.where(Feedback.page == page)
+    return [{"id": f.id, "page": f.page, "kind": f.kind, "body": f.body, "status": f.status, "reply": f.reply,
+             "at": f.created_at.isoformat()} for f in s.scalars(q.limit(50))]
