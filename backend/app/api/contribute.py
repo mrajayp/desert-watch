@@ -28,19 +28,22 @@ def contribute(country: str = "LY", s: Session = Depends(get_db), u: User = Depe
     has_region = exists().where(ItemRegion.item_id == Item.id, ItemRegion.active.is_(True))
     assessed = exists().where(ArticleAssessment.item_id == Item.id)
 
-    # 1. Gaps nobody has judged yet: the biggest scored gaps in the latest week, across lenses
+    # 1. Gaps nobody has judged yet: the biggest scored gaps of the last 4 weeks, across lenses
+    #    (a single week is often empty: the current one is partial, and coverage surges hide gaps)
     week = s.scalar(select(func.max(CellWeek.week_start)).where(CellWeek.country_id == c.id))
-    voted = {(v.theme_id, v.region_id) for v in s.scalars(select(GapVote).where(GapVote.week_start == week))} if week else set()
     gaps = []
     if week:
+        first = week - timedelta(weeks=3)
+        voted = {(v.theme_id, v.region_id, v.week_start) for v in s.scalars(select(GapVote).where(GapVote.week_start >= first))}
         for cell in s.scalars(select(CellWeek).where(
-                CellWeek.country_id == c.id, CellWeek.week_start == week, CellWeek.insufficient.is_(False),
-                CellWeek.gap.is_not(None), CellWeek.gap > 0).order_by(CellWeek.gap.desc()).limit(60)):
-            if (cell.theme_id, cell.region_id) in voted or any(
+                CellWeek.country_id == c.id, CellWeek.week_start >= first, CellWeek.insufficient.is_(False),
+                CellWeek.gap.is_not(None), CellWeek.gap > 0).order_by(CellWeek.gap.desc()).limit(200)):
+            if (cell.theme_id, cell.region_id, cell.week_start) in voted or any(
                     g["theme_id"] == cell.theme_id and g["region_id"] == cell.region_id for g in gaps):
                 continue
             gaps.append({"theme_id": cell.theme_id, "region_id": cell.region_id, "lens": cell.lens, "gap": cell.gap,
-                         "coverage": cell.coverage, "need": cell.need, "flags": cell.flags})
+                         "week": cell.week_start.isoformat(), "coverage": cell.coverage, "need": cell.need,
+                         "flags": cell.flags})
             if len(gaps) == 6:
                 break
 

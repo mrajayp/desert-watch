@@ -15,7 +15,7 @@ export default function Contribute() {
   const regions = new Map(meta.regions.map((r) => [r.id, r]))
   if (!d) return <main className="page"><div className="empty">Loading…</div></main>
   const ro = !d.can_contribute
-  const showGap = (g) => { setFilters({ lens: g.lens }); openGap(g.theme_id, g.region_id, { from: 'contribute' }) }
+  const showGap = (g) => { setFilters({ lens: g.lens, week: g.week }); openGap(g.theme_id, g.region_id, { from: 'contribute' }) }
 
   return (
     <main className="page">
@@ -32,13 +32,13 @@ export default function Contribute() {
       </section>
 
       <div className="grid halves" style={{ marginTop: 16 }}>
-        <Task n="1" title="Is this really a gap?" why="The biggest gaps this week that nobody has judged yet. Your vote decides whether they stay at the top."
-          empty="Every scored gap this week has a vote. Thank you.">
+        <Task n="1" title="Is this really a gap?" why="The biggest gaps of the last 4 weeks that nobody has judged yet. Your vote decides whether they stay at the top."
+          empty="No unjudged gaps in the last 4 weeks.">
           {d.gaps.length > 0 && <ul className="list">{d.gaps.map((g) => (
             <li key={`${g.theme_id}:${g.region_id}`} className="row" style={{ justifyContent: 'space-between', flexWrap: 'nowrap' }}>
               <div>
                 <b>{nm(themes.get(g.theme_id))}</b> · {nm(regions.get(g.region_id))}
-                <div className="small muted">{gapLabel(g.gap)} · {fmt(g.coverage)} articles vs {fmt(g.need)} {LENS_TEXT[g.lens]?.unit} ({LENS_TEXT[g.lens]?.label} lens)</div>
+                <div className="small muted">{gapLabel(g.gap)} · {fmt(g.coverage)} articles vs {fmt(g.need)} {LENS_TEXT[g.lens]?.unit} ({LENS_TEXT[g.lens]?.label} lens, week of {g.week})</div>
               </div>
               <button className="btn small primary" onClick={() => showGap(g)}>Judge</button>
             </li>))}</ul>}
