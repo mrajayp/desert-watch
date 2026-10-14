@@ -87,6 +87,6 @@ export const fmt = (n) => n == null ? '–' : n >= 1e6 ? `${(n / 1e6).toFixed(n 
 // Where an article came from (item.source = collector key)
 export const SOURCE_LABELS = {
   galerts: 'Google Alerts', gnews: 'Google News', rss: 'Outlet RSS', gdelt: 'GDELT',
-  official: 'Official / ReliefWeb', user: 'Added by team',
+  official: 'Official / ReliefWeb', user: 'Added by team', backfill: 'Historical backfill',
 }
 export const sourceLabel = (k) => SOURCE_LABELS[k] || k

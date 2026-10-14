@@ -127,6 +127,12 @@ outlets:
   - {name: Al Wasat, domain: alwasat.ly, languages: [ar, en], medium: website, scope: libyan}
   - {name: Al Marsad, domain: almarsad.co, languages: [ar], medium: website, scope: libyan}
   - {name: LANA, domain: lana.gov.ly, languages: [ar, en], medium: website, scope: libyan, type: state}
+  # Cited daily in a professional Libya media-monitoring review (2026) but missing here; feeds verified from Fly 2026-10-14
+  - {name: Al Menassa, domain: almenassa.ly, languages: [ar], medium: website, scope: libyan, rss: "https://almenassa.ly/feed/"}
+  - {name: RNA (Reportage), domain: reportage.ly, languages: [ar], medium: website, scope: libyan, rss: "https://reportage.ly/feed/"}
+  - {name: Libya 24, domain: libya24.tv, languages: [ar], medium: tv, scope: libyan, rss: "https://libya24.tv/feed/"}
+  - {name: Al Sabaah, domain: alsabaah.ly, languages: [ar], medium: website, scope: libyan, rss: "https://alsabaah.ly/feed/"}
+  - {name: Abaad, domain: abaad.news, languages: [ar], medium: website, scope: libyan, rss: "https://abaad.news/feed/"}
   - {name: BBC Arabic, domain: bbc.com, languages: [ar], medium: website, scope: international, base_country: United Kingdom, rss: "https://feeds.bbci.co.uk/arabic/rss.xml"}
   - {name: Al Jazeera Arabic, domain: aljazeera.net, languages: [ar], medium: website, scope: international, base_country: Qatar, rss: "https://www.aljazeera.net/aljazeerarss/a7c186be-1baa-4bd4-9d80-a84db769f779/73d0e1b4-532f-45ef-b135-bfdff8b8cab9"}
   - {name: Reuters, domain: reuters.com, languages: [en, ar], medium: website, scope: international, base_country: United Kingdom}

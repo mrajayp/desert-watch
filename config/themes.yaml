@@ -138,3 +138,55 @@ themes:
     strict: true
     require_country: true
     cooc: []
+
+  # ---- Proposed 2026-10-14 (inactive until an admin switches them on in Admin -> Themes).
+  # Gaps found by comparing our themes with the sections and running sub-topics of a daily
+  # professional Libya media-monitoring review (Jan-Oct 2026). Terms are drafts: preview first.
+  - slug: fuel_supply
+    name_en: "Fuel supply"
+    name_ar: "إمدادات الوقود"
+    active: false
+    require_country: true
+    en_terms: ["fuel shortage", "fuel shortages", "fuel crisis", "fuel supply", "petrol stations", "petrol shortage", gasoline, diesel, "cooking gas", "fuel queues", "fuel smuggling", Brega]
+    ar_terms: ["أزمة الوقود", "نقص الوقود", "إمدادات الوقود", "محطات الوقود", "البنزين", "الديزل", "غاز الطهي", "طوابير الوقود", "تهريب الوقود", "شركة البريقة", "اختناقات الوقود"]
+    exclude: []
+  - slug: cash_salaries_prices
+    name_en: "Cash, salaries & prices"
+    name_ar: "السيولة والمرتبات والأسعار"
+    active: false
+    require_country: true
+    en_terms: ["liquidity crisis", "cash shortage", "cash shortages", "bank queues", salaries, "salary delays", "unified salary scale", "food prices", "price rises", inflation, "black market", "parallel market", "exchange rate"]
+    ar_terms: ["أزمة السيولة", "نقص السيولة", "السيولة النقدية", "طوابير المصارف", "المرتبات", "تأخر المرتبات", "جدول المرتبات الموحد", "ارتفاع الأسعار", "غلاء الأسعار", "التضخم", "السوق الموازية", "سعر الصرف", "الدولار في السوق"]
+    exclude: []
+  - slug: environment
+    name_en: "Environment & animal health"
+    name_ar: "البيئة وصحة الحيوان"
+    active: false
+    require_country: true
+    en_terms: ["foot-and-mouth", "livestock disease", livestock, drought, desertification, pollution, "oil spill", "flash floods", flooding, "climate change", locusts, wildfire, "water table", sewage]
+    ar_terms: ["الحمى القلاعية", "الثروة الحيوانية", "نفوق", "الجفاف", "التصحر", "التلوث", "تسرب نفطي", "السيول", "الفيضانات", "التغير المناخي", "الجراد", "حرائق الغابات", "المياه الجوفية", "مياه الصرف"]
+    exclude: []
+  - slug: education
+    name_en: "Education & teachers"
+    name_ar: "التعليم والمعلمون"
+    active: false
+    require_country: true
+    en_terms: [teachers, "teachers' strike", "teachers strike", schools, "school year", exams, students, university, universities, curriculum, "education ministry"]
+    ar_terms: ["المعلمين", "المعلمون", "إضراب المعلمين", "حراك المعلمين", "المدارس", "العام الدراسي", "الامتحانات", "الطلاب", "الطلبة", "الجامعة", "المناهج", "وزارة التربية والتعليم", "تعليق الدراسة"]
+    exclude: [football, "كرة القدم"]
+  - slug: reconstruction
+    name_en: "Reconstruction & infrastructure"
+    name_ar: "إعادة الإعمار والبنية التحتية"
+    active: false
+    require_country: true
+    en_terms: [reconstruction, infrastructure, "road projects", bridges, "housing projects", "Development and Reconstruction Fund", "Reconstruction Fund", "development projects", ports, airport]
+    ar_terms: ["إعادة الإعمار", "البنية التحتية", "مشاريع الطرق", "الجسور", "مشاريع الإسكان", "صندوق التنمية وإعادة الإعمار", "صندوق إعادة الإعمار", "مشروعات التنمية", "الموانئ", "المطار"]
+    exclude: []
+  - slug: political_process
+    name_en: "UN-facilitated political process"
+    name_ar: "العملية السياسية برعاية الأمم المتحدة"
+    active: false
+    require_country: true
+    en_terms: ["Structured Dialogue", "Smaller Convening", roadmap, UNSMIL, "Berlin process", "5+5 Joint Military Commission", "Joint Military Commission", "unified government", "political process"]
+    ar_terms: ["الحوار المهيكل", "خارطة الطريق", "البعثة الأممية", "مسار برلين", "اللجنة العسكرية المشتركة", "لجنة 5+5", "حكومة موحدة", "العملية السياسية"]
+    exclude: []

@@ -30,7 +30,7 @@ def seed_themes(s: Session) -> int:
                     exclude=t.get("exclude", []), cooc=t.get("cooc", []), strict=bool(t.get("strict", False)),
                     require_country=bool(t.get("require_country", False)),
                     acled_event_types=t.get("acled_event_types", []),
-                    reliefweb_themes=t.get("reliefweb_themes", [])))
+                    reliefweb_themes=t.get("reliefweb_themes", []), active=bool(t.get("active", True))))
         n += 1
     return n
 

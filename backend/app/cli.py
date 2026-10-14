@@ -11,6 +11,7 @@
                             Google News date-range backfill + paged outlet feeds + Wikipedia pageviews
   review [DIR] [--themes a,b]  data-quality summary + labelling sample (default DIR: docs/review)
   digest [--force]          generate the weekly AI digest (needs ANTHROPIC_API_KEY)
+  import-backfill PATH [--max-ratio 0.2] [--limit N]  fetch + store cited article links from under-collected outlets
   reassign-social           move posts filed under a whole platform (facebook.com ...) to their page
   import-social-scrape PATH load the converted social-media scrape JSON (outlets, Facebook register, labels)
   sync-themes               overwrite DB theme terms from config/themes.yaml (bumps versions, re-tags)
@@ -87,6 +88,13 @@ def main(argv: list[str]):
         out = Path(args[0]) if args and not args[0].startswith("--") else settings.REPO_ROOT / "docs" / "review"
         with SessionLocal() as s:
             print(run_review(s, out, theme_slugs=opt("--themes").split(",") if opt("--themes") else None))
+    elif cmd == "import-backfill":
+        from pathlib import Path
+        from .imports.backfill_links import run as run_backfill
+        opt = lambda k, d=None: args[args.index(k) + 1] if k in args else d  # noqa: E731
+        with SessionLocal() as s:
+            print(run_backfill(s, Path(args[0]), max_ratio=float(opt("--max-ratio") or 0.2),
+                               limit=int(opt("--limit")) if opt("--limit") else None))
     elif cmd == "reassign-social":
         from .ingest import reassign_social
         with SessionLocal() as s:
