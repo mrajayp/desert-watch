@@ -7,6 +7,7 @@
   backfill [WEEKS]          gnews + wikipedia + gdelt history + rss
   recompute                 duplicates + scores + network + labels
   dedupe                    mark every duplicate copy of a story (full pass)
+  import-alignment-sources  alignment labels for Libyan TV channels from published studies (idempotent)
   alerts-list [DIR]         write the Google Alerts list (Markdown + CSV) to DIR (default: docs/)
   backfill-history SINCE [--themes a,b] [--step DAYS] [--until DATE]
                             Google News date-range backfill + paged outlet feeds + Wikipedia pageviews
@@ -149,6 +150,10 @@ def main(argv: list[str]):
         for tid in changed:
             _retag_theme(tid, recompute=False)
         print(f"updated {len(changed)} themes")
+    elif cmd == "import-alignment-sources":
+        from .imports.alignment_sources import run as run_align
+        with SessionLocal() as s:
+            print(run_align(s))
     elif cmd == "dedupe":
         from .dedupe import mark_duplicates
         with SessionLocal() as s:
