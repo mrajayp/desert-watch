@@ -83,3 +83,27 @@ def test_source_ending_is_not_a_coverage_drop(db):
                                             CellWeek.lens == "audience", CellWeek.week_start == week_start(today)))
     assert "coverage_drop" not in last.flags
     assert last.gap is not None and abs(last.gap) < 0.3
+
+
+def test_backfill_density_does_not_move_the_gap(db):
+    """Steady interest and steady feed coverage; the backfill triples in the last month (the review
+    cited more). The audience gap must stay put."""
+    themes, regions = ids(db)
+    country_id = db.scalar(select(Outlet.country_id).limit(1))
+    rules = load_rules(db, country_id)
+    today = date(2026, 10, 12)
+    for w in range(24):
+        day = datetime.combine(week_start(today) - timedelta(weeks=w), datetime.min.time())
+        _pageviews(db, country_id, themes["health"], day.date(), 2000)
+        for k in range(5):
+            store_article(db, country_id, rules, url=f"https://ex.com/d/{w}/{k}", title="Hospital shortages in Sabha",
+                          published_at=day, source_key="rss")
+        for k in range(15 if w < 4 else 5):
+            store_article(db, country_id, rules, url=f"https://bf.com/d/{w}/{k}", title=f"Hospital medicines shortage Libya {k}",
+                          published_at=day, source_key="backfill")
+    db.commit()
+    compute(db, country_id, weeks=2, today=today)
+    last = db.scalar(select(CellWeek).where(CellWeek.theme_id == themes["health"], CellWeek.region_id == regions["national"],
+                                            CellWeek.lens == "audience", CellWeek.week_start == week_start(today)))
+    assert last.breakdown["scored_sources"] == ["rss"]
+    assert abs(last.gap) < 0.3

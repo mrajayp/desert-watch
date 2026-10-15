@@ -30,6 +30,10 @@ LENSES = {
     "journalist": {"kinds": ("suggestion",), "reference": "pooled", "levels": ("national", "macro", "district")},
 }
 PARTISAN = {"tripoli_gnu_aligned", "east_lna_aligned", "islamist_leaning", "tribal_local"}
+# Sources whose weekly volume reflects someone else's selection, not how much was published:
+# the backfill follows what a monitoring review chose to cite, which grew month by month.
+# They count in what pages show, never in comparisons over time.
+NOT_FOR_TRENDS = {"backfill"}
 
 
 def week_start(d: date) -> date:
@@ -126,7 +130,8 @@ def compute(s: Session, country_id: int, *, weeks: int = 12, today: date | None 
                Item.duplicate_of.is_(None)).group_by(Item.source_key)).all()}
 
     def stable_sources(span_start: date, span_end_week: date) -> set[str]:
-        return {k for k, (lo, hi) in spans.items() if lo <= span_start and hi >= span_end_week}
+        return {k for k, (lo, hi) in spans.items()
+                if lo <= span_start and hi >= span_end_week and k not in NOT_FOR_TRENDS}
 
     def counted(agg: "CoverageAgg", keep: set[str]) -> int:
         return sum(v for k, v in agg.source.items() if k in keep) if keep else agg.total

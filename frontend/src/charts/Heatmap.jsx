@@ -82,7 +82,8 @@ function stableSources(allRows) {
     lasts.push(new Set(Object.keys(rows[rows.length - 1].breakdown?.source || {})))
   }
   const seen = new Set([...firsts.flatMap((x) => [...x])])
-  return [...seen].filter((k) => firsts.some((f) => f.has(k)) && lasts.some((l) => l.has(k)))
+  // the backfill follows what a monitoring review chose to cite, so its volume is not a trend
+  return [...seen].filter((k) => k !== 'backfill' && firsts.some((f) => f.has(k)) && lasts.some((l) => l.has(k)))
 }
 
 export function TrendMultiples({ themes, series, onSelect, onPickWeek, lang = 'en', unit }) {

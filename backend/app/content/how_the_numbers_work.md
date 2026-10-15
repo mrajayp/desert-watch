@@ -42,7 +42,7 @@ Small cells are pulled towards the reference before comparing, so a district wit
 
 If need is below a minimum the cell is not scored and shows as hatched. The minimums are 500 page views, 2 reports, 3 events or 1 flag in the window. Weeks before we started collecting are not scored either.
 
-For the audience lens we only count sources that were running across the whole 16 weeks being compared. When Google Alerts started in October it was left out of these comparisons until it has 16 weeks behind it. The backfill stops in mid October, so it drops out of comparisons that reach past that. The gap panel still shows every article.
+For the audience lens we only count sources that were running across the whole 16 weeks being compared. When Google Alerts started in October it was left out of these comparisons until it has 16 weeks behind it. The backfill is never used in these comparisons. How much it holds for a week depends on how many stories the monitoring review chose to cite, and that grew through the year. The gap panel and the article lists still show every article.
 
 ## Flags on a cell
 
@@ -54,7 +54,7 @@ For the audience lens we only count sources that were running across the whole 1
 
 ## Trends page
 
-The small charts show the last 52 weeks for each theme. Need and coverage are each set so their own average is 100. That lets them share one axis, so you see how each moves over time. You can't read off which theme gets more coverage. The coverage line only counts sources we had at the start and the end of the year shown. The note under the charts lists them.
+The small charts show the last 52 weeks for each theme. Need and coverage are each set so their own average is 100. That lets them share one axis, so you see how each moves over time. You can't read off which theme gets more coverage. The coverage line only counts sources we had at the start and the end of the year shown, and never the backfill. The note under the charts lists them.
 
 The monthly bars are a straight count of articles per month by language. Older months come from searching back, which finds fewer articles, so look at the ups and downs between years. The totals don't compare. 2026 is fuller because of the backfill, but even there the backfill follows what one monitoring service picked.
 
