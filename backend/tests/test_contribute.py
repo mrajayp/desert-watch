@@ -26,3 +26,12 @@ def test_contribute_queues_and_tally(client, users, db):
     assert r.status_code == 200
     d = client.get("/api/contribute").json()
     assert d["mine"]["suggestions"] == 1 and d["my_suggestions"][0]["kind"] == "source"
+
+
+def test_methods_page_is_admin_only(client, users):
+    login(client, "j@example.org", "journo-password-1")
+    assert client.get("/api/admin/methods").status_code == 403
+    client.post("/api/auth/logout")
+    login(client, "admin@example.org", "admin-password-1")
+    md = client.get("/api/admin/methods").json()["markdown"]
+    assert md.startswith("# How the numbers work") and "gap score" in md

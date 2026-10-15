@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { api } from '../api'
 import { useApp } from '../App'
 import SourceHealth from '../components/SourceHealth'
+import { Markdown } from './Digest'
 
 const split = (s) => s.split(/\n|,|،/).map((x) => x.trim()).filter(Boolean)
 
@@ -101,6 +102,7 @@ export default function Admin() {
             </div>)}
         </section>
       </div>
+      <MethodsCard />
       <UsersCard />
       <FeedbackCard />
       <AlertsCard />
@@ -245,6 +247,24 @@ function FeedbackCard() {
                 {['new', 'answered', 'planned', 'done', 'closed'].map((st) => <option key={st}>{st}</option>)}</select>
             </div>
           </li>))}</ul>)}
+    </section>
+  )
+}
+
+
+// "How the numbers work": every calculation in plain words. Collapsed by default.
+function MethodsCard() {
+  const [open, setOpen] = useState(false)
+  const [md, setMd] = useState(null)
+  useEffect(() => { if (open && md == null) api('/api/admin/methods').then((r) => setMd(r.markdown)) }, [open])
+  return (
+    <section className="card" style={{ marginTop: 16 }}>
+      <div className="card-head">
+        <div><h2>How the numbers work</h2>
+          <p className="sub">How every figure in Desert Watch is worked out, and where it can mislead you.</p></div>
+        <button className="btn small" aria-expanded={open} onClick={() => setOpen(!open)}>{open ? 'Hide' : 'Show'}</button>
+      </div>
+      {open && (md == null ? <div className="empty">Loading…</div> : <div className="prose"><Markdown text={md.replace(/^# .*\n/, '')} /></div>)}
     </section>
   )
 }

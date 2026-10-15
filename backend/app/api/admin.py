@@ -316,3 +316,10 @@ def answer_feedback(fid: int, body: FeedbackReply, s: Session = Depends(get_db),
     f.updated_at = utcnow()
     s.commit()
     return {"ok": True}
+
+
+@router.get("/admin/methods")
+def methods(_: User = Depends(auth.require_admin)):
+    """'How the numbers work': plain-language description of every calculation, for admins."""
+    from pathlib import Path
+    return {"markdown": (Path(__file__).resolve().parent.parent / "content" / "how_the_numbers_work.md").read_text(encoding="utf-8")}

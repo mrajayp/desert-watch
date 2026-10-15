@@ -12,7 +12,7 @@ from collections import Counter, defaultdict
 from datetime import date, datetime, timedelta
 
 import networkx as nx
-from sqlalchemy import and_, delete, select
+from sqlalchemy import and_, delete, or_, select
 from sqlalchemy.orm import Session
 
 from .models import Country, Item, ItemRegion, ItemTheme, NetworkEdgeWeek, NodeMetric, Region, utcnow
@@ -110,7 +110,12 @@ def compute(s: Session, country_id: int, *, weeks: int = 12, today: date | None 
             profile[r.outlet_id][r.theme_id] += 1
             titles[r.id] = (r.id, r.outlet_id, r.published_at, r.title or "")
 
-    s.execute(delete(NetworkEdgeWeek).where(NetworkEdgeWeek.country_id == country_id))
+    # Replace only what this run recomputes: weekly edges from `first` on, plus the whole-window
+    # kinds. (The hourly 12-week run used to wipe the full weekly history until the nightly run.)
+    s.execute(delete(NetworkEdgeWeek).where(
+        NetworkEdgeWeek.country_id == country_id,
+        or_(and_(NetworkEdgeWeek.kind.in_(("outlet_region", "outlet_theme")), NetworkEdgeWeek.week_start >= first),
+            NetworkEdgeWeek.kind.in_(("outlet_outlet", "syndication")))))
     edges = []
     for (o, reg, t, wk), w in o_r.items():
         edges.append(NetworkEdgeWeek(country_id=country_id, kind="outlet_region", source_node=f"o:{o}",

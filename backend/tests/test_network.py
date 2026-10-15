@@ -44,6 +44,20 @@ def test_edge_weights_sum_to_article_counts(db):
     assert f"r:{regions['derna']}" in region_targets
 
 
+def test_short_rerun_keeps_older_weekly_edges(db):
+    country_id = db.scalar(select(Outlet.country_id).limit(1))
+    rules = load_rules(db, country_id)
+    for k, day in enumerate([datetime(2026, 3, 2, 12), datetime(2026, 10, 6, 12)]):
+        store_article(db, country_id, rules, url=f"https://c.ly/{k}", title="Power cut leaves Sabha in darkness, electricity",
+                      published_at=day, source_key="test")
+    db.commit()
+    weekly = lambda: {str(w) for w in db.scalars(select(NetworkEdgeWeek.week_start).where(NetworkEdgeWeek.kind == "outlet_theme"))}  # noqa: E731
+    compute(db, country_id, weeks=40, today=date(2026, 10, 12))   # nightly: full history
+    assert "2026-03-02" in weekly()
+    compute(db, country_id, weeks=2, today=date(2026, 10, 12))    # hourly: recent weeks only
+    assert {"2026-03-02", "2026-10-05"} <= weekly()
+
+
 def test_ssrf_guard_and_meta_parse():
     for bad in ("file:///etc/passwd", "http://127.0.0.1/", "http://169.254.169.254/latest", "http://localhost:8000"):
         try:
