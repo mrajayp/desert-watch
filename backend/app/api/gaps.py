@@ -1,5 +1,5 @@
 from collections import Counter, defaultdict
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -12,7 +12,8 @@ from ..ingest import load_rules, store_article
 from ..models import (CellWeek, Comment, CoverageSeries, GapClaim, GapVote, Item, ItemRegion, ItemTheme, Region,
                       SourceRun, Suggestion, Theme, User, utcnow)
 from ..scoring import LENSES, week_start
-from .common import (country_or_404, hydrate_items, items_query, region_or_404, theme_or_404, window_bounds)
+from .common import (country_or_404, descendants, hydrate_items, items_query, region_or_404, theme_or_404,
+                     window_bounds)
 
 router = APIRouter(prefix="/api")
 
@@ -129,7 +130,52 @@ def all_series(country: str = "LY", lens: str = "audience", region_id: int | Non
     out = defaultdict(list)
     for r in rows:
         out[r.theme_id].append(_cell_json(r))
-    return {"region_id": region_id, "series": out}
+    basis = _trend_coverage(s, c.id, region_id, out)
+    return {"region_id": region_id, "series": out, "trend_basis": basis}
+
+
+TREND_WEEKS = 52
+
+
+def _trend_coverage(s: Session, country_id: int, region_id: int, series: dict) -> dict | None:
+    """Adds `trend_coverage` to the last TREND_WEEKS rows of each theme: the 4-week coverage counted
+    only from source|outlet pairs collecting across the whole span shown (never the backfill), so
+    the small multiples show change in reporting, not change in what we collect."""
+    from ..scoring import NOT_FOR_TRENDS
+    weeks = sorted({r["week"] for rows in series.values() for r in rows
+                    if not (r.get("breakdown") or {}).get("partial_window")})[-TREND_WEEKS:]
+    if len(weeks) < 2:
+        return None
+    first, last = date.fromisoformat(weeks[0]), date.fromisoformat(weeks[-1])
+    span_start = first - timedelta(weeks=settings.WINDOW_WEEKS - 1)
+    spans = s.execute(select(Item.source_key, Item.outlet_id, func.min(Item.published_at), func.max(Item.published_at))
+                      .where(Item.country_id == country_id, Item.kind == "article", Item.relevant.is_(True),
+                             Item.duplicate_of.is_(None), Item.source_key.not_in(NOT_FOR_TRENDS))
+                      .group_by(Item.source_key, Item.outlet_id)).all()
+    keep = {(src, oid) for src, oid, lo, hi in spans if lo.date() <= span_start and hi.date() >= last}
+    region = s.get(Region, region_id)
+    q = (select(Item.source_key, Item.outlet_id, Item.published_at, ItemTheme.theme_id)
+         .join(ItemTheme, and_(ItemTheme.item_id == Item.id, ItemTheme.active.is_(True)))
+         .where(Item.country_id == country_id, Item.kind == "article", Item.relevant.is_(True),
+                Item.duplicate_of.is_(None), Item.source_key.not_in(NOT_FOR_TRENDS),
+                Item.published_at >= datetime.combine(span_start, datetime.min.time()),
+                Item.published_at < datetime.combine(last + timedelta(days=7), datetime.min.time())))
+    if region.level != "national":
+        q = q.where(Item.id.in_(select(ItemRegion.item_id).where(
+            ItemRegion.region_id.in_(descendants(s, region)), ItemRegion.active.is_(True))))
+    weekly = Counter()
+    for src, oid, pub, tid in s.execute(q):
+        if (src, oid) in keep:
+            weekly[(tid, week_start(pub.date()))] += 1
+    shown = set(weeks)
+    for tid, rows in series.items():
+        for r in rows:
+            if r["week"] in shown:
+                wk = date.fromisoformat(r["week"])
+                r["trend_coverage"] = sum(weekly.get((tid, wk - timedelta(weeks=i)), 0)
+                                          for i in range(settings.WINDOW_WEEKS))
+    return {"from": span_start.isoformat(), "to": last.isoformat(), "outlets": len({o for _, o in keep}),
+            "sources": sorted({src for src, _ in keep})}
 
 
 @router.get("/coverage-history")

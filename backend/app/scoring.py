@@ -64,6 +64,7 @@ class CoverageAgg:
     scope: Counter = field(default_factory=Counter)
     alignment: Counter = field(default_factory=Counter)
     source: Counter = field(default_factory=Counter)
+    pairs: Counter = field(default_factory=Counter)   # "source|outlet" -> articles
     unplaced: int = 0
 
 
@@ -124,17 +125,21 @@ def compute(s: Session, country_id: int, *, weeks: int = 12, today: date | None 
     # When each source was collecting (first/last article). Comparisons over time only count
     # sources present across the whole compared span, so adding Google Alerts or the backfill
     # (or the backfill ending) does not read as a change in coverage.
-    spans = {k: (lo.date(), hi.date()) for k, lo, hi in s.execute(
-        select(Item.source_key, func.min(Item.published_at), func.max(Item.published_at))
+    # Tracked per source AND outlet: adding feeds inside an existing collector (or Google News
+    # returning outlets it only finds for recent weeks) must not read as more coverage either.
+    spans = {f"{src}|{oid}": (lo.date(), hi.date()) for src, oid, lo, hi in s.execute(
+        select(Item.source_key, Item.outlet_id, func.min(Item.published_at), func.max(Item.published_at))
         .where(Item.country_id == country_id, Item.kind == "article", Item.relevant.is_(True),
-               Item.duplicate_of.is_(None)).group_by(Item.source_key)).all()}
+               Item.duplicate_of.is_(None), Item.source_key.not_in(NOT_FOR_TRENDS))
+        .group_by(Item.source_key, Item.outlet_id)).all()}
 
     def stable_sources(span_start: date, span_end_week: date) -> set[str]:
-        return {k for k, (lo, hi) in spans.items()
-                if lo <= span_start and hi >= span_end_week and k not in NOT_FOR_TRENDS}
+        """source|outlet pairs collecting across the whole span (first article on or before its start,
+        last article in or after its final week)."""
+        return {k for k, (lo, hi) in spans.items() if lo <= span_start and hi >= span_end_week}
 
     def counted(agg: "CoverageAgg", keep: set[str]) -> int:
-        return sum(v for k, v in agg.source.items() if k in keep) if keep else agg.total
+        return sum(v for k, v in agg.pairs.items() if k in keep) if keep else agg.total
     themes = s.scalars(select(Theme).where(Theme.active.is_(True))).all()
     dims = _outlet_dims(s)
 
@@ -169,6 +174,7 @@ def compute(s: Session, country_id: int, *, weeks: int = 12, today: date | None 
                 a.scope[d.get("scope", "unknown")] += 1
                 a.alignment[d.get("alignment", "unknown")] += 1
                 a.source[r.source_key] += 1
+                a.pairs[f"{r.source_key}|{r.outlet_id}"] += 1
                 if reg == national.id and not item_regions.get(r.id):
                     a.unplaced += 1
         else:
@@ -188,6 +194,7 @@ def compute(s: Session, country_id: int, *, weeks: int = 12, today: date | None 
                 agg.scope.update(c.scope)
                 agg.alignment.update(c.alignment)
                 agg.source.update(c.source)
+                agg.pairs.update(c.pairs)
                 agg.unplaced += c.unplaced
             for lens, v in weekly_need.get(k, {}).items():
                 need[lens] += v
@@ -258,7 +265,9 @@ def compute(s: Session, country_id: int, *, weeks: int = 12, today: date | None 
                                    "baseline_windows": baseline_windows, "partial_window": partial,
                                    "building_baseline": cfg["reference"] == "own_history" and baseline_windows == 0,
                                    "scored_coverage": scored_cov,
-                                   "scored_sources": sorted(keep) if keep is not None else None},
+                                   "scored_sources": sorted({k.split("|")[0] for k in keep if agg.pairs.get(k)})
+                                   if keep is not None else None,
+                                   "scored_outlets": len({k for k in keep if agg.pairs.get(k)}) if keep is not None else None},
                         computed_at=utcnow()))
                     n += 1
         wk += timedelta(weeks=1)

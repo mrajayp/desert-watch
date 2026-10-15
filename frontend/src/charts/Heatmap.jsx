@@ -86,7 +86,7 @@ function stableSources(allRows) {
   return [...seen].filter((k) => k !== 'backfill' && firsts.some((f) => f.has(k)) && lasts.some((l) => l.has(k)))
 }
 
-export function TrendMultiples({ themes, series, onSelect, onPickWeek, lang = 'en', unit }) {
+export function TrendMultiples({ themes, series, basis, onSelect, onPickWeek, lang = 'en', unit }) {
   const wrap = useRef(null)
   const W = useSize(wrap, 900)
   const cols = W < 560 ? 1 : W < 900 ? 2 : 3
@@ -95,7 +95,9 @@ export function TrendMultiples({ themes, series, onSelect, onPickWeek, lang = 'e
   const tip = useTooltip()
   const shown = (t) => (series[t.id] || []).filter((r) => !r.breakdown?.partial_window).slice(-52)
   const keep = stableSources(themes.map(shown))
-  const stableCov = (r) => (keep.length ? keep.reduce((n, k) => n + (r.breakdown?.source?.[k] || 0), 0) : r.coverage)
+  // server-side: only source+outlet pairs collecting across the whole span shown (falls back to whole sources)
+  const stableCov = (r) => (r.trend_coverage != null ? r.trend_coverage
+    : keep.length ? keep.reduce((n, k) => n + (r.breakdown?.source?.[k] || 0), 0) : r.coverage)
   return (
     <div ref={wrap} className="viz" onMouseLeave={tip.hide}>
       <div style={{ display: 'grid', gridTemplateColumns: `repeat(${cols}, minmax(0,1fr))`, gap: 12 }}>
@@ -147,7 +149,8 @@ export function TrendMultiples({ themes, series, onSelect, onPickWeek, lang = 'e
       <div className="legend" style={{ marginTop: 10 }}>
         <span><span className="sw" style={{ background: 'var(--ink-2)', height: 3 }} />Need ({unit})</span>
         <span><span className="sw" style={{ background: 'var(--accent)', height: 3 }} />Monitored coverage</span>
-        <span className="muted">Last 52 weeks. Both indexed to their own average = 100, so they share one axis.{keep.length ? ` Coverage counts only sources we had all year: ${keep.map(sourceLabel).join(', ')}.` : ''}{onPickWeek ? ' Click a week to see the articles and need signals behind it; click a panel title for its long-run history.' : ''}</span>
+        <span className="muted">Last 52 weeks. Both indexed to their own average = 100, so they share one axis.{basis ? ` Coverage counts only the ${fmt(basis.outlets)} outlets we collected from all through ${basis.from} to ${basis.to} (${basis.sources.map(sourceLabel).join(', ')}), never the backfill.`
+          : keep.length ? ` Coverage counts only sources we had all year: ${keep.map(sourceLabel).join(', ')}.` : ''}{onPickWeek ? ' Click a week to see the articles and need signals behind it; click a panel title for its long-run history.' : ''}</span>
       </div>
     </div>
   )

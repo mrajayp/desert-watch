@@ -12,6 +12,7 @@ export default function Trends() {
   const { meta, filters, setFilters, lang, openGap, openArticles } = useApp()
   const [regionId, setRegionId] = useState(meta.regions.find((r) => r.level === 'national').id)
   const [series, setSeries] = useState({})
+  const [basis, setBasis] = useState(null)
   const [history, setHistory] = useState({})
   const histSvg = useRef(null)
   const grp = String(filters.themeId).startsWith('group:') ? filters.themeId.slice(6) : null
@@ -19,7 +20,7 @@ export default function Trends() {
   const [monthly, setMonthly] = useState([])
   const monthSvg = useRef(null)
   useEffect(() => { api('/api/coverage-monthly' + qs({ theme_id: themeId })).then(setMonthly) }, [themeId])
-  useEffect(() => { api('/api/cells/trends' + qs({ lens: filters.lens, region_id: regionId })).then((r) => setSeries(r.series)) }, [filters.lens, regionId])
+  useEffect(() => { api('/api/cells/trends' + qs({ lens: filters.lens, region_id: regionId })).then((r) => { setSeries(r.series); setBasis(r.trend_basis) }) }, [filters.lens, regionId])
   useEffect(() => { api('/api/coverage-history' + qs({ theme_id: themeId })).then(setHistory) }, [themeId])
   const theme = meta.themes.find((t) => t.id === themeId)
   const tname = (t) => (lang === 'ar' ? t.name_ar : t.name_en)
@@ -52,7 +53,7 @@ export default function Trends() {
         <section className="card">
           <h2>Need vs coverage, theme by theme</h2>
           <p className="sub">{LENS_TEXT[filters.lens].blurb}. When the blue line falls below the grey one, coverage is falling behind need. Click any week to see the articles and need signals behind it.</p>
-          <TrendMultiples themes={meta.themes} series={series} lang={lang} unit={LENS_TEXT[filters.lens].unit}
+          <TrendMultiples themes={meta.themes} series={series} basis={basis} lang={lang} unit={LENS_TEXT[filters.lens].unit}
             onSelect={(id) => setFilters({ themeId: String(id) })}
             onPickWeek={(tid, week) => openGap(tid, regionId, { week, lens: filters.lens, from: 'trends' })} />
         </section>

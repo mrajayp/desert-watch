@@ -107,3 +107,50 @@ def test_backfill_density_does_not_move_the_gap(db):
                                             CellWeek.lens == "audience", CellWeek.week_start == week_start(today)))
     assert last.breakdown["scored_sources"] == ["rss"]
     assert abs(last.gap) < 0.3
+
+
+def test_new_outlets_inside_an_existing_source_do_not_move_the_gap(db):
+    """Same collector ('rss'), but 25 new outlet feeds start two weeks ago."""
+    themes, regions = ids(db)
+    country_id = db.scalar(select(Outlet.country_id).limit(1))
+    rules = load_rules(db, country_id)
+    today = date(2026, 10, 12)
+    for w in range(24):
+        day = datetime.combine(week_start(today) - timedelta(weeks=w), datetime.min.time())
+        _pageviews(db, country_id, themes["health"], day.date(), 2000)
+        for k in range(5):
+            store_article(db, country_id, rules, url=f"https://old.ly/o/{w}/{k}", title="Hospital shortages in Sabha",
+                          published_at=day, source_key="rss")
+        if w < 2:
+            for k in range(25):
+                store_article(db, country_id, rules, url=f"https://new{k}.ly/n/{w}", title=f"Hospital medicines shortage Libya {k}",
+                              published_at=day, source_key="rss")
+    db.commit()
+    compute(db, country_id, weeks=2, today=today)
+    last = db.scalar(select(CellWeek).where(CellWeek.theme_id == themes["health"], CellWeek.region_id == regions["national"],
+                                            CellWeek.lens == "audience", CellWeek.week_start == week_start(today)))
+    assert last.coverage > 3 * last.breakdown["scored_coverage"] and last.breakdown["scored_outlets"] == 1
+    assert abs(last.gap) < 0.3
+
+
+def test_trends_api_counts_only_outlets_present_all_year(client, users, db):
+    themes, regions = ids(db)
+    country_id = db.scalar(select(Outlet.country_id).limit(1))
+    rules = load_rules(db, country_id)
+    today = date(2026, 10, 12)
+    for w in range(60):
+        day = datetime.combine(week_start(today) - timedelta(weeks=w), datetime.min.time())
+        _pageviews(db, country_id, themes["health"], day.date(), 2000)
+        store_article(db, country_id, rules, url=f"https://old.ly/t/{w}", title="Hospital shortages in Sabha",
+                      published_at=day, source_key="rss")
+        if w < 3:
+            for k in range(10):
+                store_article(db, country_id, rules, url=f"https://new{k}.ly/t/{w}", title=f"Hospital medicines shortage Libya {k}",
+                              published_at=day, source_key="rss")
+    db.commit()
+    compute(db, country_id, weeks=56, today=today)
+    login(client, "admin@example.org", "admin-password-1")
+    r = client.get("/api/cells/trends", params={"lens": "audience"}).json()
+    rows = [x for x in r["series"][str(themes["health"])] if "trend_coverage" in x]
+    assert r["trend_basis"]["outlets"] == 1
+    assert rows[-1]["coverage"] > rows[-1]["trend_coverage"] == 4    # 4 weeks x 1 steady article
