@@ -61,7 +61,7 @@ def build_facts(s: Session, country: Country, week: date) -> dict:
     def counts(start, end):
         rows = s.execute(select(ItemTheme.theme_id, Item.lang, func.count(Item.id))
                          .join(Item, Item.id == ItemTheme.item_id)
-                         .where(Item.country_id == country.id, Item.kind == "article", Item.relevant.is_(True),
+                         .where(Item.country_id == country.id, Item.kind == "article", Item.relevant.is_(True), Item.duplicate_of.is_(None),
                                 ItemTheme.active.is_(True), Item.published_at >= start, Item.published_at < end)
                          .group_by(ItemTheme.theme_id, Item.lang)).all()
         out = defaultdict(Counter)
@@ -95,7 +95,7 @@ def build_facts(s: Session, country: Country, week: date) -> dict:
     rows = s.execute(select(ItemRegion.region_id, ItemTheme.theme_id, func.count(func.distinct(Item.id)))
                      .join(Item, Item.id == ItemRegion.item_id)
                      .join(ItemTheme, and_(ItemTheme.item_id == Item.id, ItemTheme.active.is_(True)))
-                     .where(Item.country_id == country.id, Item.kind == "article", Item.relevant.is_(True),
+                     .where(Item.country_id == country.id, Item.kind == "article", Item.relevant.is_(True), Item.duplicate_of.is_(None),
                             ItemRegion.active.is_(True), Item.published_at >= win_start, Item.published_at < win_end)
                      .group_by(ItemRegion.region_id, ItemTheme.theme_id)).all()
     by_district, gender_by_district = Counter(), Counter()
@@ -121,7 +121,7 @@ def build_facts(s: Session, country: Country, week: date) -> dict:
     for tid in gender_ids:
         for title, lang in s.execute(select(Item.title, Item.lang).join(ItemTheme, ItemTheme.item_id == Item.id)
                                      .where(ItemTheme.theme_id == tid, ItemTheme.active.is_(True),
-                                            Item.relevant.is_(True), Item.kind == "article",
+                                            Item.relevant.is_(True), Item.duplicate_of.is_(None), Item.kind == "article",
                                             Item.published_at >= win_start, Item.published_at < win_end)
                                      .order_by(Item.published_at.desc()).limit(3)):
             headlines.append({"theme": themes[tid].name_en, "lang": lang, "title": (title or "")[:160]})

@@ -244,7 +244,7 @@ def learning(s: Session = Depends(get_db), _: User = Depends(auth.require_admin)
         tot, hit = Counter(), Counter()
         since = utcnow() - timedelta(days=28)
         for it in s.scalars(select(Item).where(Item.kind == "article", Item.source_key.in_(("gnews", "gdelt")),
-                                               Item.relevant.is_(True), Item.published_at >= since)):
+                                               Item.relevant.is_(True), Item.duplicate_of.is_(None), Item.published_at >= since)):
             q = (it.extra or {}).get("query_theme")
             if q in slug2id:
                 k = f"{q}/{it.lang}"

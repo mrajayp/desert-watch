@@ -22,7 +22,7 @@ GAP_MIN = 0.15  # same threshold as the UI's "less coverage than expected" label
 def contribute(country: str = "LY", s: Session = Depends(get_db), u: User = Depends(auth.current_user)):
     c = country_or_404(s, country)
     since = utcnow() - timedelta(days=RECENT_DAYS)
-    recent = and_(Item.country_id == c.id, Item.kind == "article", Item.relevant.is_(True), Item.published_at >= since,
+    recent = and_(Item.country_id == c.id, Item.kind == "article", Item.relevant.is_(True), Item.duplicate_of.is_(None), Item.published_at >= since,
                   Item.added_by.is_(None))
     # correlated EXISTS uses the (item_id, ...) primary keys; IN (subquery) scanned whole tables
     has_theme = exists().where(ItemTheme.item_id == Item.id, ItemTheme.active.is_(True))

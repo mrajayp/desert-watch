@@ -142,6 +142,9 @@ class Item(Base):
     extra: Mapped[dict] = mapped_column(JSON, default=dict)
     added_by: Mapped[int | None] = mapped_column(ForeignKey("user.id"))
     relevant: Mapped[bool] = mapped_column(Boolean, default=True)  # users can mark an item irrelevant
+    # another copy of the same story from the same outlet (e.g. Google News link + the outlet's own URL):
+    # kept for reference, never counted. Points at the copy that is counted.
+    duplicate_of: Mapped[int | None] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 

@@ -40,7 +40,7 @@ def list_outlets(country: str = "LY", days: int = 84, min_articles: int = 0, s: 
     c = country_or_404(s, country)
     since = utcnow() - timedelta(days=days)
     counts = dict(s.execute(select(Item.outlet_id, func.count(Item.id)).where(
-        Item.country_id == c.id, Item.kind == "article", Item.relevant.is_(True), Item.published_at >= since)
+        Item.country_id == c.id, Item.kind == "article", Item.relevant.is_(True), Item.duplicate_of.is_(None), Item.published_at >= since)
         .group_by(Item.outlet_id)).all())
     langs = defaultdict(Counter)
     for o, l, n in s.execute(select(Item.outlet_id, Item.lang, func.count(Item.id)).where(

@@ -8,7 +8,9 @@ An article counts as coverage when it mentions Libya or a Libyan place, or comes
 
 Articles come from Google News searches, outlet news feeds, Google Alerts and the historical backfill. People can also add them. Every article counts once, whatever its source.
 
-Watch out for two things. The same story picked up by Google News and by an outlet feed can be counted twice, because Google gives us its own link instead of the outlet's. And coverage goes up whenever we add a source. More articles does not always mean more reporting.
+The same story often reaches us twice. Google News gives us its own link, and the outlet's feed or the backfill gives the real one. So we look for articles from the same outlet, published within a day of each other, with almost the same headline. We count one copy and keep the outlet's own link. The others are kept but left out of every number.
+
+Coverage also goes up whenever we add a source. The trend charts and the audience gap allow for this. The monthly bars don't.
 
 ## Themes and places
 
@@ -40,11 +42,11 @@ Small cells are pulled towards the reference before comparing, so a district wit
 
 If need is below a minimum the cell is not scored and shows as hatched. The minimums are 500 page views, 2 reports, 3 events or 1 flag in the window. Weeks before we started collecting are not scored either.
 
-Because the audience lens compares a theme with its own past, a new source makes recent weeks look well covered until the baseline catches up. That is what happened after Google Alerts and the backfill went in. Give it about three months.
+For the audience lens we only count sources that were running across the whole 16 weeks being compared. When Google Alerts started in October it was left out of these comparisons until it has 16 weeks behind it. The backfill stops in mid October, so it drops out of comparisons that reach past that. The gap panel still shows every article.
 
 ## Flags on a cell
 
-- Coverage dropped. Coverage fell by more than half compared with the previous four weeks while need stayed about the same.
+- Coverage dropped. Coverage fell by more than half compared with the previous four weeks while need stayed about the same. Both windows are counted on the same sources, so a source starting or stopping does not trigger it.
 - Little Arabic. Less than a fifth of the articles are in Arabic.
 - Only covered from outside. No Libyan outlet covered it, only international or diaspora ones.
 - One side only. Every outlet with a known political alignment that covered it is on the same side. This uses our own alignment labels, never the ones from the social media scrape.
@@ -52,7 +54,7 @@ Because the audience lens compares a theme with its own past, a new source makes
 
 ## Trends page
 
-The small charts show the last 52 weeks for each theme. Need and coverage are each set so their own average is 100. That lets them share one axis, so you see how each moves over time. You can't read off which theme gets more coverage.
+The small charts show the last 52 weeks for each theme. Need and coverage are each set so their own average is 100. That lets them share one axis, so you see how each moves over time. You can't read off which theme gets more coverage. The coverage line only counts sources we had at the start and the end of the year shown. The note under the charts lists them.
 
 The monthly bars are a straight count of articles per month by language. Older months come from searching back, which finds fewer articles, so look at the ups and downs between years. The totals don't compare. 2026 is fuller because of the backfill, but even there the backfill follows what one monitoring service picked.
 

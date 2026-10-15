@@ -85,7 +85,7 @@ def items_query(s: Session, *, country_id: int, theme_id: int | None, region: Re
 
 def _items_stmt(s: Session, *, country_id: int, theme_id: int | None, region: Region | None, start, end,
                 kinds, outlet_id: int | None, q: str | None, lang: str | None):
-    stmt = select(Item).where(Item.country_id == country_id, Item.kind.in_(kinds), Item.relevant.is_(True),
+    stmt = select(Item).where(Item.country_id == country_id, Item.kind.in_(kinds), Item.relevant.is_(True), Item.duplicate_of.is_(None),
                               Item.published_at >= start, Item.published_at < end)
     if lang:
         stmt = stmt.where(Item.lang == lang)

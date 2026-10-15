@@ -3,7 +3,7 @@ so failures are recorded, not raised. Jobs share one lock so SQLite sees one wri
 import logging
 import threading
 
-from . import learning, network, scoring
+from . import dedupe, learning, network, scoring
 from .collectors import COLLECTORS
 from .collectors.base import run_collector
 from .db import SessionLocal
@@ -36,6 +36,7 @@ def collect(key: str, **kw):
 @_locked
 def recompute(weeks: int | None = None):
     """weeks=None scores every week since the first collected article (capped at ~4 years)."""
+    full = weeks is None
     with SessionLocal() as s:
         if weeks is None:
             from datetime import date
@@ -47,10 +48,14 @@ def recompute(weeks: int | None = None):
         infer_bases(s)
         for c in s.query(Country).all():
             apply_relevance_guard(s, c.id)
+        # one story counted once: recent weeks on the hourly run, everything on the full run
+        from datetime import datetime, timedelta
+        since = None if full else datetime.now() - timedelta(weeks=weeks + 5)
+        dups = dedupe.mark_duplicates(s, since)
         n = scoring.compute_all(s, weeks=weeks)
         e = network.compute_all(s, weeks=weeks)
         lb = learning.build_labels(s)
-        log.info("recompute: %s cells, %s edges, %s new labels", n, e, lb)
+        log.info("recompute: %s new duplicates, %s cells, %s edges, %s new labels", dups, n, e, lb)
         return n
 
 

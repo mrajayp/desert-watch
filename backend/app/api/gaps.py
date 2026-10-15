@@ -276,7 +276,7 @@ def coverage_monthly(theme_id: int, country: str = "LY", s: Session = Depends(ge
     rows = s.execute(
         select(func.strftime("%Y-%m", Item.published_at), Item.lang, func.count(Item.id))
         .join(ItemTheme, ItemTheme.item_id == Item.id)
-        .where(Item.country_id == c.id, Item.kind == "article", Item.relevant.is_(True),
+        .where(Item.country_id == c.id, Item.kind == "article", Item.relevant.is_(True), Item.duplicate_of.is_(None),
                ItemTheme.theme_id == theme_id, ItemTheme.active.is_(True))
         .group_by(func.strftime("%Y-%m", Item.published_at), Item.lang)).all()
     out = defaultdict(lambda: {"ar": 0, "en": 0, "other": 0})
@@ -325,10 +325,10 @@ def timeline(country: str = "LY", s: Session = Depends(get_db), _: User = Depend
     month = func.strftime("%Y-%m", Item.published_at)
     rows = s.execute(select(month, ItemTheme.theme_id, func.count(func.distinct(Item.id)))
                      .join(ItemTheme, and_(ItemTheme.item_id == Item.id, ItemTheme.active.is_(True)))
-                     .where(Item.country_id == c.id, Item.relevant.is_(True), Item.kind == "article")
+                     .where(Item.country_id == c.id, Item.relevant.is_(True), Item.duplicate_of.is_(None), Item.kind == "article")
                      .group_by(month, ItemTheme.theme_id)).all()
     streams = s.execute(select(month, Item.kind, func.count(Item.id))
-                        .where(Item.country_id == c.id, Item.relevant.is_(True), Item.kind.in_(("statement", "report")))
+                        .where(Item.country_id == c.id, Item.relevant.is_(True), Item.duplicate_of.is_(None), Item.kind.in_(("statement", "report")))
                         .group_by(month, Item.kind)).all()
     present = sorted({m for m, *_ in rows} | {m for m, *_ in streams})
     months = []
@@ -357,7 +357,7 @@ def timeline(country: str = "LY", s: Session = Depends(get_db), _: User = Depend
 def official_items(country: str = "LY", kind: str = "statement", month: str | None = None, theme_id: int | None = None,
                    limit: int = 50, s: Session = Depends(get_db), _: User = Depends(auth.current_user)):
     c = country_or_404(s, country)
-    q = select(Item).where(Item.country_id == c.id, Item.kind == kind, Item.relevant.is_(True))
+    q = select(Item).where(Item.country_id == c.id, Item.kind == kind, Item.relevant.is_(True), Item.duplicate_of.is_(None))
     if month:
         q = q.where(func.strftime("%Y-%m", Item.published_at) == month)
     if theme_id:

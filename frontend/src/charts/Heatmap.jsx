@@ -2,7 +2,7 @@
 // each cell also prints the raw counts so the score is never a black box.
 import * as d3 from 'd3'
 import { useRef } from 'react'
-import { INFO_FLAGS, fmt, gapFill, gapLabel, flagText } from './scales'
+import { INFO_FLAGS, fmt, gapFill, gapLabel, flagText, sourceLabel } from './scales'
 import { HatchDefs, fitLabel, groupedRows, themeLabel, useSize, useTooltip } from './util'
 
 export default function Heatmap({ themes, regions, cells, onSelect, svgRef, unit = 'need', lang = 'en', feedback = {} }) {
@@ -72,6 +72,19 @@ export default function Heatmap({ themes, regions, cells, onSelect, svgRef, unit
 }
 
 // Need and coverage share one axis by indexing each to its own mean (=100): no dual axis.
+// Sources present at both ends of what is shown: the coverage line only counts these, so adding
+// a collector (or one ending, like the backfill) does not look like a change in coverage.
+function stableSources(allRows) {
+  const firsts = [], lasts = []
+  for (const rows of allRows) {
+    if (rows.length < 2) continue
+    firsts.push(new Set(Object.keys(rows[0].breakdown?.source || {})))
+    lasts.push(new Set(Object.keys(rows[rows.length - 1].breakdown?.source || {})))
+  }
+  const seen = new Set([...firsts.flatMap((x) => [...x])])
+  return [...seen].filter((k) => firsts.some((f) => f.has(k)) && lasts.some((l) => l.has(k)))
+}
+
 export function TrendMultiples({ themes, series, onSelect, onPickWeek, lang = 'en', unit }) {
   const wrap = useRef(null)
   const W = useSize(wrap, 900)
@@ -79,13 +92,16 @@ export function TrendMultiples({ themes, series, onSelect, onPickWeek, lang = 'e
   const cw = Math.floor(W / cols) - 12
   const ch = 132
   const tip = useTooltip()
+  const shown = (t) => (series[t.id] || []).filter((r) => !r.breakdown?.partial_window).slice(-52)
+  const keep = stableSources(themes.map(shown))
+  const stableCov = (r) => (keep.length ? keep.reduce((n, k) => n + (r.breakdown?.source?.[k] || 0), 0) : r.coverage)
   return (
     <div ref={wrap} className="viz" onMouseLeave={tip.hide}>
       <div style={{ display: 'grid', gridTemplateColumns: `repeat(${cols}, minmax(0,1fr))`, gap: 12 }}>
         {themes.map((t) => {
-          const rows = (series[t.id] || []).filter((r) => !r.breakdown?.partial_window).slice(-52)
-          const idx = (k) => { const m = d3.mean(rows, (r) => r[k]) || 0; return rows.map((r) => (m ? (r[k] / m) * 100 : 0)) }
-          const need = idx('need'), cov = idx('coverage')
+          const rows = shown(t)
+          const idx = (get) => { const m = d3.mean(rows, get) || 0; return rows.map((r) => (m ? (get(r) / m) * 100 : 0)) }
+          const need = idx((r) => r.need), cov = idx(stableCov)
           const x = d3.scalePoint().domain(rows.map((r) => r.week)).range([30, cw - 8])
           const ymax = Math.max(160, d3.max([...need, ...cov]) || 0)
           const y = d3.scaleLinear().domain([0, ymax]).range([ch - 22, 8]).nice()
@@ -111,7 +127,7 @@ export function TrendMultiples({ themes, series, onSelect, onPickWeek, lang = 'e
                     const px = ((e.clientX - box.left) / box.width) * cw
                     const i = d3.minIndex(rows, (r) => Math.abs(x(r.week) - px))
                     const r = rows[i]
-                    tip.show(e, <div><b>Week of {r.week}</b><div>{fmt(r.coverage)} articles · {fmt(r.need)} {unit}</div>
+                    tip.show(e, <div><b>Week of {r.week}</b><div>{fmt(r.coverage)} articles{stableCov(r) !== r.coverage ? ` (${fmt(stableCov(r))} from the sources on the line)` : ''} · {fmt(r.need)} {unit}</div>
                       <div className="small muted">4-week window{onPickWeek ? ' · click for the articles' : ''}</div></div>, wrap.current)
                   }}>
                   {y.ticks(3).map((v) => <g key={v}><line x1={30} x2={cw - 8} y1={y(v)} y2={y(v)} stroke="var(--grid)" />
@@ -130,7 +146,7 @@ export function TrendMultiples({ themes, series, onSelect, onPickWeek, lang = 'e
       <div className="legend" style={{ marginTop: 10 }}>
         <span><span className="sw" style={{ background: 'var(--ink-2)', height: 3 }} />Need ({unit})</span>
         <span><span className="sw" style={{ background: 'var(--accent)', height: 3 }} />Monitored coverage</span>
-        <span className="muted">Last 52 weeks. Both indexed to their own average = 100, so they share one axis.{onPickWeek ? ' Click a week to see the articles and need signals behind it; click a panel title for its long-run history.' : ''}</span>
+        <span className="muted">Last 52 weeks. Both indexed to their own average = 100, so they share one axis.{keep.length ? ` Coverage counts only sources we had all year: ${keep.map(sourceLabel).join(', ')}.` : ''}{onPickWeek ? ' Click a week to see the articles and need signals behind it; click a panel title for its long-run history.' : ''}</span>
       </div>
     </div>
   )

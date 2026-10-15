@@ -63,9 +63,12 @@ class CoverageAgg:
     unplaced: int = 0
 
 
-def coverage_flags(cur: CoverageAgg, prev_cov: float, need: float, prev_need: float) -> list[str]:
+def coverage_flags(cur: CoverageAgg, prev_cov: float, need: float, prev_need: float,
+                   cur_comparable: float | None = None) -> list[str]:
+    """prev_cov / cur_comparable count the same sources in both windows (see stable_sources)."""
     flags = []
-    if prev_cov >= 4 and cur.total < 0.5 * prev_cov and need >= 0.75 * prev_need and need > 0:
+    now = cur.total if cur_comparable is None else cur_comparable
+    if prev_cov >= 4 and now < 0.5 * prev_cov and need >= 0.75 * prev_need and need > 0:
         flags.append("coverage_drop")
     if cur.total >= 5 and cur.lang.get("ar", 0) / cur.total < 0.2:
         flags.append("little_arabic")
@@ -114,6 +117,19 @@ def compute(s: Session, country_id: int, *, weeks: int = 12, today: date | None 
         Item.country_id == country_id, Item.kind == "article", Item.source_key != "user"))
     coverage_start = week_start(first_article.date()) + timedelta(weeks=1) if first_article else today
     national = next(r for r in by_id.values() if r.level == "national")
+    # When each source was collecting (first/last article). Comparisons over time only count
+    # sources present across the whole compared span, so adding Google Alerts or the backfill
+    # (or the backfill ending) does not read as a change in coverage.
+    spans = {k: (lo.date(), hi.date()) for k, lo, hi in s.execute(
+        select(Item.source_key, func.min(Item.published_at), func.max(Item.published_at))
+        .where(Item.country_id == country_id, Item.kind == "article", Item.relevant.is_(True),
+               Item.duplicate_of.is_(None)).group_by(Item.source_key)).all()}
+
+    def stable_sources(span_start: date, span_end_week: date) -> set[str]:
+        return {k for k, (lo, hi) in spans.items() if lo <= span_start and hi >= span_end_week}
+
+    def counted(agg: "CoverageAgg", keep: set[str]) -> int:
+        return sum(v for k, v in agg.source.items() if k in keep) if keep else agg.total
     themes = s.scalars(select(Theme).where(Theme.active.is_(True))).all()
     dims = _outlet_dims(s)
 
@@ -122,7 +138,7 @@ def compute(s: Session, country_id: int, *, weeks: int = 12, today: date | None 
         select(Item.id, Item.kind, Item.published_at, Item.lang, Item.outlet_id, Item.source_key, Item.value,
                ItemTheme.theme_id)
         .join(ItemTheme, and_(ItemTheme.item_id == Item.id, ItemTheme.active.is_(True)))
-        .where(Item.country_id == country_id, Item.relevant.is_(True),
+        .where(Item.country_id == country_id, Item.relevant.is_(True), Item.duplicate_of.is_(None),
                Item.published_at >= datetime.combine(history_from, datetime.min.time()),
                Item.published_at < datetime.combine(last + timedelta(days=7), datetime.min.time()))
     ).all()
@@ -199,37 +215,45 @@ def compute(s: Session, country_id: int, *, weeks: int = 12, today: date | None 
                     agg, need = cur[(t.id, rid)]
                     pagg, pneed = prev[(t.id, rid)]
                     baseline_windows = 0
+                    scored_cov, keep = agg.total, None
                     if cfg["reference"] == "own_history":
                         hc = hn = 0.0
+                        keep = stable_sources(wk - timedelta(weeks=4 * settings.WINDOW_WEEKS - 1), wk)
+                        scored_cov = counted(agg, keep)
                         for i in range(1, 4):
                             w_end = wk - timedelta(weeks=settings.WINDOW_WEEKS * i)
                             if w_end - timedelta(weeks=settings.WINDOW_WEEKS - 1) < coverage_start:
                                 continue  # window starts before collection began
                             a2, n2 = window(w_end, t.id, rid)
-                            hc += a2.total
+                            hc += counted(a2, keep)
                             hn += n2[lens]
                             baseline_windows += 1
                         ref = hc / hn if hn else None
                     else:
                         ref = pooled_nat if reg.level == "national" else theme_ref
                     partial = wk - timedelta(weeks=settings.WINDOW_WEEKS - 1) < coverage_start
-                    sc = score_cell(agg.total, need[lens], ref, min_need=min_need, shrink=m)
+                    sc = score_cell(scored_cov, need[lens], ref, min_need=min_need, shrink=m)
                     if partial:  # window reaches back before collection began: coverage undercounted
                         sc = Score(sc.ratio, sc.ref_ratio, None, True)
                     if need[lens] == 0 and agg.total == 0 and reg.level != "national":
                         continue  # keep the table small: empty regional cells are implicit
+                    # coverage-drop flag: compare the two windows on the sources present across both
+                    keep2 = stable_sources(wk - timedelta(weeks=2 * settings.WINDOW_WEEKS - 1), wk)
+                    prev_ok = (wk - timedelta(weeks=2 * settings.WINDOW_WEEKS - 1)) >= coverage_start
                     s.add(CellWeek(
                         country_id=country_id, theme_id=t.id, region_id=rid, week_start=wk, lens=lens,
                         need=need[lens], coverage=agg.total, ratio=sc.ratio, ref_ratio=sc.ref_ratio, gap=sc.gap,
                         insufficient=sc.insufficient,
-                        flags=coverage_flags(agg, pagg.total if (wk - timedelta(weeks=2 * settings.WINDOW_WEEKS - 1)) >= coverage_start else 0,
-                                             need[lens], pneed[lens]),
+                        flags=coverage_flags(agg, counted(pagg, keep2) if prev_ok else 0, need[lens], pneed[lens],
+                                             cur_comparable=counted(agg, keep2)),
                         breakdown={"lang": dict(agg.lang), "scope": dict(agg.scope),
                                    "alignment": dict(agg.alignment), "source": dict(agg.source),
                                    "unplaced": agg.unplaced, "prev_coverage": pagg.total,
                                    "prev_need": pneed[lens], "reference": cfg["reference"],
                                    "baseline_windows": baseline_windows, "partial_window": partial,
-                                   "building_baseline": cfg["reference"] == "own_history" and baseline_windows == 0},
+                                   "building_baseline": cfg["reference"] == "own_history" and baseline_windows == 0,
+                                   "scored_coverage": scored_cov,
+                                   "scored_sources": sorted(keep) if keep is not None else None},
                         computed_at=utcnow()))
                     n += 1
         wk += timedelta(weeks=1)

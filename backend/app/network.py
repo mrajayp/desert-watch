@@ -84,7 +84,7 @@ def compute(s: Session, country_id: int, *, weeks: int = 12, today: date | None 
     rows = s.execute(
         select(Item.id, Item.outlet_id, Item.published_at, Item.title, ItemTheme.theme_id)
         .join(ItemTheme, and_(ItemTheme.item_id == Item.id, ItemTheme.active.is_(True)))
-        .where(Item.country_id == country_id, Item.kind == "article", Item.relevant.is_(True),
+        .where(Item.country_id == country_id, Item.kind == "article", Item.relevant.is_(True), Item.duplicate_of.is_(None),
                Item.outlet_id.is_not(None), Item.published_at >= since)).all()
     ids = {r.id for r in rows}
     item_regions = defaultdict(set)
