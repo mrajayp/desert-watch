@@ -1,6 +1,10 @@
-# Not deployed yet. Create with: fly apps create <name>; fly volumes create dw_data --size 1 --region <region>
+# Deployed as desert-watch (lhr). Volume dw_data mounted at /data.
 app = "desert-watch"
 primary_region = "lhr"
+
+# Swap on the root disk: heavy jobs (recompute, imports) slow down instead of OOM-killing the web
+# process, which made Fly reboot the whole machine (2026-10-14/15).
+swap_size_mb = 1024
 
 [build]
 
