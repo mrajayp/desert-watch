@@ -4,6 +4,7 @@ import { useApp } from '../App'
 import { DIMENSIONS } from '../charts/scales'
 import Comments from './Comments'
 import ArticleRow from './ArticleRow'
+import OutletReach from './OutletReach'
 
 export default function OutletPanel({ id }) {
   const { me, meta, closePanel, refresh } = useApp()
@@ -60,6 +61,7 @@ export default function OutletPanel({ id }) {
           <div className="muted">Social Media scraped data, {o.external.social_media_scrape.period?.from} to {o.external.social_media_scrape.period?.to}</div></td></tr>}
         {o.quality && <tr><th>Quality (team)</th><td>accuracy {o.quality.accuracy} · depth {o.quality.depth} · local voices {o.quality.local_sourcing} <span className="muted">(n={o.quality.n})</span></td></tr>}
       </tbody></table>
+      <OutletReach id={id} />
 
       {me.role === 'admin' && (
         <div className="row" style={{ marginTop: 10 }}>

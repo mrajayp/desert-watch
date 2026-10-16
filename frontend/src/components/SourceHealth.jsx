@@ -21,7 +21,7 @@ export default function SourceHealth({ compact = false }) {
             </span>))}
         </div>
         <div className="small muted" style={{ marginTop: 4 }}>
-          Coverage = what we can monitor. {waiting.length > 0 && `Event and humanitarian lenses switch on when their keys arrive (${waiting.map((w) => w.label).join(', ')}).`}
+          Coverage = what we can monitor. {waiting.length > 0 && `These start when their keys arrive: ${waiting.map((w) => w.label).join(', ')}.`}
         </div>
       </div>
     )

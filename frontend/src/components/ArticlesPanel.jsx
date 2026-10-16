@@ -13,10 +13,11 @@ export default function ArticlesPanel({ title, subtitle, query, note }) {
   const { closePanel } = useApp()
   const [source, setSource] = useState('')
   const [lang, setLang] = useState(query.lang || '')
+  const [sort, setSort] = useState('')
   const [data, setData] = useState(null)
-  const params = (offset) => qs({ ...query, lang: lang || undefined, source: source || undefined, limit: PAGE, offset })
+  const params = (offset) => qs({ ...query, lang: lang || undefined, source: source || undefined, sort: sort || undefined, limit: PAGE, offset })
   const load = () => api('/api/items' + params(0)).then(setData)
-  useEffect(() => { setData(null); load() }, [JSON.stringify(query), source, lang])
+  useEffect(() => { setData(null); load() }, [JSON.stringify(query), source, lang, sort])
   const more = async () => {
     const r = await api('/api/items' + params(data.items.length))
     setData({ ...r, items: [...data.items, ...r.items] })
@@ -36,6 +37,10 @@ export default function ArticlesPanel({ title, subtitle, query, note }) {
         <span className="seg" role="group" aria-label="Language">
           {[['', 'Any'], ['ar', 'Arabic'], ['en', 'English']].map(([k, l]) =>
             <button key={k} aria-pressed={lang === k} onClick={() => setLang(k)}>{l}</button>)}</span>
+        <span className="seg" role="group" aria-label="Order">
+          {[['', 'Newest'], ['pickup', 'Most picked up']].map(([k, l]) =>
+            <button key={k} aria-pressed={sort === k} onClick={() => setSort(k)}
+              title={k ? 'Stories carried by the most outlets first' : undefined}>{l}</button>)}</span>
       </div>
       <SourceFilter counts={data?.by_source} value={source} onChange={setSource} />
       {!data ? <div className="empty">Loading…</div> : data.items.length === 0 ? <div className="empty">No articles.</div> : (
