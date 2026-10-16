@@ -217,3 +217,142 @@ def test_a_few_search_errors_do_not_drop_a_site(db, no_sleep):
     tried = [it for it in db.scalars(select(Item).where(Item.url.like("%CBMflaky%")))
              if (it.extra or {}).get("resolve_tries")]
     assert len(tried) == 4                                          # the two timeouts are not counted as tries
+
+
+def _site_items(db, dom, n, tag=None):
+    country_id = db.scalar(select(Outlet.country_id).limit(1))
+    rules = load_rules(db, country_id)
+    items = [_gnews(db, country_id, rules, f"{tag or dom}{k}", f"Libya: {dom} story {k} on the Sabha water supply cuts",
+                    PUB - timedelta(hours=k), dom) for k in range(n)]
+    db.commit()
+    return items
+
+
+NOW = datetime(2026, 10, 16, 6)
+
+
+def test_a_user_decision_made_during_a_run_is_kept(db, no_sleep):
+    """The run loaded these items minutes ago. A user marks one not relevant meanwhile: the run's
+    write must not put back the old extra (the relevance guard would then undo the user's decision)."""
+    from app.db import SessionLocal
+    found, missed = _site_items(db, "race.ly", 2)
+    before = dict(found.extra or {})
+    target = {found.id: TITLE, missed.id: None}
+    calls = []
+
+    def handler(request):
+        calls.append(str(request.url))
+        q = parse_qs(urlsplit(str(request.url)).query)
+        if q.get("search") == ["news"]:
+            return httpx.Response(200, json=[])
+        with SessionLocal() as other:                    # the API, while the run waits on the site
+            for iid in target:
+                it = other.get(Item, iid)
+                it.relevant = False
+                it.extra = {**(it.extra or {}), "user_relevance": False}
+            other.commit()
+        title = db.get(Item, found.id).title
+        return httpx.Response(200, json=[hit(7, title, "https://race.ly/2026/10/15/found/", host="race.ly")])
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as c:
+        stats = resolve.run(db, days=14, limit=10, client=c, now=NOW)
+    assert stats["searched"] == 2 and stats["wp_search"] == 1
+    with SessionLocal() as check:
+        f, m = check.get(Item, found.id), check.get(Item, missed.id)
+        assert f.extra["user_relevance"] is False and f.extra["resolved_url"] == "https://race.ly/2026/10/15/found/"
+        assert all(f.extra[k] == v for k, v in before.items())   # keys stored before the run stay too
+        assert m.extra["user_relevance"] is False and m.extra["resolve_tries"] == 1
+        assert f.relevant is False and m.relevant is False
+
+
+def test_a_site_that_says_slow_down_is_left_alone(db, no_sleep):
+    items = _site_items(db, "busy.ly", 6)
+    calls = []
+
+    def handler(request):
+        calls.append(str(request.url))
+        if parse_qs(urlsplit(str(request.url)).query).get("search") == ["news"]:
+            return httpx.Response(200, json=[])
+        return httpx.Response(429, text="Too Many Requests")
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as c:
+        stats = resolve.run(db, days=14, limit=50, client=c, now=NOW)
+    searches = [u for u in calls if "search=news" not in u]
+    assert len(searches) == 2 and stats["site_down"] == 1 and stats["searched"] == 0   # one search, one retry
+    for it in items:
+        db.refresh(it)
+        assert "resolve_tries" not in it.extra                    # nobody's try was used up
+
+
+def test_error_pages_count_as_site_errors_not_misses(db, no_sleep):
+    items = _site_items(db, "waf.ly", 6)
+    calls = []
+
+    def handler(request):
+        calls.append(str(request.url))
+        if parse_qs(urlsplit(str(request.url)).query).get("search") == ["news"]:
+            return httpx.Response(200, json=[])
+        return httpx.Response(403, text="<html>Forbidden</html>")
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as c:
+        stats = resolve.run(db, days=14, limit=50, client=c, now=NOW)
+    assert len(calls) == 1 + resolve.SITE_ERRORS and stats["site_down"] == 1 and stats["searched"] == 0
+    for it in items:
+        db.refresh(it)
+        assert "resolve_tries" not in it.extra
+
+
+def test_probe_caches_only_a_clear_answer(db, no_sleep):
+    today = NOW.date()
+    replies = {
+        "throttle.ly": httpx.Response(429),
+        "broken.ly": httpx.Response(503, text="Service Unavailable"),
+        "cf.ly": httpx.Response(403, headers={"cf-mitigated": "challenge"}, text="Just a moment..."),
+        "gone.ly": httpx.Response(404, text="<html>Not Found</html>"),
+        "locked.ly": httpx.Response(401, json={"code": "rest_cannot_access", "message": "Only logged in users"}),
+        "home.ly": httpx.Response(200, text="<html>home page</html>"),
+        "wp.ly": httpx.Response(200, json=[]),
+    }
+    with httpx.Client(transport=httpx.MockTransport(lambda r: replies[r.url.host])) as c:
+        for dom in replies:
+            o = Outlet(name=dom, domain=dom)
+            db.add(o)
+            db.commit()
+            if dom in ("throttle.ly", "broken.ly", "cf.ly"):
+                with pytest.raises(resolve.SiteRefused):
+                    resolve.probe_wp(c, o, today)
+                assert "wp_json" not in (o.external or {})
+            else:
+                assert resolve.probe_wp(c, o, today) is (dom == "wp.ly")
+                assert o.external["wp_json"]["ok"] is (dom == "wp.ly")
+
+
+def test_searches_go_to_the_host_the_site_redirects_to(db, no_sleep):
+    _site_items(db, "redir.ly", 2)
+    calls = []
+
+    def handler(request):
+        calls.append(str(request.url))
+        if request.url.host == "redir.ly":
+            return httpx.Response(301, headers={"Location": str(request.url.copy_with(host="www.redir.ly"))})
+        return httpx.Response(200, json=[])
+
+    with httpx.Client(transport=httpx.MockTransport(handler), follow_redirects=True) as c:
+        stats = resolve.run(db, days=14, limit=10, client=c, now=NOW)
+    o = db.scalar(select(Outlet).where(Outlet.domain == "redir.ly"))
+    assert o.external["wp_json"]["base"] == "https://www.redir.ly" and stats["searched"] == 2
+    hosts = [urlsplit(u).hostname for u in calls]
+    assert hosts == ["redir.ly", "www.redir.ly", "www.redir.ly", "www.redir.ly"]   # only the probe is redirected
+
+
+def test_the_run_stops_at_its_time_limit(db, no_sleep):
+    items = _site_items(db, "late.ly", 3)
+    calls = []
+    with httpx.Client(transport=httpx.MockTransport(wp_handler(calls, []))) as c:
+        stats = resolve.run(db, days=14, limit=10, minutes=0, client=c, now=NOW)
+        res = resolve.collect(db, days=14, limit=10, minutes=0, client=c, now=NOW)
+    assert calls == [] and stats["out_of_time"] and stats["probed"] == 0
+    assert "time limit" in res.detail
+    for it in items:
+        db.refresh(it)
+        assert "resolve_tries" not in it.extra
