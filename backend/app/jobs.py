@@ -81,6 +81,13 @@ def resolve_links(days: int = 14, limit: int = 400):
 
 
 @_locked
+def reach_snapshot(limit: int | None = None):
+    from . import reach
+    with SessionLocal() as s:
+        return run_collector(s, "reach", lambda sess: reach.collect(sess, limit=limit)).status
+
+
+@_locked
 def hourly():
     collect("rss")
     collect("galerts")
@@ -91,6 +98,7 @@ def six_hourly():
     collect("official")
     collect("gnews")
     collect("gdelt")
+    collect("fb_url")   # Facebook readings at ~48 h and ~7 days (awaiting key until the Meta app exists)
 
 
 @_locked
@@ -135,6 +143,8 @@ JOBS = {
     "digest": lambda: weekly_digest(force=True),
     "backfill": backfill,
     "resolve_links": resolve_links,
+    "fb_url": lambda: _locked(collect)("fb_url"),
+    "reach": reach_snapshot,
 }
 
 
@@ -147,5 +157,6 @@ def start_scheduler():
     sched.add_job(recompute, "cron", minute=45, kwargs={"weeks": 12})   # recent weeks hourly
     sched.add_job(recompute, "cron", hour=3, minute=30)                   # full history nightly
     sched.add_job(weekly_digest, "cron", day_of_week="mon", hour=6, minute=0)  # after Sunday's data
+    sched.add_job(reach_snapshot, "cron", day=1, hour=4, minute=40)            # outlet web rank, monthly
     sched.start()
     return sched

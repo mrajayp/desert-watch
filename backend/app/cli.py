@@ -18,6 +18,7 @@
   import-social-scrape PATH load the converted social-media scrape JSON (outlets, Facebook register, labels)
   sync-themes               overwrite DB theme terms from config/themes.yaml (bumps versions, re-tags)
   resolve-links [--days N] [--limit N]  find the outlet's own link for Google News items (default 14 days, 400 items)
+  reach-snapshot [--limit N]            Tranco web rank for Libyan outlets + the 100 busiest (outlet.external['reach'])
 """
 import getpass
 import os
@@ -165,6 +166,12 @@ def main(argv: list[str]):
         opt = lambda k, d=None: args[args.index(k) + 1] if k in args else d  # noqa: E731
         with SessionLocal() as s:
             print(json.dumps(run_resolve(s, days=int(opt("--days", "14")), limit=int(opt("--limit", "400"))),
+                             ensure_ascii=False, indent=1))
+    elif cmd == "reach-snapshot":
+        import json
+        from .reach import snapshot
+        with SessionLocal() as s:
+            print(json.dumps(snapshot(s, limit=int(args[args.index("--limit") + 1]) if "--limit" in args else None),
                              ensure_ascii=False, indent=1))
     elif cmd == "recompute":
         from .jobs import recompute
