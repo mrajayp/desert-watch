@@ -166,6 +166,22 @@ def test_search_lens_scores_against_own_history_and_needs_every_week(db):
     assert not after.insufficient and abs(after.gap) < 0.05
 
 
+def test_a_theme_edit_keeps_the_missing_week_rule(db, monkeypatch):
+    from app import scoring
+    from app.api import admin
+    themes, regions = ids(db)
+    cid = _scored_health(db)
+    # Admin -> Themes re-tags and rescores straight away, outside jobs.recompute
+    monkeypatch.setattr(scoring, "compute_all",
+                        lambda s, **kw: compute(s, cid, weeks=24, today=TODAY, lenses=("search",)))
+    admin._retag_theme(themes["health"])
+    db.expire_all()
+    now = db.scalar(select(CellWeek).where(CellWeek.theme_id == themes["health"], CellWeek.lens == "search",
+                                           CellWeek.region_id == regions["national"],
+                                           CellWeek.week_start == week_start(TODAY)))
+    assert now.insufficient and now.gap is None    # three weeks of data out of four: still unscored
+
+
 def test_meta_opens_search_on_its_latest_scored_week_and_trends_skip_missing_weeks(client, users, db):
     themes, regions = ids(db)
     cid = _scored_health(db)
