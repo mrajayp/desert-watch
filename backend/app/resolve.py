@@ -41,6 +41,7 @@ WP_PROBE_DAYS = 30        # re-check whether a site answers /wp-json after this 
 MAX_TRIES = 2             # an item nobody could resolve is tried on two runs, then left alone
 DEFAULT_LIMIT = 400       # site searches per run (copies are free and always checked)
 PROBES_PER_RUN = 60       # unknown sites asked about /wp-json per run, busiest first
+SITE_ERRORS = 3           # failed searches before a site is left alone for the rest of the run
 
 _HASHTAG_LABEL = re.compile(r"^\s*#\S+\s*[|:]\s*")    # "#ليبيا | headline" (libyaakhbar)
 _URL_DATE = re.compile(r"/(20\d\d)/(\d\d)/(\d\d)/")
@@ -287,16 +288,19 @@ def run(s: Session, *, days: int = 14, limit: int = DEFAULT_LIMIT, probes: int =
         s.commit()
 
         # 3. site search, round-robin across sites
+        errors = defaultdict(int)
         for it in _interleave(searchable)[:limit]:
             o = outlets[it.outlet_id]
             if o.id in down:
                 continue
             try:
                 url = wp_match(client, o, it.title, it.published_at)
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:  # noqa: BLE001 - the item is left for a later run, not counted as a try
                 log.info("resolve %s via %s: %s", it.id, o.domain, e)
-                down.add(o.id)
-                stats["site_down"] += 1
+                errors[o.id] += 1
+                if errors[o.id] >= SITE_ERRORS:
+                    down.add(o.id)
+                    stats["site_down"] += 1
                 continue
             stats["searched"] += 1
             stats["not_found"] += not url

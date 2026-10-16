@@ -192,3 +192,28 @@ def test_busiest_sites_first_and_limits(db, no_sleep):
     assert searched == ["big.ly", "mid.ly", "big.ly", "mid.ly"] and stats["searched"] == 4
     small = db.scalar(select(Outlet).where(Outlet.domain == "small.ly"))
     assert "wp_json" not in (small.external or {})
+
+
+def test_a_few_search_errors_do_not_drop_a_site(db, no_sleep):
+    country_id = db.scalar(select(Outlet.country_id).limit(1))
+    rules = load_rules(db, country_id)
+    now = datetime(2026, 10, 16, 6)
+    for k in range(6):
+        _gnews(db, country_id, rules, f"flaky{k}", f"Libya: flaky site story {k} on the Sabha water supply cuts",
+               PUB - timedelta(hours=k), "flaky.ly")
+    db.commit()
+    calls = []
+    ok = wp_handler(calls, [])
+
+    def handler(request):
+        if "search=news" not in str(request.url) and len(calls) in (1, 3):   # 1st and 3rd search time out
+            calls.append(str(request.url))
+            raise httpx.ReadTimeout("slow")
+        return ok(request)
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as c:
+        stats = resolve.run(db, days=14, limit=10, client=c, now=now)
+    assert stats["searched"] == 4 and stats["site_down"] == 0
+    tried = [it for it in db.scalars(select(Item).where(Item.url.like("%CBMflaky%")))
+             if (it.extra or {}).get("resolve_tries")]
+    assert len(tried) == 4                                          # the two timeouts are not counted as tries

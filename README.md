@@ -16,6 +16,7 @@ Plan and rationale: `C:\Users\paler\.claude\plans\i-want-to-create-atomic-lampor
 | Tag | `classify.py`, `ingest.py` | Arabic-normalised keyword rules per theme; place-name tagging to 22 districts and 3 regions; relevance guard (must name Libya / a Libyan place or come from a Libyan outlet). |
 | Score | `scoring.py` | Per theme × region × week × lens, 4-week window: `gap = ln(reference ratio / shrunk coverage ratio)`. Insufficient evidence, cold start and partial windows are never scored. |
 | Network | `network.py` | Outlet→district and outlet→theme edges per week, outlet similarity on theme specialisation (Louvain clusters), reprint detection on headlines. |
+| Engagement | `engagement.py`, `resolve.py`, `reach.py`, `collectors/fb_engagement.py` | Story pickup (outlets per story) on every network run. Nightly: outlet URLs for Google News links (`resolve-links`). Facebook link engagement at ~48 h and ~7 days once `DW_FB_APP_ID`+`DW_FB_APP_SECRET` are set. Monthly: Tranco web rank per outlet (`reach-snapshot`). Never compared raw across outlets. |
 | Learn | `learning.py` | Behaviour log (pseudonymous, opt-out) + explicit actions → `label` table. Models switch on above label thresholds (Phase 5). |
 | UI | `frontend/` | React + D3. Map/network ("who covers where"), heatmap, trends, outlets network, gap/item/outlet panels with votes, comments, corrections, assessments. |
 
