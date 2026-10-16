@@ -14,7 +14,7 @@ Coverage also goes up whenever we add a source. The trend charts and the audienc
 
 ## Themes and places
 
-A theme is a list of words in Arabic and English. If a headline contains one of the words, the article gets that theme. A summary on its own needs two of the words. Some themes need two sets of words close together, for example women plus violence. A few words do not count next to others. "Killed" next to "crash" or "flood" does not put a story under security. When a search or a Google Alert finds an article for a theme, we keep that as a hint. It only counts when the words are really in the text. For Google Alerts we only read the parts of the summary that match the headline, because the rest is often menus and links from the page.
+A theme is a list of words in Arabic and English. If a headline contains one of the words, the article gets that theme. A summary on its own needs two of the words. Some themes need two sets of words close together, for example women plus violence. A few words do not count when certain other words are in the story. "Killed" in a story about a crash or a flood does not put it under security. When a search or a Google Alert finds an article for a theme, we keep that as a hint. It only counts when the words are really in the text. For Google Alerts we only read the parts of the summary that match the headline, because the rest is often menus and links from the page.
 
 Places work the same way. We look for district and town names, including other spellings. We skip the town a news agency puts at the start of a story, because that is where it filed from. Most articles do not name a place below Libya, so they only count nationally. That is normal and is why the regional numbers are much smaller.
 

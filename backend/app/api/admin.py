@@ -43,11 +43,19 @@ def list_themes(s: Session = Depends(get_db), _: User = Depends(auth.current_use
 
 
 @router.post("/themes/preview")
-def preview_theme(body: ThemeIn, days: int = 30, s: Session = Depends(get_db), _: User = Depends(auth.current_user)):
+def preview_theme(body: ThemeIn, days: int = 30, tid: int | None = None, s: Session = Depends(get_db),
+                  _: User = Depends(auth.current_user)):
     """What would these terms match over recent articles? Includes user labels so admins
-    can see precision against human judgement before saving."""
-    rule = ThemeRule.build(0, "preview", 0, body.en_terms, body.ar_terms, body.exclude, body.cooc, body.strict,
-                           veto=body.veto, mask=body.mask)
+    can see precision against human judgement before saving. Fields the form does not send
+    (pairs, vetoes, masks) come from the stored theme (`tid`, or the theme with this name)."""
+    stored = s.get(Theme, tid) if tid else s.scalar(select(Theme).where(Theme.name_en == body.name_en))
+
+    def pick(k):
+        v = getattr(body, k)
+        return getattr(stored, k) if stored and (k not in body.model_fields_set or v is None) else v
+
+    rule = ThemeRule.build(0, "preview", 0, body.en_terms, body.ar_terms, body.exclude, pick("cooc"), pick("strict"),
+                           veto=pick("veto"), mask=pick("mask"))
     since = utcnow() - timedelta(days=days)
     rows = s.scalars(select(Item).where(Item.kind == "article", Item.published_at >= since)
                      .order_by(Item.published_at.desc()).limit(5000)).all()

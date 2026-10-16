@@ -26,6 +26,12 @@ def _found(c, n: str, toks: set) -> set:
     return (single & toks) | {v for v in multi if f" {v} " in n}
 
 
+def _distinct_words(terms) -> set:
+    """Terms that are not just the plural of another one ("migrants" next to "migrant")."""
+    low = {t.lower() for t in terms}
+    return {t for t in low if not any(t in (u + "s", u + "es") for u in low)}
+
+
 def _positions(toks: list, phrase: str) -> list[int]:
     p = phrase.split()
     if len(p) == 1:
@@ -131,7 +137,7 @@ class ThemeRule:
         if pair:
             return "title", [pair]
         snip = sorted({t for seg in segments for t in self._terms(seg, skip)})
-        if len(snip) >= 2:
+        if len(_distinct_words(snip)) >= 2:
             return "snippet", snip
         for seg in segments:
             pair = self._pair(seg)
@@ -160,7 +166,7 @@ class PlaceRule:
 _SEG = re.compile(r"\s*(?:\[…\]|\.\.\.|…|\s·\s|\s\|\s)\s*")
 _WP_POST = re.compile(r"\s*(?:The post\s.*?\sappeared first on\s|ظهرت المقالة\s.*?\sأولا?ً?\s*على\s).*$", re.S)
 # "Tripoli, March 31, 2026 (LANA) -", "طرابلس 31 مارس 2026 م (وال) -", "طرابلس (المشهد) –"
-_DATELINE = re.compile(r"^\s*(?P<pre>[^().\n]{0,80}?)\(\s*[^()]{1,25}?\s*\)\s*"
+_DATELINE = re.compile(r"^\s*(?P<pre>[^().\n]{0,80}?)\(\s*(?P<tag>[^()]{1,25}?)\s*\)\s*"
                        r"(?P<post>[A-Za-z]+\.? \d{1,2},? \d{4}\s*)?(?P<dash>[-–—_ـ:]+)?\s*")
 _DATE_END = re.compile(r"(?:19|20)\d{2}\s*(?:م\s*)?[,،]?\s*$")
 _STOP = {"that", "with", "from", "this", "have", "were", "will", "their", "after", "about", "said", "which",
@@ -184,9 +190,16 @@ def strip_dateline(text: str) -> str:
     if not m:
         return text
     words = len(m["pre"].split())
-    if _DATE_END.search(m["pre"]) or (m["post"] and words <= 4) or (m["dash"] and words <= 3):
+    if _DATE_END.search(m["pre"]) or (m["post"] and words <= 4) or (m["dash"] and words <= 3 and not _acronym(m["pre"], m["tag"])):
         return text[m.end():]
     return text
+
+
+def _acronym(pre: str, tag: str) -> bool:
+    """"Benghazi Medical Centre (BMC) - the hospital ..." is a sentence: the brackets spell the words before them."""
+    letters = re.sub(r"[^A-Za-z]", "", tag)
+    initials = "".join(w[0] for w in pre.split() if w[:1].isalpha()).upper()
+    return len(letters) >= 2 and letters.isupper() and initials.endswith(letters)
 
 
 def clean_snippet(source_key: str | None, title: str | None, snippet: str | None) -> str:

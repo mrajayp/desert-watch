@@ -244,7 +244,9 @@ def test_query_prior_and_evidence(db):
     add_query_prior(db, miss, rules, (th["health"], th["services"]), "gnews:health")
     db.commit()
     assert (links(db, miss.id)[th["health"]].method, links(db, miss.id)[th["health"]].active) == ("query", False)
-    assert miss.extra["query_themes"] == ["health", "services"]
+    assert miss.extra["query_themes"] == ["services", "health"]
+    # each theme keeps the query that first asked for it
+    assert miss.extra["queries"] == {"services": "gnews:services", "health": "gnews:health"}
 
 
 def test_retag_all_is_idempotent_and_leaves_user_and_model_rows(db):
@@ -329,3 +331,273 @@ def test_rss_storage_gate_stays_permissive(db):
     skipped, created = store_article(db, cid, rules, url="https://feed.example/2", title="Book fair opens in the old city",
                                      snippet="Fans celebrated late.", **kw)
     assert skipped is None and not created
+
+
+# ---------------------------------------------------------------- fix round 2 (review_rules.md)
+def _article(db, key, title, snippet=None, source="gnews", extra=None, relevant=True, published=DAY):
+    it = Item(country_id=db.scalar(select(Country.id)), kind="article", source_key=source, dedupe_key=f"url:{key}",
+              url=f"https://{key}.example", title=title, snippet=snippet, lang="en", published_at=published,
+              outlet_id=db.scalar(select(Outlet.id)), extra=extra or {}, relevant=relevant)
+    db.add(it)
+    db.flush()
+    return it
+
+
+def _retag_fixture(db):
+    """Articles that move every number in the retag report: new and stale links, place tags,
+    relevance flips both ways, a duplicate copy, and user and alert place tags."""
+    th = themes(db)
+    reg = {r.slug: r.id for r in db.scalars(select(Region))}
+    a = _article(db, "a", "Armed clashes in Zawiya leave three dead", relevant=False,
+                 extra={"filtered": "no_country_mention"})
+    b = _article(db, "b", "Armed clashes in Zawiya leave three dead")
+    c = _article(db, "c", "Egypt issues dust storm warning for Cairo")
+    d = _article(db, "d", "Mayor opens market in Misrata", relevant=False, extra={"user_relevance": False})
+    b.duplicate_of = a.id
+    db.add_all([ItemTheme(item_id=b.id, theme_id=th["health"], method="rule", active=True),
+                ItemTheme(item_id=c.id, theme_id=th["security"], method="rule", active=True),
+                ItemRegion(item_id=c.id, region_id=reg["tripoli"], method="rule", active=True),
+                ItemRegion(item_id=d.id, region_id=reg["tripoli"], method="user", active=True),
+                ItemRegion(item_id=d.id, region_id=reg["benghazi"], method="query", active=True)])
+    db.commit()
+    return reg, a, b, c, d
+
+
+def test_retag_dry_run_reports_what_the_real_run_does(db):
+    from app.retag import retag_all
+    reg, a, b, c, d = _retag_fixture(db)
+    dry = retag_all(db, dry_run=True, batch=2, out=lambda *_: None)
+    real = retag_all(db, batch=2, out=lambda *_: None)
+    assert dry["relevance_flipped"] == 2 and dry["links_changed"] > 0
+    assert {**dry, "dry_run": False} == real
+    assert real["items"]["after"]["relevant"] == real["items"]["before"]["relevant"]   # one on, one off
+    db.expire_all()
+    assert db.get(Item, a.id).relevant and not db.get(Item, c.id).relevant and not db.get(Item, d.id).relevant
+    # place tags: the stale rule tag goes, user and alert tags stay, new rule tags are added
+    assert db.get(ItemRegion, (c.id, reg["tripoli"])).active is False
+    user_tag = db.get(ItemRegion, (d.id, reg["tripoli"]))
+    assert (user_tag.method, user_tag.active) == ("user", True)
+    assert db.get(ItemRegion, (d.id, reg["benghazi"])).active is True
+    assert db.get(ItemRegion, (a.id, reg["zawiya"])).active and db.get(ItemRegion, (d.id, reg["misrata"])).active
+    assert retag_all(db, dry_run=True, out=lambda *_: None)["links_changed"] == 0
+
+
+def test_retag_dry_run_never_takes_the_write_lock(db, monkeypatch):
+    import sqlite3
+
+    import app.retag as rt
+    from app.db import engine
+    _retag_fixture(db)
+    free = []
+
+    def probe(*_):
+        con = sqlite3.connect(engine.url.database, timeout=0)
+        try:
+            con.execute("BEGIN IMMEDIATE")
+            con.rollback()
+            free.append(True)
+        except sqlite3.OperationalError:
+            free.append(False)
+        finally:
+            con.close()
+
+    plan = rt.plan_item
+
+    def planning(*a, **k):
+        probe()
+        return plan(*a, **k)
+
+    monkeypatch.setattr(rt, "plan_item", planning)
+    rt.retag_all(db, dry_run=True, batch=2, out=probe)
+    assert len(free) > 4 and all(free)
+
+
+def test_retag_never_writes_over_a_user_correction_made_mid_batch(db, monkeypatch):
+    from sqlalchemy import update
+
+    import app.retag as rt
+    from app.db import engine
+    th = themes(db)
+    stale = _article(db, "stale", "Mayor opens market in Misrata")
+    new = _article(db, "new", "Armed clashes in Zawiya leave three dead")
+    db.add(ItemTheme(item_id=stale.id, theme_id=th["security"], method="rule", active=True))
+    db.commit()
+    stale_id, new_id = stale.id, new.id
+    plan = rt.plan_item
+
+    def racing(item, *a, **k):
+        p = plan(item, *a, **k)
+        if item.id == stale_id:   # a user confirms the link the rules no longer support
+            with engine.begin() as con:
+                con.execute(update(ItemTheme).where(ItemTheme.item_id == stale_id, ItemTheme.theme_id == th["security"])
+                            .values(method="user"))
+        if item.id == new_id:     # a user says this one is not about security, before the rule link is written
+            with engine.begin() as con:
+                con.execute(ItemTheme.__table__.insert().values(item_id=new_id, theme_id=th["security"], method="user",
+                                                                active=False, theme_version=1))
+        return p
+
+    monkeypatch.setattr(rt, "plan_item", racing)
+    rt.retag_all(db, out=lambda *_: None)
+    db.expire_all()
+    assert (links(db, stale_id)[th["security"]].method, links(db, stale_id)[th["security"]].active) == ("user", True)
+    assert (links(db, new_id)[th["security"]].method, links(db, new_id)[th["security"]].active) == ("user", False)
+
+
+def test_query_keys_name_the_search_or_alert_that_ran(db):
+    from app.retag import retag_all
+    th = themes(db)
+    cid = db.scalar(select(Country.id))
+    rules = load_rules(db, cid)
+    # first stored from an outlet feed, later returned by the governance search
+    url = "https://feed.example/council"
+    title = "Presidential Council meets the government in Tripoli"
+    rss, _ = store_article(db, cid, rules, url=url, title=title, published_at=DAY, source_key="rss", require_theme=True)
+    store_article(db, cid, rules, url=url, title=title, published_at=DAY, source_key="gnews",
+                  extra={"query_theme": "governance", "query_themes": ["governance"]},
+                  forced_theme_ids=(th["governance"],), query="gnews:governance")
+    # a hand-written alert filed under migration
+    kufra, _ = store_article(db, cid, rules, url="https://news.example/kufra", title="Sudanese refugees arrive in Kufra",
+                             published_at=DAY, source_key="galerts",
+                             extra={"alert": "extra:kufra_migration:en", "query_themes": ["migration"]},
+                             forced_theme_ids=(th["migration"],), query="extra:kufra_migration:en")
+    # an older item from the same alert only names the alert
+    old = _article(db, "old-kufra", "Kufra mayor meets aid agencies", source="galerts",
+                   extra={"alert": "extra:kufra_migration:en"})
+    db.add(ItemTheme(item_id=old.id, theme_id=th["migration"], method="rule", active=True))
+    db.commit()
+    assert rss.extra["queries"] == {"governance": "gnews:governance"}
+    retag_all(db, out=lambda *_: None)
+    db.expire_all()
+    assert links(db, rss.id)[th["governance"]].evidence["query"] == "gnews:governance"
+    assert links(db, kufra.id)[th["migration"]].evidence["query"] == "extra:kufra_migration:en"
+    lk = links(db, old.id)[th["migration"]]
+    assert (lk.method, lk.active) == ("query", False)
+    assert lk.evidence == {"field": "query", "terms": [], "query": "extra:kufra_migration:en"}
+
+
+class _Resp:
+    def __init__(self, body: str):
+        self.content = body.encode()
+
+    def raise_for_status(self):
+        pass
+
+
+GNEWS_RSS = """<?xml version="1.0"?><rss version="2.0"><channel><title>t</title>
+<item><title>Armed clashes in Zawiya - Libya Observer</title><link>https://news.google.com/rss/articles/zaw1</link>
+<pubDate>Tue, 13 Oct 2026 10:00:00 GMT</pubDate><source url="https://libyaobserver.ly">Libya Observer</source></item>
+</channel></rss>"""
+ALERT_ATOM = """<?xml version="1.0" encoding="utf-8"?><feed xmlns="http://www.w3.org/2005/Atom"><title>Google Alert</title>
+<entry><id>tag:1</id><title type="html">Sudanese refugees arrive in Kufra</title>
+<link href="https://www.google.com/url?rct=j&amp;sa=t&amp;url=https://news.example/kufra-2&amp;ct=ga"/>
+<published>2026-10-13T10:00:00Z</published><updated>2026-10-13T10:00:00Z</updated>
+<content type="html">Sudanese refugees arrive in Kufra ... aid agencies</content></entry></feed>"""
+
+
+def test_collectors_record_the_query_on_first_store(db, monkeypatch):
+    from app.collectors import galerts, gdelt, gnews
+    from app.models import AlertFeed
+    monkeypatch.setattr(gnews, "polite_get", lambda *a, **k: _Resp(GNEWS_RSS))
+    gnews.collect(db, themes=["security"])
+    it = db.scalar(select(Item).where(Item.url == "https://news.google.com/rss/articles/zaw1"))
+    assert it.extra["query_theme"] == "security" and it.extra["query_themes"] == ["security"]
+    assert it.extra["queries"] == {"security": "gnews:security"}
+
+    feed = db.scalar(select(AlertFeed).where(AlertFeed.key == "extra:kufra_migration:en"))
+    feed.feed_url = "https://www.google.com/alerts/feeds/1/2"
+    db.commit()
+    monkeypatch.setattr(galerts, "polite_get", lambda *a, **k: _Resp(ALERT_ATOM))
+    galerts.collect(db)
+    it = db.scalar(select(Item).where(Item.url == "https://news.example/kufra-2"))
+    assert it.extra["alert"] == "extra:kufra_migration:en" and it.extra["query_themes"] == ["migration"]
+    assert it.extra["queries"] == {"migration": "extra:kufra_migration:en"}
+
+    monkeypatch.setattr(gdelt, "_json", lambda *a, **k: {"articles": [
+        {"url": "https://gd.example/1", "title": "Libya clashes", "seendate": "20261013T100000Z", "domain": "gd.example"}]})
+    gdelt.collect(db)
+    it = db.scalar(select(Item).where(Item.url == "https://gd.example/1"))
+    assert it.extra["queries"] and all(v == f"gdelt:{k}" for k, v in it.extra["queries"].items())
+    assert set(it.extra["queries"]) == set(it.extra["query_themes"])
+
+
+def test_retag_theme_after_an_admin_edit(db):
+    from app.retag import retag_theme
+    th = themes(db)
+    it = _article(db, "strike", "Teachers strike closes schools in Sabha")
+    db.add(ItemTheme(item_id=it.id, theme_id=th["security"], method="rule", active=True))   # another theme
+    db.commit()
+    assert retag_theme(db, th["governance"]) == 1
+    assert links(db, it.id)[th["governance"]].active
+    gov = db.get(Theme, th["governance"])
+    gov.en_terms = [t for t in gov.en_terms if t != "teachers strike"]
+    gov.version += 1
+    db.commit()
+    retag_theme(db, th["governance"])
+    db.expire_all()
+    lk = links(db, it.id)
+    assert (lk[th["governance"]].active, lk[th["governance"]].theme_version, lk[th["governance"]].evidence) == \
+        (False, gov.version, None)
+    assert lk[th["security"]].active                       # a governance edit leaves security alone
+    assert retag_theme(db, th["governance"]) == 0
+
+
+def test_gender_and_migration_word_removals(db):
+    rules = load_rules(db, db.scalar(select(Country.id)))
+    th = themes(db)
+    hits = lambda t: set(classify_item(t, None, rules.themes))  # noqa: E731
+    assert th["gender_migrant_detained_women"] not in hits("امرأة تحمل جنسية أجنبية تصل إلى مطار معيتيقة")
+    assert th["gender_migrant_detained_women"] not in hits("وفاة امرأة أثناء الولادة في مستشفى سبها")
+    assert th["gender_economic_health"] in hits("وفاة امرأة أثناء الولادة في مستشفى سبها")
+    assert th["gender_legal_status"] not in hits("سيدة أعمال تنتقد قرار وزارة الاقتصاد")
+    assert th["migration"] not in hits("البحث عن مفقودين بعد السيول في درنة")
+
+
+def test_plural_is_not_a_second_snippet_word():
+    r = [ThemeRule.build(1, "migration", 1, ["migrant", "migrants", "clash", "clashes"], [], [])]
+    assert classify_item("Mayor opens market", "Migrants arrived. One migrant spoke.", r) == {}
+    assert classify_item("Mayor opens market", "Migrants arrived after clashes.", r) == {1: ("snippet", ["clashes", "migrants"])}
+
+
+def test_dateline_keeps_a_lead_that_spells_an_acronym():
+    lead = "Benghazi Medical Centre (BMC) – the hospital received ten patients"
+    assert strip_dateline(lead) == lead
+    assert strip_dateline("Benghazi (LANA) – the hospital received ten patients") == "the hospital received ten patients"
+
+
+def test_sync_themes_leaves_unchanged_themes_alone(db, capsys):
+    from app.cli import main
+    gov = db.scalar(select(Theme).where(Theme.slug == "governance"))
+    gov.veto, gov.mask = None, None          # older rows: the newer columns are NULL
+    db.commit()
+    versions = {t.slug: t.version for t in db.scalars(select(Theme))}
+    assert main(["sync-themes"]) == 0
+    db.expire_all()
+    assert {t.slug: t.version for t in db.scalars(select(Theme))} == versions
+    assert "updated 0 themes" in capsys.readouterr().out
+
+
+def test_admin_preview_uses_the_stored_vetoes_and_pairs(client, users, db):
+    from app.models import utcnow
+    from tests.conftest import login
+    sec = db.scalar(select(Theme).where(Theme.slug == "security"))
+    gv = db.scalar(select(Theme).where(Theme.slug == "gender_violence"))
+    crash, clash = "Three killed in traffic accident near Tripoli", "Three killed in armed clashes in Zawiya"
+    women = "Two women killed in Tripoli shelling"
+    for k, t in (("p1", crash), ("p2", clash), ("p3", women)):
+        _article(db, k, t, published=utcnow())
+    db.commit()
+    login(client, "admin@example.org", "admin-password-1")
+
+    def form(t, name=None):
+        return {"name_en": name or t.name_en, "name_ar": t.name_ar, "en_terms": t.en_terms, "ar_terms": t.ar_terms,
+                "exclude": t.exclude, "active": True}
+
+    def titles(url, body):
+        return {x["title"] for x in client.post(url, json=body).json()["samples"]}
+
+    for url in (f"/api/themes/preview?tid={sec.id}", "/api/themes/preview"):
+        assert crash not in titles(url, form(sec)) and clash in titles(url, form(sec))
+    assert women in titles(f"/api/themes/preview?tid={gv.id}", form(gv))
+    # a new theme has nothing stored: the preview uses exactly what the form sends
+    assert {crash, clash} <= titles("/api/themes/preview", form(sec, "A new theme"))

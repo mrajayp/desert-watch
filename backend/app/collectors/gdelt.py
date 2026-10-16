@@ -57,7 +57,7 @@ def collect(s: Session, *, days: int = 1) -> RunResult:
                             s, country.id, rules, url=a["url"], title=a.get("title"), published_at=pub,
                             source_key="gdelt", lang=LANG.get(a.get("language"), None),
                             outlet_domain=a.get("domain"), extra={"sourcecountry": a.get("sourcecountry")},
-                            forced_theme_ids=(th.id,), outlet_cache=cache)
+                            forced_theme_ids=(th.id,), outlet_cache=cache, query=f"gdelt:{th.slug}")
                         res.rows += created
                     s.commit()
     return res
