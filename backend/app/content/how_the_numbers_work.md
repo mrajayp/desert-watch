@@ -82,10 +82,27 @@ Votes and corrections are saved as labels for training. So are article ratings. 
 
 Once a week we work out the facts here first. These are the biggest gaps with their flags, plus a few headlines. Only those facts go to the AI model, and it is told to use no number that is not in them. The facts are saved with the text so any claim can be checked. It needs the Anthropic key to run.
 
+## Engagement
+
+Engagement is how much attention an article got after it came out. We measure two things per article and keep a few dated figures per outlet.
+
+Story pickup is the number of outlets that ran the same story. We use the headline match from the reprint arrows. Most of the words match and the articles appeared within two days of each other. It is worked out whenever the network updates, for the last 12 weeks. Rewritten and translated versions are missed, so it undercounts. Most stories only ever appear in one outlet. Close to nine in ten articles in the last 12 weeks were single-outlet stories. Link shorteners like t.co are left out because they are not outlets.
+
+Facebook engagement adds up the reactions, comments and shares on Facebook for an article's link. We read it about two days after the article came out and again after about a week. The week-old reading is the one we trust most. Facebook says its counts are approximate on purpose, so we show them rounded with a ≈ sign. This needs an app ID and secret from a Meta developer account. Until both are set the source shows as waiting for its key. We read at most 400 links a day. If Facebook says we are asking too often we stop and try again six hours later. We skip LANA because its links drew no Facebook posts at all in the 2023-24 scrape.
+
+Facebook can only match the outlet's own link. Google News gives us a redirect link instead, and in October 2026 that was the only link for about 60% of the articles we count. So every night we look for the outlet's own link for Google News articles from the last two weeks. First we look for a copy of the same story from the same outlet that reached us another way, like its feed or Google Alerts. If there is none and the outlet's site runs WordPress, we search the site for the headline. We only accept a result with almost the same headline, published within a day. Daily posts like exchange rates that differ only by a date or weekday never count as a match. The Google link stays the article's main link and the outlet's link is kept beside it.
+
+For each outlet we keep dated reach figures. Once a month we look up its web rank in the Tranco list. Web rank says little about Libya, where much of the news is read on Facebook. For ten Libyan outlets it did not line up with their 2023-24 Facebook engagement at all. We also show the outlet's Facebook figures from the 2023-24 social media scrape, marked as historical. Once an outlet has 20 week-old Facebook readings we also show its own median per article over the last eight weeks.
+
+We never rank outlets against each other by engagement. Raw counts differ hugely. Links from some outlets are posted on Facebook dozens of times each, so their totals dwarf the rest. A count only means something next to the same outlet's usual figure.
+
+Some things we chose not to collect. Bluesky, Reddit, Hacker News and X either barely carry Libyan news or charge for access. SharedCount sells the same Facebook numbers we can read ourselves. Some outlet sites show view counters, but they are easy to game, and on some sites reading the counter adds a view. We never call those. Telegram views would mean scraping public channel pages, and few Libyan outlet channels link their articles, so we left it for now. There is no engagement score in the gap figures yet. It needs at least eight weeks of Facebook readings to compare against.
+
 ## When the numbers update
 
 - Hourly: outlet feeds and Google Alerts, then scores and the network for the last 12 weeks.
 - Every six hours: Google News, GDELT articles and the official statements.
 - Nightly: Wikipedia page views, then the full history of scores and the network.
 - Mondays: the digest.
+- Monthly: web ranks for outlets.
 - By hand only: the GDELT long-run line and anything in the backfill job.
