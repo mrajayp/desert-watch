@@ -19,6 +19,10 @@ ACLED_PASSWORD = os.environ.get("ACLED_PASSWORD")
 UCDP_TOKEN = os.environ.get("UCDP_TOKEN")
 RELIEFWEB_APPNAME = os.environ.get("RELIEFWEB_APPNAME")
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY")
+# Facebook link engagement: a Meta developer app's id and secret (app token = "<id>|<secret>").
+FB_APP_ID = os.environ.get("DW_FB_APP_ID")
+FB_APP_SECRET = os.environ.get("DW_FB_APP_SECRET")
+FB_DAILY_URLS = int(os.environ.get("DW_FB_DAILY_URLS", "400"))   # URL lookups in any 24 hours
 # Weekly digest model: Haiku per the approved plan (one short call per week). Override to e.g.
 # claude-opus-5-5 for a richer brief.
 DIGEST_MODEL = os.environ.get("DW_DIGEST_MODEL", "claude-haiku-5-5")

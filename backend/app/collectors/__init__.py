@@ -1,4 +1,4 @@
-from . import galerts, gdelt, gnews, keyed, official, rss, wikipedia
+from . import fb_engagement, galerts, gdelt, gnews, keyed, official, rss, wikipedia
 
 # key -> (callable, human description). Order = scheduler order.
 COLLECTORS = {
@@ -12,6 +12,7 @@ COLLECTORS = {
     "acled": (keyed.acled, "ACLED events"),
     "ucdp": (keyed.ucdp, "UCDP events"),
     "reliefweb": (keyed.reliefweb, "ReliefWeb reports"),
+    "fb_url": (fb_engagement.collect, "Facebook link engagement"),
 }
 # Non-collector jobs shown in the source-health strip.
 EXTRA_HEALTH = {
