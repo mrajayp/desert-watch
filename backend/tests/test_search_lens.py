@@ -182,6 +182,17 @@ def test_a_theme_edit_keeps_the_missing_week_rule(db, monkeypatch):
     assert now.insufficient and now.gap is None    # three weeks of data out of four: still unscored
 
 
+def test_digest_explains_search_gaps(db):
+    from app import digest
+    cid = _scored_health(db)
+    flag_missing_weeks(db, cid)
+    country = db.get(Country, cid)
+    f = digest.build_facts(db, country, LAST_FULL)
+    assert any(g["lens"] == "search" for g in f["top_gaps"])
+    assert digest.SEARCH_LIMIT in f["known_limits"]
+    assert digest.SEARCH_LIMIT not in digest.build_facts(db, country, week_start(TODAY))["known_limits"]
+
+
 def test_meta_opens_search_on_its_latest_scored_week_and_trends_skip_missing_weeks(client, users, db):
     themes, regions = ids(db)
     cid = _scored_health(db)
