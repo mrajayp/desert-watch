@@ -1,4 +1,5 @@
 """Google Trends search lens: row building, the local fetcher's politeness, config checks."""
+import json
 from datetime import date, datetime, timedelta, timezone
 
 import httpx
@@ -8,6 +9,7 @@ import yaml
 from app import settings
 from app.gtrends import (DAILY_MAX_DAYS, anchor_refs, build_rows, check_baskets, config, groups, parse_points,
                          slot)
+import scripts.fetch_gtrends as fetch
 from scripts.fetch_gtrends import Client, Stop, plan
 
 
@@ -44,17 +46,15 @@ def test_daily_rows_sum_whole_monday_weeks_only():
     days = [start + timedelta(days=i) for i in range(5 + 14 + 3)]
     tl = [_point(d, [2, 4]) for d in days]
     first_full = date(2026, 9, 7)
-    tl[days.index(first_full + timedelta(days=1))]["hasData"] = [False, True]   # one day without data: still counts
     second = first_full + timedelta(weeks=1)
-    for k in (0, 1):
-        tl[days.index(second + timedelta(days=k))]["hasData"] = [False, True]  # two days: the week lacks data
+    tl[days.index(second + timedelta(days=1))]["hasData"] = [False, True]  # one day without data: the week lacks data
     tl[-1]["isPartial"] = True
     rows = build_rows(parse_points(tl), [("economy", ["الدينار"])], "مطعم", resolution="day", request_id="r",
                       fetched_at="t")
     assert [r["week"] for r in rows] == [first_full.isoformat(), second.isoformat()]
     assert rows[0]["value_raw"] == 14 and rows[0]["anchor_raw"] == 28
-    assert rows[0]["has_data"] and rows[0]["nodata_days"] == 1
-    assert not rows[1]["has_data"] and rows[1]["nodata_days"] == 2
+    assert rows[0]["has_data"] and rows[0]["nodata_days"] == 0
+    assert not rows[1]["has_data"] and rows[1]["nodata_days"] == 1  # a 6-day sum would read ~14% low
 
 
 def test_anchor_ref_ignores_a_one_week_spike():
@@ -124,3 +124,46 @@ def test_client_respects_the_request_budget_and_strips_googles_prefix():
         c.get("c", "https://trends.google.com/x")
     assert len(calls) == 2
     assert c.http.headers["User-Agent"] == settings.USER_AGENT
+
+
+class FakeClient:
+    """Stands in for the HTTP client in main(): never touches Google."""
+    block, made = False, []
+
+    def __init__(self, **kw):
+        self.n = self.n429 = 0
+        FakeClient.made.append(self)
+
+    def home(self, geo):
+        self.n += 1
+        if FakeClient.block:
+            raise Stop("second 429: stopping", blocked=True)
+
+    def timeseries(self, name, items, time_, geo):
+        self.n += 2
+        sun = date(2026, 9, 6)
+        return "WEEK", [_point(sun + timedelta(weeks=i), [10] * (len(items) - 1) + [20]) for i in range(3)]
+
+
+def test_each_run_writes_a_new_dated_file_and_a_stop_blocks_the_next_day(tmp_path, monkeypatch):
+    monkeypatch.setattr(fetch, "Client", FakeClient)
+    FakeClient.block, FakeClient.made = True, []
+    assert fetch.main([str(tmp_path)]) == 0
+    marker = tmp_path / fetch.STOP_FILE
+    assert marker.exists() and "429" in marker.read_text(encoding="utf-8")
+    with pytest.raises(SystemExit) as e:
+        fetch.main([str(tmp_path)])                     # within 24 h: refuses before any request
+    assert "--force" in str(e.value) and len(FakeClient.made) == 1
+    FakeClient.block = False
+    assert fetch.main([str(tmp_path), "--force"]) == 0
+    files = list(tmp_path.glob("gtrends-*.jsonl"))
+    assert len(files) == 1 and not marker.exists()      # a clean run clears the stop
+    rows = [json.loads(x) for x in files[0].read_text(encoding="utf-8").splitlines()]
+    assert {r["resolution"] for r in rows} == {"week"}  # daily data only when asked for
+    with pytest.raises(SystemExit):
+        fetch.main([str(files[0])])                     # never appends to an old file
+    old = datetime.now(timezone.utc) - timedelta(hours=fetch.STOP_HOURS + 1)
+    marker.write_text(json.dumps({"at": old.isoformat(), "reason": "x"}), encoding="utf-8")
+    assert fetch.stopped_recently(tmp_path, datetime.now(timezone.utc)) is None
+    marker.write_text("garbled", encoding="utf-8")
+    assert "unreadable" in fetch.stopped_recently(tmp_path, datetime.now(timezone.utc))

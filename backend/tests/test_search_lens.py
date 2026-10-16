@@ -58,6 +58,9 @@ def test_import_creates_one_item_per_theme_week_and_is_idempotent(db, tmp_path):
     again = run_import(db, p)
     assert again.get("created", 0) == 0 and again["unchanged"] == 40
     assert db.query(Item).filter(Item.kind == "search").count() == 40
+    (tmp_path / "gtrends-20261009T060000Z.jsonl").write_text(p.read_text(encoding="utf-8"), encoding="utf-8")
+    (tmp_path / "gtrends-20261002T060000Z.jsonl").write_text("", encoding="utf-8")
+    assert run_import(db, tmp_path)["file"] == "gtrends-20261009T060000Z.jsonl"  # a folder: its newest file
 
 
 def test_reimport_replaces_revised_weeks(db):
@@ -249,6 +252,8 @@ def test_keyed_providers_stay_off_without_keys(db, monkeypatch):
     with pytest.raises(AwaitingKey):
         gt_collector.official(g)
     assert "awaiting_key" in gt_collector.collect_and_import(db, provider="serpapi")
+    monkeypatch.setattr(settings, "GOOGLE_TRENDS_API_KEY", "alpha-key")
+    assert "error" in gt_collector.collect_and_import(db, provider="official")  # the stub, not a crash
 
 
 def test_serpapi_rows_match_the_local_fetcher(db, monkeypatch):

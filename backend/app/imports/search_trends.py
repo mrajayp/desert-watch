@@ -164,5 +164,17 @@ def import_rows(s: Session, rows: Iterable[dict], *, country_iso2: str = "LY", p
     return dict(stats)
 
 
+def newest(path: Path) -> Path:
+    """A directory means its newest gtrends-*.jsonl: every fetch holds the whole series."""
+    path = Path(path)
+    if not path.is_dir():
+        return path
+    files = sorted(path.glob("gtrends-*.jsonl"))  # names carry the UTC time, so they sort by age
+    if not files:
+        raise ValueError(f"No gtrends-*.jsonl in {path}")
+    return files[-1]
+
+
 def run(s: Session, path: Path, *, country_iso2: str = "LY") -> dict:
-    return import_rows(s, iter_rows(path), country_iso2=country_iso2)
+    path = newest(path)
+    return {"file": path.name, **import_rows(s, iter_rows(path), country_iso2=country_iso2)}

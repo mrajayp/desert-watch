@@ -86,4 +86,6 @@ def collect_and_import(s: Session, *, provider: str = "serpapi", daily: bool = F
         rows = PROVIDERS[provider](g, daily=daily, **kw)
     except AwaitingKey as e:
         return {"awaiting_key": str(e)}
+    except NotImplementedError as e:  # the official API stub, once a key is set
+        return {"error": str(e)}
     return import_rows(s, rows, country_iso2=country_iso2, provider=provider)

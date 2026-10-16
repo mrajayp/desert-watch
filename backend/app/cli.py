@@ -17,7 +17,7 @@
   reassign-social           move posts filed under a whole platform (facebook.com ...) to their page
   import-social-scrape PATH load the converted social-media scrape JSON (outlets, Facebook register, labels)
   sync-themes               overwrite DB theme terms from config/themes.yaml (bumps versions, re-tags)
-  import-search PATH        load Google Trends search rows (JSONL from scripts/fetch_gtrends.py; idempotent)
+  import-search PATH        load Google Trends search rows (JSONL from scripts/fetch_gtrends.py, or a folder: its newest file)
   collect-search [--provider serpapi|official] [--daily]  fetch search rows with a keyed provider and load them
 """
 import getpass

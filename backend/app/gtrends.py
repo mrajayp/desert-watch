@@ -27,7 +27,7 @@ from sqlalchemy.orm import Session
 SOURCE = "gtrends"
 MAX_SLOTS = 5               # Trends compares at most five items per request
 DAILY_MAX_DAYS = 269        # longer custom ranges come back weekly
-DAILY_MIN_DAYS = 6          # a week from daily data has data when at least 6 of its 7 days do
+DAILY_MIN_DAYS = 7          # a week from daily data has data only when all 7 days do (else the weekly row is used)
 PROVISIONAL_WEEKS = 2       # Google revises the latest two weeks
 ANCHOR_SMOOTH_WEEKS = 13    # centred median window for the anchor (6 weeks either side: spans Ramadan)
 # "An improvement to our data collection system was applied from 1/1/22" (axis note on every

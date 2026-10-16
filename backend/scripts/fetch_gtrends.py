@@ -3,17 +3,21 @@
 Never run this from the Fly server. It calls the unofficial trends.google.com widget endpoints
 (homepage cookie -> /trends/api/explore -> /trends/api/widgetdata/multiline), which Google tags as
 scraper traffic. It is polite on purpose: at least 10 s between requests, one 60 s back-off on a
-429, and a full stop at the second 429. Run it about once a week.
+429, and a full stop at the second 429. After a stop it writes .gtrends-stop beside the output and
+refuses to run for 24 hours (--force overrides). Run it about once a week.
 
     cd backend
-    .venv/Scripts/python.exe scripts/fetch_gtrends.py ../data/imports/gtrends.jsonl            # 5 years weekly + 269 days daily
-    .venv/Scripts/python.exe scripts/fetch_gtrends.py out.jsonl --no-weekly --daily 120         # the weekly refresh
-    .venv/Scripts/python.exe scripts/fetch_gtrends.py out.jsonl --basket services=الكهرباء+المياه --anchor مطعم --no-daily
+    .venv/Scripts/python.exe scripts/fetch_gtrends.py                     # 5 years weekly -> ../data/imports/gtrends/gtrends-<time>.jsonl
+    .venv/Scripts/python.exe scripts/fetch_gtrends.py --only governance   # one list on its own
+    .venv/Scripts/python.exe scripts/fetch_gtrends.py --daily 120 --raw-dir raw   # adds a daily window (see --daily)
+    .venv/Scripts/python.exe scripts/fetch_gtrends.py trial.jsonl --basket services=الكهرباء+المياه --anchor مطعم
 
 Word lists, anchor and request groups come from `gtrends` in config/countries/<country>.yaml;
---basket/--anchor override them for trying out new lists. Rows are appended to the output
-(JSONL, one row per list per Monday week, see app/gtrends.py). The output stays out of git.
-Request budget: --max-requests (default 40) counts every request, the homepage included."""
+--basket/--anchor override them for trying out new lists. Each run writes a new file (JSONL, one row
+per list per Monday week, see app/gtrends.py): a directory gets gtrends-<UTC time>.jsonl, a named
+file must not exist yet. Every run holds the whole 5-year series, so import only the newest file.
+The output stays out of git. Request budget: --max-requests (default 40) counts every request, the
+homepage included."""
 import argparse
 import json
 import sys
@@ -33,10 +37,15 @@ HOME = "https://trends.google.com/trends/"
 API = "https://trends.google.com/trends/api"
 MIN_GAP = 10.0
 BACKOFF = 60
+STOP_FILE = ".gtrends-stop"  # written beside the output when Google turns us away
+STOP_HOURS = 24
+DEFAULT_OUT = settings.DATA_DIR / "imports" / "gtrends"
 
 
 class Stop(Exception):
-    pass
+    def __init__(self, msg: str, *, blocked: bool = False):
+        super().__init__(msg)
+        self.blocked = blocked  # Google turned us away (429/403), as opposed to our own budget
 
 
 class Client:
@@ -65,12 +74,12 @@ class Client:
             if r.status_code == 429:
                 self.n429 += 1
                 if self.n429 >= 2:
-                    raise Stop("second 429: stopping")
+                    raise Stop("second 429: stopping", blocked=True)
                 print(f"   429: waiting {BACKOFF} s", flush=True)
                 self.sleep(BACKOFF)
                 continue
             if r.status_code != 200:
-                raise Stop(f"{name}: HTTP {r.status_code}")
+                raise Stop(f"{name}: HTTP {r.status_code}", blocked=r.status_code == 403)
             return r.text
 
     @staticmethod
@@ -106,6 +115,32 @@ def plan(g: dict, *, weekly: bool, daily: int | None, today: date) -> list[dict]
     return jobs
 
 
+def out_path(out: Path, stamp: str) -> Path:
+    """A directory (or a path without a suffix) gets a new dated file. A named file must be new."""
+    if out.is_dir() or not out.suffix:
+        out = out / f"gtrends-{stamp}.jsonl"
+    if out.exists():
+        sys.exit(f"{out} exists. Each run writes a new file: give a directory or a new name.")
+    return out
+
+
+def stopped_recently(folder: Path, now: datetime) -> str | None:
+    """Why we must not run yet, when Google turned us away less than STOP_HOURS ago."""
+    f = folder / STOP_FILE
+    if not f.exists():
+        return None
+    try:
+        info = json.loads(f.read_text(encoding="utf-8"))
+        at = datetime.fromisoformat(info["at"])
+        recent = now - at < timedelta(hours=STOP_HOURS)
+    except (ValueError, KeyError, TypeError):
+        return f"{f} is unreadable. Delete it to run again."
+    if recent:
+        until = (at + timedelta(hours=STOP_HOURS)).isoformat(timespec="minutes")
+        return f"Google turned us away at {info['at']} ({info.get('reason')}). Wait until {until} or pass --force."
+    return None
+
+
 def summarize(rows: list[dict]):
     by = {}
     for r in rows:
@@ -124,11 +159,12 @@ def summarize(rows: list[dict]):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("out", type=Path)
+    ap.add_argument("out", type=Path, nargs="?", default=DEFAULT_OUT,
+                    help=f"directory for a new dated file, or a new file name (default {DEFAULT_OUT})")
     ap.add_argument("--config", type=Path, default=settings.CONFIG_DIR / "countries" / "libya.yaml")
     ap.add_argument("--no-weekly", action="store_true", help="skip the 5-year weekly series")
-    ap.add_argument("--daily", type=int, default=DAILY_MAX_DAYS, help="recent daily window in days (<= 269)")
-    ap.add_argument("--no-daily", action="store_true")
+    ap.add_argument("--daily", type=int, help=f"also fetch a recent daily window of N days (<= {DAILY_MAX_DAYS}). "
+                    "Not checked live yet: compare it with the weekly rows (and keep --raw-dir) before relying on it")
     ap.add_argument("--only", help="comma-separated theme slugs")
     ap.add_argument("--basket", action="append", default=[], help="slug=term1+term2 (replaces the config lists)")
     ap.add_argument("--anchor")
@@ -136,6 +172,7 @@ def main(argv=None):
     ap.add_argument("--gap", type=float, default=MIN_GAP)
     ap.add_argument("--raw-dir", type=Path)
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--force", action="store_true", help=f"run even within {STOP_HOURS} h of being turned away")
     a = ap.parse_args(argv)
     sys.stdout.reconfigure(encoding="utf-8")
     cfg = yaml.safe_load(a.config.read_text(encoding="utf-8"))
@@ -157,17 +194,25 @@ def main(argv=None):
         sys.exit("no anchor or no word lists")
     geo = g.get("geo", "LY")
     today = datetime.now(timezone.utc).date()
-    jobs = plan(g, weekly=not a.no_weekly, daily=None if a.no_daily else a.daily, today=today)
+    jobs = plan(g, weekly=not a.no_weekly, daily=a.daily, today=today)
     need = 1 + 2 * len(jobs)
     print(f"{len(jobs)} requests of up to {MAX_SLOTS} items ({need} HTTP calls, budget {a.max_requests}), anchor {g['anchor']}")
     for j in jobs:
         print(f"   {j['resolution']} {j['time']}: {' | '.join(slot(t) for _, t in j['slots'])} | {g['anchor']}")
+    now = datetime.now(timezone.utc)
+    stamp = now.strftime("%Y%m%dT%H%M%SZ")
+    out = out_path(a.out, stamp)
+    why = stopped_recently(out.parent, now)
+    if why and not (a.force or a.dry_run):
+        sys.exit(why)
+    if why:
+        print(why)
     if a.dry_run:
+        print(f"would write {out}")
         return 0
-    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     c = Client(gap=a.gap, max_requests=a.max_requests, raw_dir=a.raw_dir)
-    a.out.parent.mkdir(parents=True, exist_ok=True)
-    total = 0
+    out.parent.mkdir(parents=True, exist_ok=True)
+    total, stop = 0, None
     try:
         c.home(geo)
         for k, j in enumerate(jobs, 1):
@@ -179,14 +224,22 @@ def main(argv=None):
             rows = build_rows(parse_points(timeline), j["slots"], g["anchor"], resolution=j["resolution"],
                               request_id=f"{stamp}-{k:02d}", fetched_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
                               geo=geo)
-            with a.out.open("a", encoding="utf-8") as f:
+            with out.open("a", encoding="utf-8") as f:
                 for r in rows:
                     f.write(json.dumps(r, ensure_ascii=False) + "\n")
             total += len(rows)
             summarize(rows)
     except Stop as e:
         print(f"stopped: {e}")
-    print(f"{total} rows -> {a.out} ({c.n} requests, {c.n429} x 429)")
+        stop = e
+    marker = out.parent / STOP_FILE
+    if stop is not None and stop.blocked:
+        marker.write_text(json.dumps({"at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                                      "reason": str(stop)}), encoding="utf-8")
+        print(f"wrote {marker}: no runs for {STOP_HOURS} h")
+    elif stop is None and marker.exists():
+        marker.unlink()
+    print(f"{total} rows -> {out if total else '(nothing written)'} ({c.n} requests, {c.n429} x 429)")
     return 0
 
 
