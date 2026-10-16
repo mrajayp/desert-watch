@@ -14,7 +14,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .collectors.base import RunResult, http_client, polite_get
-from .engagement import SHORTENERS
+from .engagement import SHORTENERS, fresh_external
 from .models import Country, Item, Outlet, OutletCategory, utcnow
 
 TRANCO = "https://tranco-list.eu/api/ranks/domain/"
@@ -49,12 +49,13 @@ def tranco_entry(payload: dict, today: date) -> dict:
 
 
 def store(o: Outlet, entry: dict) -> None:
-    reach = dict((o.external or {}).get("reach") or {})
+    ext = fresh_external(o)
+    reach = dict(ext.get("reach") or {})
     old = reach.get("tranco") or {}
     hist = [h for h in old.get("history", []) if h.get("as_of") != entry["as_of"]]
     hist.append({"value": entry["value"], "as_of": entry["as_of"]})
     reach["tranco"] = {**entry, "history": sorted(hist, key=lambda h: h["as_of"])[-HISTORY:]}
-    o.external = {**(o.external or {}), "reach": reach}
+    o.external = {**ext, "reach": reach}
 
 
 def snapshot(s: Session, *, limit: int | None = None, client: httpx.Client | None = None,

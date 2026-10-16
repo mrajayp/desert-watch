@@ -78,3 +78,21 @@ def test_snapshot_targets_and_history(db, no_sleep):
         reach.snapshot(db, client=c, today=date(2026, 10, 16))
     db.refresh(busy)
     assert [h["as_of"] for h in busy.external["reach"]["tranco"]["history"]] == ["2026-09-15", "2026-10-15"]
+
+
+def test_long_runs_do_not_overwrite_each_others_outlet_figures(db):
+    from app.db import SessionLocal
+    from app.engagement import set_external
+    o = Outlet(name="Two Jobs", domain="twojobs.ly", external={"social_media_scrape": {"articles": 3}})
+    db.add(o)
+    db.commit()
+    stale = db.get(Outlet, o.id)                    # loaded at the start of a long run
+    with SessionLocal() as other:                   # another job stores reach meanwhile
+        x = other.get(Outlet, o.id)
+        reach.store(x, {"value": 5, "as_of": "2026-10-15", "method": reach.METHOD, "checked": "2026-10-16"})
+        other.commit()
+    set_external(stale, "wp_json", {"ok": True, "checked": "2026-10-16"})
+    db.commit()
+    with SessionLocal() as check:
+        ext = check.get(Outlet, o.id).external
+    assert set(ext) == {"social_media_scrape", "reach", "wp_json"} and ext["reach"]["tranco"]["value"] == 5

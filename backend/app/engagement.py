@@ -9,7 +9,7 @@ from statistics import median
 from urllib.parse import urlsplit
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, object_session
 
 from .models import Item, ItemEngagement, Outlet, utcnow
 
@@ -29,6 +29,20 @@ def outlet_url(item: Item) -> str | None:
     if item.url and not is_google_link(item.url):
         return item.url
     return (item.extra or {}).get("resolved_url")
+
+
+def fresh_external(o: Outlet) -> dict:
+    """outlet.external as stored now. Long runs re-read it before writing, so they never put back a
+    stale copy over figures another job stored meanwhile (the column holds several sources' data).
+    A change to o.external not yet flushed is dropped, so write it through set_external or commit first."""
+    sess = object_session(o)
+    if sess is not None and o.id is not None:
+        sess.refresh(o, ["external"])
+    return dict(o.external or {})
+
+
+def set_external(o: Outlet, key: str, value) -> None:
+    o.external = {**fresh_external(o), key: value}
 
 
 def upsert_readings(s: Session, source: str, age_bucket: str, values: dict[int, dict]) -> int:

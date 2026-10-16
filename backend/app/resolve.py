@@ -25,7 +25,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .collectors.base import http_client, polite_get
-from .engagement import SHORTENERS, is_google_link
+from .engagement import SHORTENERS, is_google_link, set_external
 from .fetch_meta import _check_public
 from .models import Item, Outlet, utcnow
 from .network import jaccard, title_tokens
@@ -139,7 +139,7 @@ def probe_wp(client: httpx.Client, o: Outlet, today: date) -> bool:
         ok = r.status_code == 200 and isinstance(r.json(), list)
     except ValueError:
         ok = False
-    o.external = {**(o.external or {}), "wp_json": {"ok": ok, "checked": today.isoformat()}}
+    set_external(o, "wp_json", {"ok": ok, "checked": today.isoformat()})
     return ok
 
 
