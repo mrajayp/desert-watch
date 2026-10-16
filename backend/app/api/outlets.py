@@ -334,8 +334,9 @@ def cluster_periods(country: str = "LY", period_weeks: int = 4, s: Session = Dep
 
 @router.get("/outlets/blind-spots")
 def blind_spots(country: str = "LY", s: Session = Depends(get_db), _: User = Depends(auth.current_user)):
-    """Known outlets we cannot collect from (Facebook pages), with their reach in the period the
-    external dataset covers, and any third-party labels as published."""
+    """Known outlets we only see in part (Facebook register pages: just the posts Google News
+    indexes), with their reach in the period the external dataset covers, and any third-party
+    labels as published."""
     c = country_or_404(s, country)
     rows = s.scalars(select(Outlet).where(Outlet.country_id == c.id, Outlet.monitored.is_(False))).all()
     cats = outlet_categories(s, [r.id for r in rows])

@@ -1,5 +1,5 @@
-// Facebook blind-spot register: outlets we cannot collect from, with reach from an external
-// scrape (Oct 2023 - Aug 2024) and its labels as published. Makes "monitored coverage only" concrete.
+// Facebook blind-spot register: pages we only see through the posts Google News indexes, with reach
+// from an external scrape (Oct 2023 - Aug 2024) and its labels as published. Makes "monitored coverage only" concrete.
 import { useEffect, useState } from 'react'
 import { api } from '../api'
 import { useApp } from '../App'
@@ -16,14 +16,14 @@ export default function BlindSpots({ compact = false }) {
   if (compact) {
     const top = rows.filter((r) => r.kind === 'media').slice(0, 5)
     return (
-      <p className="small muted">Not monitored: Facebook-first outlets with large audiences may cover this ({top.map((r) => r.name).join(', ')}…).
-        See Outlets → Facebook blind spots.</p>)
+      <p className="small muted">Facebook-first outlets with large audiences may cover this ({top.map((r) => r.name).join(', ')}…).
+        We only see the posts of theirs that Google News indexes. See Outlets → Facebook blind spots.</p>)
   }
   return (
     <section className="card" style={{ marginTop: 16 }}>
       <div className="card-head">
         <div><h2>Facebook blind spots ({rows.length})</h2>
-          <p className="sub">Outlets Desert Watch cannot collect from. Reach is from {src.source} ({src.period?.from} to {src.period?.to}).
+          <p className="sub">Facebook pages we only see in part. We collect the posts Google News indexes for them, which is a small sample of what they publish. Reach is from {src.source} ({src.period?.from} to {src.period?.to}).
             Labels are shown exactly as published in that dataset and are disputed; they are not used in any filter or flag.</p></div>
         <span className="seg">{[['media', 'Media'], ['official', 'Official'], ['all', 'All']].map(([k, l]) =>
           <button key={k} aria-pressed={kind === k} onClick={() => setKind(k)}>{l}</button>)}</span>

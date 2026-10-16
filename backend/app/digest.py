@@ -141,7 +141,7 @@ def build_facts(s: Session, country: Country, week: date) -> dict:
         "gender_articles_naming_a_district": gender_named,
         "flags_this_week": dict(flags), "recent_gender_headlines": headlines[:12],
         "team_activity_this_week": {"gap_votes": dict(votes), "claims": dict(claims), "comments": comments or 0},
-        "known_limits": ["monitored coverage only (no Facebook/Telegram)",
+        "known_limits": ["monitored coverage only (Facebook only as the sample of posts Google indexes, no Telegram)",
                          "event and humanitarian need data are pending source keys" if not
                          {"events", "humanitarian"} & {g["lens"] for g in gaps} else "",
                          "most articles name no district"],

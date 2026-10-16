@@ -65,11 +65,13 @@ def nightly():
         learning.purge_old_events(s)
     for key in ("wikipedia", "acled", "ucdp", "reliefweb"):
         collect(key)
+    collect("gnews_social")   # yesterday and the day before, one fixed day each (Google indexes late)
 
 
 @_locked
 def hourly():
     collect("rss")
+    collect("youtube")
     collect("galerts")
 
 
@@ -112,8 +114,10 @@ def weekly_digest(force: bool = False):
 
 JOBS = {
     "rss": lambda: _locked(collect)("rss"),
+    "youtube": lambda: _locked(collect)("youtube"),
     "galerts": lambda: _locked(collect)("galerts"),
     "gnews": lambda: _locked(collect)("gnews"),
+    "gnews_social": lambda: _locked(collect)("gnews_social"),
     "official": lambda: _locked(collect)("official"),
     "gdelt": lambda: _locked(collect)("gdelt"),
     "gdelt_timeline": lambda: _locked(collect)("gdelt_timeline"),

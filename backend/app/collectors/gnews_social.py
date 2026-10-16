@@ -1,0 +1,219 @@
+"""Google News RSS restricted to one public social account (`site:facebook.com/<page>`): the posts
+Google has indexed, without a key. Google keeps a sample that favours recent posts and changes with
+the window size, so we ask for ONE fixed 1-day window per account and day, a day or two late (Google
+indexes late), and never use it to fill in history. Trend comparisons leave each account out until
+it has been collected across the whole span (the stable source+outlet rule in scoring.py).
+
+Accounts: Facebook pages and X, Instagram and TikTok accounts that are on the 2023-24 Facebook register
+as media/official pages or carry a type/scope label. Personal accounts that Google Alerts happened
+to pick up have neither and are never queried. Numeric page ids and groups are skipped (site: cannot
+match an id, and groups are people). YouTube channels have their own feed (rss.py). No Telegram.
+
+Attribution: the query names the account, so every result is filed on that account's outlet. `site:`
+matches the start of a link, so site:facebook.com/lyobserver also returns facebook.com/lyobserver.arabic.
+Known accounts that extend the name are left out with -site:.
+
+Editions: Google News keeps to the edition's language. x.com/lyobserver on 2026-10-13 gave 1 post in
+the Arabic edition and 34 in the English one. Every account is asked in Arabic, and accounts whose own
+languages or website's languages include English are asked in English too."""
+import calendar
+import re
+from collections import Counter
+from datetime import date, datetime, timedelta
+
+import feedparser
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from ..ingest import SOCIAL, labelled_outlets, load_rules, register_kind, store_article
+from ..models import Outlet
+from ..textnorm import detect_lang
+from .base import RunResult, http_client, polite_get
+from .gnews import ENDPOINT
+
+PLATFORMS = ("facebook.com/", "x.com/", "instagram.com/", "tiktok.com/@")
+EDITIONS = {
+    # Google News has no Libya edition: gl=LY / ceid=LY:ar answers 302 to the Egypt-Arabic edition
+    # (checked 2026-10-16), so we ask for that edition by name.
+    "ar": {"hl": "ar", "gl": "EG", "ceid": "EG:ar"},
+    "en": {"hl": "en-US", "gl": "US", "ceid": "US:en"},
+}
+# At most 100 results per query. A page with 100 in one day is cut short by Google, and nothing
+# smaller than a day can be asked for (libyaakhbar hits it most days).
+CAP = 100
+MIN_INTERVAL = 2.0     # seconds between requests
+STOP_AFTER = 3         # consecutive 429/5xx answers end the run
+DAYS_BACK = (1, 2)     # yesterday and the day before
+MAX_QUERIES = 400
+NAME_WORDS = 8         # a title repeated within one answer is the page's name only when it is this short
+MAX_EXCLUDE = 5
+
+_SUFFIX = re.compile(r"\s*[-|•/]\s*(Facebook|X|Twitter|Instagram|TikTok)\s*$", re.I)
+_SEP = re.compile(r"\.\s\.(?:\s|$)")          # "<page name>. . <post text>"
+_ON = re.compile(r"^.{1,80}? on (X|Twitter|Instagram|TikTok):\s*", re.I)
+_PROFILE = re.compile(r"Instagram photos and videos|\(@[\w.]+\)\s*$", re.I)
+
+
+def _bare(t: str) -> str:
+    return t.strip().rstrip(".…").strip()
+
+
+def _short_name(t: str) -> bool:
+    """Page names are short and carry no hashtag or link. A longer title seen twice in one answer
+    is a post Google listed twice."""
+    return bool(t) and len(t.split()) <= NAME_WORDS and "#" not in t and "http" not in t
+
+
+def _load_names(o: Outlet) -> Counter:
+    stored = (o.external or {}).get("page_names") or {}
+    if isinstance(stored, list):     # older format: a plain list
+        stored = {n: 1 for n in stored if _short_name(n)}
+    return Counter(stored)
+
+
+def post_text(title: str, names: set[str] | None = None) -> str | None:
+    """Google's title for a post is "<page name>. . <post text> - Facebook", "<post text> - Facebook"
+    or "<name> on X: <text>". Returns the post text, or None when only the page name (often cut
+    short) is left. `names` gathers page names seen so far, to spot a bare page name later."""
+    names = names if names is not None else set()
+    t = _SUFFIX.sub("", (title or "").strip()).strip()
+    parts = _SEP.split(t, 1)
+    if len(parts) == 2:
+        names.add(_bare(parts[0]))
+        t = parts[1]
+    elif any(n.startswith(_bare(t)) or _bare(t) == n for n in names if n):
+        return None
+    t = _ON.sub("", t).strip().strip('"“”').strip()
+    if _PROFILE.search(t):
+        return None
+    return t if len(t) >= 25 and t.count(" ") >= 3 else None
+
+
+def accounts(s: Session) -> list[Outlet]:
+    labelled = labelled_outlets(s)
+    out = []
+    for o in s.scalars(select(Outlet).where(Outlet.active.is_(True))):
+        if not o.domain.lower().startswith(PLATFORMS):
+            continue
+        handle = o.domain.split("/", 1)[1]
+        if handle.isdigit() or "/" in handle:   # numeric ids, groups/<name>
+            continue
+        if o.id in labelled or register_kind(o):
+            out.append(o)
+    # busiest register pages first, so a run that stops early drops the quiet ones
+    out.sort(key=lambda o: (-((((o.external or {}).get("social_media_scrape") or {}).get("posts")) or 0), o.id))
+    return out
+
+
+def editions(o: Outlet, parent: Outlet | None) -> list[str]:
+    langs = set(o.languages or []) | set((parent.languages or []) if parent else [])
+    return ["ar", "en"] if "en" in langs else ["ar"]
+
+
+def longer_accounts(account: str, domains: list[str]) -> list[str]:
+    """Other known accounts whose address starts with this one (lyobserver -> lyobserver.arabic)."""
+    a = account.lower()
+    return sorted(d for d in domains if d.lower().startswith(a) and d.lower() != a)[:MAX_EXCLUDE]
+
+
+def window_query(account: str, day: date, exclude: list[str] = ()) -> str:
+    skip = "".join(f" -site:{d}" for d in exclude)
+    return f"site:{account}{skip} after:{day.isoformat()} before:{(day + timedelta(days=1)).isoformat()}"
+
+
+def collect(s: Session, *, days: int | None = None, today: date | None = None,
+            max_queries: int = MAX_QUERIES) -> RunResult:
+    """One 1-day window per account, edition and day for each of the last `days` days (default:
+    yesterday and the day before). Results already stored by another route are only moved off a
+    whole-platform outlet."""
+    res = RunResult()
+    today = today or date.today()
+    windows = [today - timedelta(days=d) for d in (range(1, days + 1) if days else DAYS_BACK)]
+    stats = Counter()
+    failures = 0
+    rules_by_country: dict = {}
+    platform_ids = set(s.scalars(select(Outlet.id).where(Outlet.domain.in_(list(SOCIAL)))))
+    by_domain = {o.domain: o for o in s.scalars(select(Outlet))}
+    social = [d for d in by_domain if d.lower().startswith(PLATFORMS)]
+    plan = [(o, editions(o, by_domain.get((o.external or {}).get("parent")))) for o in accounts(s)]
+    if plan and sum(len(e) for _, e in plan) * len(windows) > max_queries:
+        k = today.toordinal() % len(plan)   # over budget: a different set of accounts is cut each day
+        plan = plan[k:] + plan[:k]
+    with http_client() as client:
+        for o, eds in plan:
+            if failures >= STOP_AFTER or stats["queries"] >= max_queries:
+                break
+            rules = rules_by_country.setdefault(o.country_id, load_rules(s, o.country_id))
+            counts = _load_names(o)
+            names = set(counts)
+            exclude = longer_accounts(o.domain, social)
+            stats["accounts"] += 1
+            for ed in eds:
+                for day in windows:
+                    if failures >= STOP_AFTER or stats["queries"] >= max_queries:
+                        break
+                    try:
+                        r = polite_get(client, ENDPOINT, params={"q": window_query(o.domain, day, exclude), **EDITIONS[ed]},
+                                       min_interval=MIN_INTERVAL, retries=0)
+                    except Exception as e:  # noqa: BLE001
+                        res.errors += 1
+                        failures += 1
+                        res.detail += f"{o.domain}: {e}; "
+                        continue
+                    stats["queries"] += 1
+                    stats[f"queries_{ed}"] += 1
+                    if r.status_code == 429 or r.status_code >= 500:
+                        res.errors += 1
+                        failures += 1
+                        continue
+                    failures = 0
+                    if r.status_code != 200:
+                        res.errors += 1
+                        res.detail += f"{o.domain}: HTTP {r.status_code}; "
+                        continue
+                    entries = feedparser.parse(r.content).entries
+                    stats["results"] += len(entries)
+                    stats["capped"] += len(entries) >= CAP
+                    # "<page name>. . <post>" names the page. A short title repeated within one answer
+                    # is the page's name too. A long one is a post listed twice, and is kept once.
+                    raw = [_SUFFIX.sub("", e.get("title", "")).strip() for e in entries]
+                    for t in raw:
+                        parts = _SEP.split(t, 1)
+                        if len(parts) == 2 and _bare(parts[0]):
+                            counts[_bare(parts[0])] += 1
+                    counts.update(t for t, n in Counter(_bare(t) for t in raw).items()
+                                  if n > 1 and not _SEP.search(t) and _short_name(t))
+                    names |= set(counts)
+                    done = set()
+                    for e in entries:
+                        when = e.get("published_parsed")
+                        text = post_text(e.get("title", ""), names)
+                        if not when or not text or not e.get("link"):
+                            stats["no_text"] += 1
+                            continue
+                        if text in done:
+                            stats["repeated"] += 1
+                            continue
+                        done.add(text)
+                        item, created = store_article(
+                            s, o.country_id, rules, url=e.link, title=text,
+                            published_at=datetime.utcfromtimestamp(calendar.timegm(when)), source_key="gnews_social",
+                            lang=detect_lang(text), outlet_domain=o.domain, outlet_name=o.name, require_theme=True,
+                            outlet_cache={o.domain: o}, extra={"window": day.isoformat(), "edition": EDITIONS[ed]["ceid"]})
+                        res.rows += created
+                        if item is None:
+                            stats["no_theme"] += 1
+                        elif not created and item.outlet_id in platform_ids:
+                            item.outlet_id = o.id   # Google News filed it under the whole platform
+                            stats["refiled"] += 1
+                    s.commit()   # one window at a time, so the write lock is never held across a request
+            keep = dict(counts.most_common(8))   # the names seen most often
+            if keep != ((o.external or {}).get("page_names") or {}):
+                o.external = {**(o.external or {}), "page_names": keep}
+                s.commit()
+    if failures >= STOP_AFTER:
+        res.detail += f"stopped after {STOP_AFTER} refusals in a row; "
+    if stats["queries"] >= max_queries:
+        res.detail += f"stopped at {max_queries} queries; "
+    res.detail = (res.detail + str(dict(stats)))[:1000]
+    return res

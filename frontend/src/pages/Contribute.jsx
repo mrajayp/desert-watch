@@ -44,7 +44,7 @@ export default function Contribute() {
             </li>))}</ul>}
         </Task>
 
-        <Task n="2" title="Know something we missed?" why="Coverage on Facebook, Telegram or in print does not reach us. Adding a link counts it as coverage, so the gap shrinks where it should.">
+        <Task n="2" title="Know something we missed?" why="Most coverage on Facebook, and anything on Telegram or in print, does not reach us. Adding a link counts it as coverage, so the gap shrinks where it should.">
           <div className="row" style={{ gap: 8 }}>
             <button className="btn primary" disabled={ro} onClick={() => openAdd()}>+ Add an article</button>
           </div>

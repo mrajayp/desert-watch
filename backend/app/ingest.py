@@ -30,7 +30,7 @@ def domain_of(url: str) -> str:
 # platform, so Facebook pages show up as outlets (and match the Facebook blind-spot register).
 SOCIAL = {"facebook.com": "facebook", "fb.com": "facebook", "instagram.com": "instagram", "x.com": "x",
           "twitter.com": "x", "tiktok.com": "tiktok", "youtube.com": "youtube", "t.me": "telegram"}
-_SOCIAL_CANON = {"fb.com": "facebook.com", "twitter.com": "x.com", "mobile.twitter.com": "x.com"}
+_SOCIAL_CANON = {"fb.com": "facebook.com", "twitter.com": "x.com", "mobile.twitter.com": "x.com", "youtu.be": "youtube.com"}
 # first path segments that are not an account
 _SOCIAL_RESERVED = {"watch", "reel", "reels", "share", "story.php", "photo.php", "photo", "video.php", "events",
                     "hashtag", "p", "tv", "explore", "i", "search", "home", "intent", "shorts", "results",
@@ -61,9 +61,48 @@ def social_outlet(url: str) -> tuple[str, str] | None:
             account = segs[0]
         elif host == "youtube.com" and len(segs) > 1 and segs[0] in ("channel", "c", "user"):
             account = f"{segs[0]}/{segs[1]}"
+        elif host == "youtube.com" and q.get("channel_id"):  # a channel's own feed
+            account = f"channel/{q['channel_id']}"
     elif segs and segs[0].lower() not in _SOCIAL_RESERVED:
         account = segs[0]
     return (f"{host}/{account}" if account else host), SOCIAL[host]
+
+
+SHORTENERS = {"t.co", "bit.ly", "ift.tt", "ow.ly", "buff.ly", "goo.gl", "tinyurl.com"}
+# Sites where anyone can post and the domain alone names nobody. Their items are treated like a
+# whole-platform bucket (facebook.com with no page): kept, never counted.
+USER_PLATFORMS = {"youtu.be", "linkedin.com", "reddit.com", "medium.com", "threads.net", "threads.com"}
+NOT_COUNTED = {"shortener", "unlisted_social_account"}
+
+
+def register_kind(o: Outlet) -> str | None:
+    """'media' / 'official' for pages on the 2023-24 Facebook register (imports/social_scrape.py)."""
+    kind = ((o.external or {}).get("social_media_scrape") or {}).get("kind")
+    return kind if kind in ("media", "official") else None
+
+
+def labelled_outlets(s: Session) -> set[int]:
+    """Outlets with an active type or scope label (set by an admin, the config or an import)."""
+    return set(s.scalars(select(OutletCategory.outlet_id).where(
+        OutletCategory.dimension.in_(("type", "scope")), OutletCategory.status == "active",
+        OutletCategory.valid_to.is_(None))))
+
+
+def not_counted_reason(o: Outlet | None, labelled: set[int]) -> str | None:
+    """Items kept but never counted. A link shortener is not an outlet. A social account nobody has
+    listed (no type/scope label, not on the register) can be a private person, and a whole-platform
+    bucket (facebook.com, youtube.com ...) hides whose post it is. Labelling the account restores it."""
+    if o is None:
+        return None
+    if o.domain in SHORTENERS:
+        return "shortener"
+    if o.domain in USER_PLATFORMS:
+        return "unlisted_social_account"
+    if o.domain.split("/", 1)[0] not in SOCIAL:
+        return None
+    if "/" in o.domain and (o.id in labelled or register_kind(o)):
+        return None
+    return "unlisted_social_account"
 
 
 def url_key(url: str) -> str:
@@ -78,6 +117,7 @@ class Rules:
     region_parent: dict[int, int | None] = field(default_factory=dict)
     country_terms: list[str] = field(default_factory=list)  # normalised variants of the country name/demonym
     local_outlets: set = field(default_factory=set)          # outlet ids with scope = this country
+    labelled_outlets: set = field(default_factory=set)       # outlet ids with any type/scope label
 
     def mentions_country(self, text: str) -> bool:
         n = normalise(text)
@@ -102,7 +142,8 @@ def load_rules(s: Session, country_id: int) -> Rules:
     local = set(s.scalars(select(OutletCategory.outlet_id).where(
         OutletCategory.dimension == "scope", OutletCategory.value == "libyan" if c.iso2 == "LY" else OutletCategory.value == c.name_en.lower(),
         OutletCategory.status == "active", OutletCategory.valid_to.is_(None))))
-    return Rules(themes, [p for p in places if p.variants], {r.id: r.parent_id for r in regions}, country_terms, local)
+    return Rules(themes, [p for p in places if p.variants], {r.id: r.parent_id for r in regions}, country_terms, local,
+                 labelled_outlets=labelled_outlets(s))
 
 
 def resolve_outlet(s: Session, country_id: int, domain: str, name: str | None, lang: str | None,
@@ -158,7 +199,8 @@ def infer_scope(s: Session, o: Outlet) -> bool:
     if o.country_id is None:
         return False
     c = s.get(Country, o.country_id)
-    if not c or not o.domain.endswith("." + c.iso2.lower()):
+    # facebook.com/almasartv.ly is a page name, not a .ly domain (and could be anyone's)
+    if not c or not o.domain.endswith("." + c.iso2.lower()) or o.domain.split("/", 1)[0] in SOCIAL:
         return False
     if s.scalar(select(OutletCategory.id).where(OutletCategory.outlet_id == o.id, OutletCategory.dimension == "scope")):
         return False
@@ -283,6 +325,10 @@ def store_article(s: Session, country_id: int, rules: Rules, *, url: str, title:
         if not classify_themes(" ".join(x for x in (title, clean_snippet(source_key, title, snippet)) if x), rules.themes):
             return None, False
     social = social_outlet(url)
+    # A collector that knows the account keeps it when the link names only the platform
+    # (youtube.com/watch?v=..., instagram.com/p/...): the post is filed on the channel.
+    if social and "/" not in social[0] and outlet_domain and outlet_domain.lower().startswith(social[0] + "/"):
+        social = (outlet_domain, social[1])
     # a social post belongs to its page even when a search result names the platform as the source
     domain = social[0] if social else (outlet_domain or domain_of(url))
     outlet = resolve_outlet(s, country_id, domain, None if social else outlet_name, lang,
@@ -292,9 +338,12 @@ def store_article(s: Session, country_id: int, rules: Rules, *, url: str, title:
     # not relevant (users can restore it; the decision becomes a label).
     relevant = True
     extra = dict(extra or {})
-    if assume_relevant:
+    if assume_relevant:   # the source vouches that it is about Libya. Whose post it is still matters
         extra["libya_specific_source"] = True
-    elif added_by is None and rules.country_terms and not passes_guard(rules, outlet.id, title, snippet, source_key):
+    if added_by is None and (why := not_counted_reason(outlet, rules.labelled_outlets)):
+        relevant = False
+        extra["filtered"] = why
+    elif not assume_relevant and added_by is None and rules.country_terms and not passes_guard(rules, outlet.id, title, snippet, source_key):
         relevant = False
         extra["filtered"] = "no_country_mention"
     item = Item(country_id=country_id, kind=kind, source_key=source_key, dedupe_key=key, url=url,
@@ -318,29 +367,46 @@ def passes_guard(rules: Rules, outlet_id: int | None, title: str | None, snippet
     return outlet_id in rules.local_outlets and bool(classify_item(title, snippet, rules.themes))
 
 
-def guard_verdict(rules: Rules, it: Item) -> bool | None:
+def guard_verdict(rules: Rules, it: Item, not_counted: dict[int, str] | None = None) -> bool | None:
     """What the relevance guard says about a stored article, or None when the guard leaves it
-    alone (added by a user, a user's relevance decision, a Libya-specific source). Used by
-    apply_relevance_guard and by the retag-all dry run, so both always agree."""
+    alone (added by a user, a user's relevance decision). A Libya-specific source skips the country
+    check, but whose post it is still matters (not_counted: outlet id -> reason, see
+    not_counted_outlets). Used by apply_relevance_guard and by the retag-all dry run, so both agree."""
     ex = it.extra or {}
-    if it.added_by is not None or ex.get("user_relevance") is not None or ex.get("libya_specific_source"):
+    if it.added_by is not None or ex.get("user_relevance") is not None:
         return None
-    return passes_guard(rules, it.outlet_id, it.title, it.snippet, it.source_key)
+    reason = (not_counted or {}).get(it.outlet_id)
+    if ex.get("libya_specific_source"):
+        if reason is None and ex.get("filtered") not in NOT_COUNTED:
+            return None
+        return reason is None
+    return reason is None and passes_guard(rules, it.outlet_id, it.title, it.snippet, it.source_key)
 
 
 def apply_relevance_guard(s: Session, country_id: int) -> int:
     """Re-apply the guard to existing machine-collected articles (never touches user decisions)."""
     rules = load_rules(s, country_id)
+    not_counted = not_counted_outlets(s, rules.labelled_outlets)
     n = 0
     for it in s.scalars(select(Item).where(Item.country_id == country_id, Item.kind == "article",
                                            Item.added_by.is_(None)).execution_options(yield_per=2000)):
-        ok = guard_verdict(rules, it)
-        if ok is not None and it.relevant != ok:
+        ok = guard_verdict(rules, it, not_counted)
+        if ok is None:
+            continue
+        reason = not_counted.get(it.outlet_id)
+        why = reason or (None if ok else "no_country_mention")
+        prev = (it.extra or {}).get("filtered")
+        if it.relevant != ok or (prev != why and (reason or prev in NOT_COUNTED)):
             it.relevant = ok
-            it.extra = {**(it.extra or {}), "filtered": None if ok else "no_country_mention"}
+            it.extra = {**(it.extra or {}), "filtered": why}
             n += 1
     s.commit()
     return n
+
+
+def not_counted_outlets(s: Session, labelled: set[int]) -> dict[int, str]:
+    """outlet id -> why its items are not counted (shorteners, unlisted social accounts)."""
+    return {o.id: why for o in s.scalars(select(Outlet)) if (why := not_counted_reason(o, labelled))}
 
 
 CC_TLD = {"eg": "Egypt", "tn": "Tunisia", "qa": "Qatar", "ae": "United Arab Emirates", "sa": "Saudi Arabia", "tr": "Turkey",

@@ -34,7 +34,7 @@ export default function AddArticle({ preset = {} }) {
         <h2 id="add-title" style={{ margin: 0 }}>Add an article we missed</h2>
         <button className="btn ghost" onClick={closePanel} aria-label="Close">✕</button>
       </div>
-      <p className="small muted">Counts as coverage straight away and teaches the topic matcher. Good for Facebook-first outlets we can’t monitor.</p>
+      <p className="small muted">Counts as coverage straight away and teaches the topic matcher. Good for Facebook pages, where we only see the posts Google News indexes.</p>
       {done ? (
         <div>
           <p>Added: <b dir="auto">{done.title}</b> ({done.outlet?.name}).</p>

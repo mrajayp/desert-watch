@@ -17,7 +17,8 @@ from sqlalchemy import and_, bindparam, case, func, insert, or_, select
 from sqlalchemy.orm import Session
 
 from .classify import clean_snippet, tag_places
-from .ingest import Rules, apply_relevance_guard, evidence, guard_verdict, load_rules, query_key, rule_for, theme_hits
+from .ingest import (Rules, apply_relevance_guard, evidence, guard_verdict, load_rules, not_counted_outlets, query_key,
+                     rule_for, theme_hits)
 from .models import AlertFeed, Country, Item, ItemRegion, ItemTheme, Region, Theme
 
 BATCH = 2000
@@ -156,6 +157,7 @@ def retag_theme(s: Session, theme_id: int, batch: int = BATCH) -> int:
     """One theme over all articles (after an edit in Admin). Places are left alone."""
     rule = rule_for(s.get(Theme, theme_id))
     rules = {c.id: load_rules(s, c.id) for c in s.scalars(select(Country))}
+    not_counted = {cid: not_counted_outlets(s, r.labelled_outlets) for cid, r in rules.items()}
     alerts = _alert_themes(s)
     n = 0
     for items, links, _ in _batches(s, batch, with_regions=False):
@@ -237,6 +239,7 @@ def retag_all(s: Session, *, dry_run: bool = False, batch: int = BATCH, out=prin
     changes nothing. A dry run writes nothing and reports the same numbers a real run would."""
     before = (link_counts(s), item_counts(s), region_counts(s))
     rules = {c.id: load_rules(s, c.id) for c in s.scalars(select(Country))}
+    not_counted = {cid: not_counted_outlets(s, r.labelled_outlets) for cid, r in rules.items()}
     alerts = _alert_themes(s)
     delta = _Delta(s) if dry_run else None
     changed = seen = flips = 0
@@ -248,7 +251,7 @@ def retag_all(s: Session, *, dry_run: bool = False, batch: int = BATCH, out=prin
             plans.append((it.id, p))
             changed += len(p)
             if dry_run:
-                ok = guard_verdict(rules[it.country_id], it)
+                ok = guard_verdict(rules[it.country_id], it, not_counted[it.country_id])
                 relevant = it.relevant if ok is None else ok
                 flips += ok is not None and it.relevant != ok
                 delta.add(it, lk, rg, p, relevant)

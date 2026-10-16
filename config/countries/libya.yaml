@@ -9,9 +9,11 @@ gdelt:
   sourcecountry: LY              # FIPS code used by GDELT for outlets based in Libya
 gnews:
   country_term_ar: ليبيا
+  # Google News has no Libya edition. gl=LY answers with a redirect to the Egypt-Arabic edition
+  # (checked 2026-10-16), so we ask for that edition by name.
   hl: ar
-  gl: LY
-  ceid: "LY:ar"
+  gl: EG
+  ceid: "EG:ar"
 acled: {country: Libya}
 ucdp: {country_id: 620}
 reliefweb: {country_iso3: lby}
@@ -256,3 +258,60 @@ outlet_bases:
   Ukraine: [ua.news]
   United States: [hrw.org, hrw.org/ar, unwomen.org, news.un.org]
   Switzerland: [ohchr.org]
+
+# YouTube channels that the outlet's own website links to (checked 2026-10-16). Each one becomes an
+# outlet youtube.com/channel/<id>, read through its keyless feed (only the 15 newest uploads). The
+# channel takes its website's scope and type. scope/type here are used only when the website has
+# none on record. Left out: UNFPA Libya (feed 404, activity never checked), @LibyaAlhadath and
+# @alrasmiatv (no own website links them, owner to verify) and dormant channels (akhbarlibya24,
+# addresslibya, eanlibya, CBL, NOC).
+youtube_channels:
+  - {id: UCTjGk6smzE1z4P_nI8dUqJw, name: Wasat TV, parent: alwasat.ly, languages: [ar]}
+  - {id: UC14j_8A3Q5uRrLTjkiyP-dA, name: Aljamahiria TV, parent: lj-bc.tv, languages: [ar], scope: libyan}
+  - {id: UCVSdMOzC-V1baALMe5HaKiQ, name: Libya Al Ahrar TV, parent: libyaalahrar.tv, languages: [ar]}
+  - {id: UCnO6Dv9kDNegNLHTO0OZU1w, name: Libya Observer, parent: libyaobserver.ly, languages: [ar, en]}
+  - {id: UCEWb71tNqtfH2QUumtyB7bA, name: Al Menassa, parent: almenassa.ly, languages: [ar]}
+  - {id: UCrNFeKTjYMkYKx4qTp6gfbQ, name: House of Representatives, parent: parliament.ly, languages: [ar], scope: libyan, type: state}
+  - {id: UCnygNoGcbVM8AY4fIa3Nm8w, name: HNEC, parent: hnec.ly, languages: [ar], scope: libyan, type: state}
+  - {id: UCn23EfIDy1y3v_YM9kjyi7A, name: UNSMIL, parent: unsmil.unmissions.org, languages: [ar, en], scope: international, type: ngo_un}
+  - {id: UC0yS6zR2XZ0UOasQYI9aiEw, name: Libya National Channel, parent: ltv.ly, languages: [ar], scope: libyan}
+
+# Social accounts that an outlet's own website links to (homepages checked 2026-10-16). The account
+# joins the website's family, so the same story on both counts once (dedupe.py), and takes the
+# website's scope and type. Only accounts that already exist as outlets are changed.
+social_parents:
+  libyaobserver.ly: [facebook.com/lyobserver, x.com/lyobserver, instagram.com/libyaobserver]
+  ar.libyaobserver.ly: [facebook.com/lyobserver.arabic, x.com/lyobserver_ar]
+  eanlibya.com: [facebook.com/eanlibya, x.com/EanLibya, instagram.com/eanlibya]
+  lana.gov.ly: [facebook.com/LibyanNewsAgencyLana, x.com/lana_news]
+  alwasat.ly: [facebook.com/alwasatnewsly, x.com/alwasatnewsly, instagram.com/alwasatnewsly]
+  libyaakhbar.com: [facebook.com/libyaakhbar, x.com/libyaakhbar]
+  lywitness.com: [facebook.com/LYWitness, x.com/lywitness]
+  akhbarlibya24.net: [facebook.com/akhbarlibya24, x.com/akhbarlibya24, x.com/akhbarlibya24ly, instagram.com/akhbarlibya24]
+  almarsad.co: [facebook.com/ObservatoryLY, x.com/observatoryly]
+  addresslibya.com: [facebook.com/Libyan.Address.Journal, facebook.com/address.libya, x.com/address_libya]
+  almenassa.ly: [facebook.com/almenssalibya, x.com/almenassalibya, instagram.com/almenassalibya, tiktok.com/@almenassa_libya]
+  libyaherald.com: [facebook.com/libyaherald, x.com/libyaherald]
+  reportage.ly: [facebook.com/reportage.ly]
+  libyaalahrar.tv: [facebook.com/LibyaAlAhrarTV, x.com/LibyaAlAhrarAR, instagram.com/LibyaAlAhrarTV, tiktok.com/@libyaalahrar]
+  libyaupdate.com: [facebook.com/TheLibyaUpdate, x.com/TheLibyaUpdate]
+  libyanexpress.com: [facebook.com/libyanexpressnews, x.com/libyanexpress, instagram.com/libyanexpress]
+  almashhadlibya.com: [facebook.com/almashhadlibya]
+  alsabaah.ly: [facebook.com/ALSABAAH.LY]
+  sada.ly: [facebook.com/SadaMagLY, x.com/sadanewspaper]
+  abaad.news: [facebook.com/abaadnews, x.com/abaadnews_ly, instagram.com/abaadnews]
+  lj-bc.tv: [facebook.com/aljamahiriytv, x.com/tv_aljamahiria, instagram.com/aljamahiriytv]
+  ltv.ly: [facebook.com/alwataniyaly, x.com/alwataniyaly, instagram.com/alwataniyaly, tiktok.com/@alwataniyaly]
+  arraedlg.net: [facebook.com/arraedntv, x.com/arraedlgplus, instagram.com/arraedlgplus]
+  atlibya.com: [facebook.com/ATLibyaat, x.com/libya_at]
+  newslibya.ly: [facebook.com/newslibya.ly, x.com/Newslibyaly]
+  libyanstand.ly: [facebook.com/libyanstandnews, x.com/libyanstand, instagram.com/libyanstand]
+  febp.ly: [facebook.com/febpress1]
+  akhbarlibya.ly: [facebook.com/akhbarlibya.ly]
+  hnec.ly: [facebook.com/HNEC.LY, x.com/LyHnec]
+  noc.ly: [facebook.com/noclibya, x.com/NOC_Libya]
+  cbl.gov.ly: [facebook.com/CentralBankofLibya, x.com/CentralBankOfLy]
+  parliament.ly: [facebook.com/parliamentlibya, x.com/ParliamentLY]
+  ncdc.org.ly: [facebook.com/NCDC.LY]
+  unsmil.unmissions.org: [facebook.com/UNSMIL, x.com/unsmilibya, instagram.com/unsmilibya]
+  libya.unfpa.org: [facebook.com/UNFPALibya, x.com/UNFPALibya]
