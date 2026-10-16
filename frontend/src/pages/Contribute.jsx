@@ -122,13 +122,15 @@ function Tally({ mine, team }) {
 
 // The review queue: one article at a time, labelled with the full set of themes.
 const QUEUE_REASON = {
-  uncertain: () => 'The classifier is unsure about this one.',
+  uncertain: (it, name) => (it.closest ? `The classifier cannot tell if this is about ${name(it.closest)}.` : 'The classifier is unsure about this one.'),
   gender_candidate: () => 'It mentions women but has no gender topic.',
   generic_term: (it) => `Its topic rests on one common word${it.generic_term ? ` (“${it.generic_term}”)` : ''}.`,
 }
 const COUNT_KEY = 'dw_labels_given'
 
 function LearnQueue({ ro }) {
+  const { meta } = useApp()
+  const themeName = (slug) => meta.themes.find((t) => t.slug === slug)?.name_en || slug.replace(/_/g, ' ')
   const [q, setQ] = useState(null)
   const [i, setI] = useState(0)
   const [err, setErr] = useState(null)
@@ -167,7 +169,7 @@ function LearnQueue({ ro }) {
                 <button className="btn small" onClick={() => { skipped.current.clear(); load() }}>Look again</button></div>)
               : (
                 <div>
-                  <div className="small muted">Article {i + 1} of {q.items.length} · {QUEUE_REASON[it.reason]?.(it) || it.reason}</div>
+                  <div className="small muted">Article {i + 1} of {q.items.length} · {QUEUE_REASON[it.reason]?.(it, themeName) || it.reason}</div>
                   <h3 style={{ margin: '6px 0 2px', fontSize: 15, color: 'var(--ink)' }}>
                     <a href={it.url} target="_blank" rel="noreferrer noopener" dir="auto">{it.title}</a></h3>
                   <div className="small muted">{it.outlet?.name || '—'} · {it.published_at.slice(0, 10)} · {it.lang?.toUpperCase()}</div>

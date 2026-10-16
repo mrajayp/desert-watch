@@ -86,12 +86,13 @@ class ThemeModel:
 
 
 def closeness(p: np.ndarray, t: np.ndarray, mask: np.ndarray | None = None) -> np.ndarray:
-    """Binary entropy per cell after rescaling so each theme's threshold sits at 0.5: 1 at the
-    threshold, near 0 far from it. mask: which cells count (where the model's answer can change a link)."""
+    """Per cell, how close the score is to its theme's threshold after rescaling so the threshold sits
+    at 0.5: 1 - 2|q - 0.5|, so 1 at the threshold and 0 at a score of 0 or 1. Linear rather than the
+    entropy of q, which is flat near the threshold and ties thousands of articles at the top.
+    mask: which cells count (where the model's answer can change a link)."""
     t = np.clip(t, 1e-3, 1 - 1e-3)
     q = np.where(p < t, p / (2 * t), 0.5 + (p - t) / (2 * (1 - t)))
-    q = np.clip(q, 1e-6, 1 - 1e-6)
-    h = -(q * np.log2(q) + (1 - q) * np.log2(1 - q))
+    h = 1 - 2 * np.abs(q - 0.5)
     return h if mask is None else h * mask
 
 
@@ -215,7 +216,7 @@ def classify_items(s: Session, model: ThemeModel, *, since: datetime | None = No
                         near[th.slug] = round(p, 3)
                 j = int(h[i].argmax()) if h.shape[1] else 0
                 u = float(h[i, j]) if h.shape[1] else 0.0
-                mark = {"v": model.version, "u": round(u, 3), "ut": cols[j][1].slug if u > 0 else None, "near": near}
+                mark = {"v": model.version, "u": round(u, 4), "ut": cols[j][1].slug if u > 0 else None, "near": near}
                 if (it.extra or {}).get("model") != mark:
                     marks[it.id] = (it, mark)
         n += len(items)

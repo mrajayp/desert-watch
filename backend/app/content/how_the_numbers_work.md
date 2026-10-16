@@ -24,11 +24,15 @@ You can change the words for any theme in Admin → Themes and preview what they
 
 Word lists miss stories and catch the wrong ones. So we also use a model that learned from our own articles which words go with which theme. It reads the headline and the summary and gives each theme a score from 0 to 1. Each theme has its own bar, set where the model did best on labelled articles.
 
-For the six main themes an article counts when the word list matches or the score passes the bar. The model can add a theme. It never takes away one the word list found. For the gender themes the word lists still decide. A gender theme lets the model switch off a word-list match once it has at least 100 labelled articles with 10 or more about that theme. The model also has to do at least as well as the word list on them.
+For the six main themes an article counts when the word list matches or the score passes the bar. The model can add a theme. It never takes away one the word list found. For the gender themes the word lists still decide. The model may only switch off a word-list match for a gender theme once people have labelled at least 100 articles, with 10 or more of them about that theme. On those labels it also has to do at least as well as the word list. Labels from the October review do not count for this. An AI made them, and in our checks letting the model switch off gender matches lost some real gender stories.
 
-People label articles by marking every theme an article is about and whether it is about Libya. A label on one copy of a story covers its other copies. We started with 532 articles labelled in a blind review in October 2026. Each night we retrain the part of the model that learns from labels. A new version goes live only if it does about as well as the one before on the labelled articles. Admins can see every version and switch back to an older one. Nothing changes until a version is made live.
+People label articles by marking every theme an article is about and whether it is about Libya. A label on one copy of a story covers its other copies. We started with 532 articles that an AI labelled in a blind review in October 2026. They train the model and set the bars for the six main themes.
 
-On the October 2026 labels the model with the word lists made fewer wrong matches for the six main themes than we had before. It found about as many of the right ones as the search results did.
+Each night we retrain the part of the model that learns from labels. Every version is scored on the October review articles, and each article is scored by a copy of the model that did not learn from it. A new version goes live only if its score for the six main themes is no more than 0.01 below the live version's. If it would switch off gender matches, it must also do as well as the live version on people's labels.
+
+Admins can see every version and switch to any of them. A version switched on by hand stays live. The nightly retrain keeps checking new versions but leaves them off until an admin picks one or lets nightly updates take over again. Old nightly versions that nobody picked lose their file after five newer ones, so they can no longer be switched on. Nothing changes until a version is made live.
+
+On the October 2026 labels the model with the word lists made fewer wrong matches for the six main themes than we had before. It found about as many of the right ones as before.
 
 ## Need
 
@@ -88,7 +92,7 @@ The gap list shows the biggest gaps in the last four weeks that nobody has voted
 
 Votes and corrections are saved as labels for training. So are article ratings. Theme labels train the theme model described above. Votes and ratings do not change the rankings yet.
 
-The classifier queue picks recent unlabelled articles the theme model is least sure about, plus a few the word lists may have got wrong. Label this on any article row does the same job. Each theme on a row also says why it is there: the word that matched, the search that found it, the model's score or a person's label.
+The classifier queue picks recent unlabelled articles whose score sits closest to a theme's bar, plus a few the word lists may have got wrong. Label this on any article row does the same job. Each theme on a row also says why it is there: the word that matched, the search that found it, the model's score or a person's label.
 
 ## Weekly digest
 

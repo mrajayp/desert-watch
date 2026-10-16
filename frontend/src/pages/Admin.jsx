@@ -267,21 +267,29 @@ function ModelsCard() {
   const load = () => api('/api/admin/models').then(setD).catch((e) => setMsg(e.message))
   useEffect(() => { load() }, [])
   const activate = async (v) => {
-    if (!window.confirm(`Make ${v} the live classifier? Every article is scored again with it in the background, which takes a few minutes.`)) return
+    if (!window.confirm(`Make ${v} the live classifier? Every article is scored again with it in the background, which takes a few minutes. It stays live until you pick another version. New nightly versions stay switched off until then.`)) return
     try {
       await api(`/api/admin/models/${encodeURIComponent(v)}/activate`, { method: 'POST' })
       setMsg(`${v} is live. Articles are being scored again in the background.`); load()
     } catch (e) { setMsg(e.message) }
   }
+  const letNightly = async (v) => {
+    try {
+      await api(`/api/admin/models/${encodeURIComponent(v)}/activate?pin=false`, { method: 'POST' })
+      setMsg('The nightly retrain can make a new version live again when it passes the check.'); load()
+    } catch (e) { setMsg(e.message) }
+  }
   const head = (
     <div><h2>Theme classifier</h2>
-      <p className="sub">A model that sorts articles into themes next to the word rules. It learns from the labels people give on Contribute and with Label this, and retrains each night.</p></div>)
+      <p className="sub">A model that sorts articles into themes next to the word lists. It learns from the labels people give on Contribute and with Label this, and retrains each night.</p></div>)
   if (!d) return <section className="card" style={{ marginTop: 16 }}>{head}{msg ? <p className="err">{msg}</p> : <div className="empty">Loading…</div>}</section>
   const live = d.models.find((m) => m.active)
   const n = (origin) => d.labels.by_origin_and_type.filter((x) => x.origin === origin && THEME_LABEL_TYPES.has(x.label_type)).reduce((a, x) => a + x.n, 0)
   const lm = live?.metrics || {}
   const names = new Map(meta.themes.map((t) => [t.slug, t.name_en]))
-  const use = (t, m) => (t.group !== 'gender' ? 'adds links' : t.gate ? 'can turn off rule links' : m?.blended === false ? 'rules only (too few labels)' : 'rules only')
+  const use = (t) => (t.group !== 'gender' ? 'adds links'
+    : t.gate ? 'can switch off word-list links'
+      : `word lists only until people label 100 articles with 10 about it (now ${fmtN(t.people_labelled)} and ${fmtN(t.people_positives)})`)
   return (
     <section className="card" style={{ marginTop: 16 }}>
       <div className="card-head">{head}</div>
@@ -289,9 +297,15 @@ function ModelsCard() {
       {!live ? <p>No model is live. Until one is, the classifier changes no themes.</p> : (
         <p className="small">
           Live: <b className="mono">{live.version}</b> · trained {live.trained_on?.date || live.created_at.slice(0, 10)} on {fmtN(live.trained_on?.labels?.items)} labelled
-          and {fmtN(live.trained_on?.base?.items)} rule-tagged articles · {fmtN(d.links.model)} theme links come from the model · {fmtN(d.links.vetoed)} rule links it turned off
+          and {fmtN(live.trained_on?.base?.items)} rule-tagged articles · {fmtN(d.links.model)} theme links come from the model · {fmtN(d.links.vetoed)} word-list links it switched off
         </p>)}
-      <p className="small">Theme labels: <b>{fmtN(n('explicit'))}</b> from people and <b>{fmtN(n('silver'))}</b> silver labels from our review.
+      {live && d.pinned && (
+        <div className="row small" style={{ margin: '0 0 8px' }}>
+          <span>This version was made live by hand. The nightly retrain still checks new versions but leaves them switched off.</span>
+          <button className="btn small" onClick={() => letNightly(live.version)}>Let nightly updates take over</button>
+        </div>)}
+      <p className="small">Theme labels: <b>{fmtN(n('explicit'))}</b> from people and <b>{fmtN(n('silver'))}</b> from our October review, which an AI made.
+        Only people’s labels decide when the model may switch off gender matches.
         <span className="muted"> People’s labels are counted here after the hourly update.</span></p>
       {live && (
         <>
@@ -300,8 +314,8 @@ function ModelsCard() {
             The threshold is the model score an article needs for the theme.</p>
           <div className="scroll" style={{ maxHeight: 'none' }}>
             <table className="data">
-              <thead><tr><th>Theme</th><th className="num">Labelled</th><th className="num" title="Labelled as about this theme">Yes</th><th className="num">Threshold</th><th title="What we count now: the word rules and the model together">Model</th>
-                <th title="The word rules on their own">Rules alone</th><th title="The links we counted before this model: word rules and searches">Before the model</th>
+              <thead><tr><th>Theme</th><th className="num">Labelled</th><th className="num" title="Labelled as about this theme">Yes</th><th className="num">Threshold</th><th title="What we count now: the word lists and the model together">Model</th>
+                <th title="The word lists on their own">Word lists alone</th><th title="The links we counted before this model: word lists and searches">Before the model</th>
                 <th>Model use</th></tr></thead>
               <tbody>
                 {d.themes.map((t) => {
@@ -313,7 +327,7 @@ function ModelsCard() {
                       <td className="num" title={ci(m?.model)}><b>{prf(m?.model)}</b></td>
                       <td className="num" title={ci(m?.rules)}>{prf(m?.rules)}</td>
                       <td className="num" title={ci(m?.links_today)}>{prf(m?.links_today)}</td>
-                      <td className="small">{use(t, m)}</td>
+                      <td className="small">{use(t)}</td>
                     </tr>)
                 })}
                 {['non_gender', 'gender'].map((g) => lm.macro?.[g] && (
@@ -336,8 +350,9 @@ function ModelsCard() {
                 <td className="num">{fmtN(m.trained_on?.labels?.items)}</td>
                 <td className="num">{f2(m.metrics?.macro?.non_gender?.model?.f1)} / {f2(m.metrics?.macro?.gender?.model?.f1)}</td>
                 <td className="small muted" style={{ maxWidth: 360 }}>{m.note}</td>
-                <td>{m.active ? <span className="pill ok">live</span>
-                  : <button className="btn small" onClick={() => activate(m.version)}>Activate</button>}</td>
+                <td>{m.active ? <span className="pill ok">{m.pinned ? 'live, by hand' : 'live'}</span>
+                  : m.file === false ? <span className="small muted" title="Old nightly versions lose their file to save space">no file</span>
+                    : <button className="btn small" onClick={() => activate(m.version)}>Activate</button>}</td>
               </tr>))}</tbody>
           </table>
         </div>)}

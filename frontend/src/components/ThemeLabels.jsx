@@ -21,10 +21,10 @@ export function why(d) {
   const ev = d.evidence || {}
   const more = []
   let text
-  if (d.method === 'user') text = 'you said so'
+  if (d.method === 'user') text = 'labelled by a person'
   else if (d.method === 'model') {
     text = `model ${p2(d.score ?? ev.model)}`
-    if (ev.was) more.push(`first linked by ${ev.was === 'query' ? 'a search' : 'the word rules'}`)
+    if (ev.was) more.push(`first linked by ${ev.was === 'query' ? 'a search' : 'a word list'}`)
   } else if (ev.field && ev.field !== 'query' && ev.terms?.length) {
     text = `${ev.field}: ${ev.terms.length === 1 ? ev.terms[0] : `${ev.terms.length} terms`}`
     more.push(`words in the ${ev.field}: ${ev.terms.join(', ')}`)

@@ -160,7 +160,9 @@ def models(s: Session = Depends(get_db), _: User = Depends(auth.require_admin)):
         "themes": [{"id": t.id, "slug": t.slug, "group": t.group, **stats[t.slug],
                     "people_labelled": people[t.slug]["labelled"], "people_positives": people[t.slug]["positives"],
                     "threshold": (live.thresholds or {}).get(t.slug) if live else None,
-                    "gate": m.get(t.slug, {}).get("gate")} for t in themes],
+                    # a gate opened on silver labels (bundles without the people block) does nothing
+                    "gate": (bool(m[t.slug]["gate"]) and "people" in m[t.slug]) if "gate" in m.get(t.slug, {}) else None}
+                   for t in themes],
         "links": {"model": s.scalar(select(func.count()).where(ItemTheme.method == "model", ItemTheme.active.is_(True))),
                   "vetoed": s.scalar(select(func.count()).where(ItemTheme.method == "rule", ItemTheme.active.is_(False),
                                                                 func.json_extract(ItemTheme.evidence, "$.veto").is_not(None)))},

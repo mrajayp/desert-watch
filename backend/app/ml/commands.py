@@ -177,16 +177,19 @@ def model_status(s: Session, args: list[str]) -> dict:
     print(f"links: {links}; vetoed rule links: {vetoed}")
     return {"active": act.version if act else None, "pinned": registry.is_pinned(act),
             "gates": (act.metrics or {}).get("themes") and {
-                k: v.get("gate") for k, v in act.metrics["themes"].items() if "gate" in v} if act else None,
+                k: bool(v["gate"]) and "people" in v for k, v in act.metrics["themes"].items() if "gate" in v} if act else None,
             "labels_by_origin": by_origin, "theme_labels": stats, "people_labels": people, "links": links,
             "vetoed": vetoed}
 
 
 def activate_model(s: Session, args: list[str]) -> dict:
     """activate-model VERSION [--let-nightly]: by hand, so the version is pinned unless --let-nightly."""
+    was = registry.active(s)
+    was_version = was.version if was else None
     row = registry.activate(s, args[0], by_hand="--let-nightly" not in args)
     s.commit()
-    return {"active": row.version, "pinned": registry.is_pinned(row), "changed": 1, "next": "classify-items --all"}
+    out = {"active": row.version, "pinned": registry.is_pinned(row), "changed": int(was_version != row.version)}
+    return {**out, "next": "classify-items --all"} if out["changed"] else out
 
 
 def rollback_model(s: Session, args: list[str]) -> dict:
