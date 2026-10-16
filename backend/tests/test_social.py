@@ -284,3 +284,36 @@ def test_gnews_social_stops_after_three_refusals(db, monkeypatch):
     calls = _fake_google(monkeypatch, lambda p: (429, ""))
     res = gnews_social.collect(db)
     assert len(calls) == 3 and "stopped after 3 refusals" in res.detail
+
+
+def test_label_register_pages_is_idempotent(db, users):
+    from app.imports.social_scrape import label_register_pages
+    from app.models import OutletCategory
+    c = db.scalar(select(Country))
+    reg = lambda dom, kind="media": Outlet(country_id=c.id, name=dom.split("/")[1], domain=dom, monitored=False,  # noqa: E731
+                                           external={"social_media_scrape": {"kind": kind}})
+    akhbar, hnec, noon, admin_set = reg("facebook.com/libyaakhbar"), reg("facebook.com/HNEC.LY", "official"), \
+        reg("facebook.com/NoonPost"), reg("facebook.com/SomePage")
+    person = Outlet(country_id=c.id, name="someone", domain="facebook.com/someone")
+    kofiya = Outlet(country_id=c.id, name="alkofiya", domain="alkofiya.tv", created_via="import")
+    db.add_all([akhbar, hnec, noon, admin_set, person, kofiya])
+    db.flush()
+    db.add(OutletCategory(outlet_id=kofiya.id, dimension="scope", value="libyan", confidence="likely",
+                          evidence_url="https://alkofiya.tv/", note="Listed as a Libyan news domain in Social Media scraped data."))
+    db.add(OutletCategory(outlet_id=admin_set.id, dimension="scope", value="diaspora", confidence="reported",
+                          evidence_url="https://example.org/", set_by=users[0].id))
+    db.commit()
+    first = label_register_pages(db)
+    assert first["added"] == 3 and first["kept"] == 1 and first["alkofiya.tv: replaced"] == 1
+    assert _cats(db, akhbar.id)["scope"] == ("libyan", "https://www.facebook.com/libyaakhbar")
+    assert _cats(db, hnec.id)["scope"][0] == "libyan"
+    assert _cats(db, noon.id)["scope"] == ("international", "https://www.noonpost.com/")
+    assert _cats(db, admin_set.id)["scope"][0] == "diaspora"            # an admin's label stays
+    assert "scope" not in _cats(db, person.id)                         # not on the register
+    assert _cats(db, kofiya.id)["scope"] == ("international", "https://alkofiya.tv/ar")
+    assert not db.scalar(select(OutletCategory.id).where(OutletCategory.dimension == "alignment",
+                                                         OutletCategory.outlet_id.in_([akhbar.id, hnec.id, noon.id])))
+    n = db.scalar(select(func.count(OutletCategory.id)))
+    second = label_register_pages(db)
+    assert set(second) == {"unchanged", "kept", "alkofiya.tv: unchanged"}
+    assert db.scalar(select(func.count(OutletCategory.id))) == n

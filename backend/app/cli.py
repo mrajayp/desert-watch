@@ -16,6 +16,7 @@
   import-backfill PATH [--max-ratio 0.2] [--limit N]  fetch + store cited article links from under-collected outlets
   reassign-social           move posts filed under a whole platform (facebook.com ...) to their page
   import-social-scrape PATH load the converted social-media scrape JSON (outlets, Facebook register, labels)
+  label-register-pages      scope=libyan for the Facebook register pages (real scope for the few that are not Libyan)
   sync-themes               overwrite DB theme terms from config/themes.yaml (bumps versions, re-tags)
 """
 import getpass
@@ -107,6 +108,10 @@ def main(argv: list[str]):
         from .imports.social_scrape import run as run_import
         with SessionLocal() as s:
             print(run_import(s, Path(args[0])))
+    elif cmd == "label-register-pages":
+        from .imports.social_scrape import label_register_pages
+        with SessionLocal() as s:
+            print(label_register_pages(s))
     elif cmd == "digest":
         from .jobs import weekly_digest
         print(weekly_digest(force="--force" in args))

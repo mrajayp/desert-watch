@@ -77,3 +77,53 @@ def run(s: Session, path: Path) -> dict:
         stats["labels"] += _label(s, o, "scrape_affiliation", p.get("affiliation"), note)
     s.commit()
     return stats
+
+
+REGISTER_NOTE = "From the 2023-24 social media scrape register"
+# Register pages that are not Libyan (2026-10-16 review), with their real scope.
+NOT_LIBYAN = {
+    "facebook.com/NoonPost": ("https://www.noonpost.com/", "Pan-Arab outlet Noon Post (noonpost.com), not Libyan."),
+    "facebook.com/iraqialivetv": ("https://www.facebook.com/iraqialivetv", "Iraqi channel (Al Iraqiya), not Libyan."),
+    "facebook.com/USEmbassyLibya": ("https://ly.usembassy.gov/", "The US Embassy to Libya's page, not a Libyan body."),
+}
+# Websites whose imported scope is wrong.
+RELABEL = {
+    "alkofiya.tv": ("international", "https://alkofiya.tv/ar",
+                    "Its site title is فضائية الكوفية, the Palestinian Al-Kofiya channel. The 2023-24 scrape listed it as Libyan."),
+}
+
+
+def _set_scope(s: Session, o: Outlet, value: str, evidence: str, note: str, replace: bool = False) -> str:
+    cur = s.scalars(select(OutletCategory).where(OutletCategory.outlet_id == o.id, OutletCategory.dimension == "scope",
+                                                 OutletCategory.status == "active", OutletCategory.valid_to.is_(None))).all()
+    if any(c.value == value for c in cur):
+        return "unchanged"
+    if cur and (not replace or any(c.set_by for c in cur)):   # never override a label an admin set
+        return "kept"
+    for c in cur:
+        c.valid_to = date.today()
+    s.add(OutletCategory(outlet_id=o.id, dimension="scope", value=value, confidence="likely", evidence_url=evidence,
+                         note=note, status="active", valid_from=date.today()))
+    return "replaced" if cur else "added"
+
+
+def label_register_pages(s: Session) -> dict:
+    """Scope for the Facebook register pages: Libyan media and official pages get scope=libyan, the
+    few that are not Libyan get their real scope. Without a scope the relevance guard drops every post
+    that does not name Libya. Idempotent. Never sets alignment."""
+    stats: dict[str, int] = {}
+    for o in s.scalars(select(Outlet).where(Outlet.domain.like("facebook.com/%"))):
+        kind = ((o.external or {}).get("social_media_scrape") or {}).get("kind")
+        if kind not in ("media", "official"):
+            continue
+        evidence, note = NOT_LIBYAN.get(o.domain, (None, None))
+        r = _set_scope(s, o, "international", evidence, note, replace=True) if evidence else \
+            _set_scope(s, o, "libyan", f"https://www.{o.domain}", REGISTER_NOTE)
+        stats[r] = stats.get(r, 0) + 1
+    for dom, (value, evidence, note) in RELABEL.items():
+        o = s.scalar(select(Outlet).where(Outlet.domain == dom))
+        if o:
+            r = _set_scope(s, o, value, evidence, note, replace=True)
+            stats[f"{dom}: {r}"] = 1
+    s.commit()
+    return stats
