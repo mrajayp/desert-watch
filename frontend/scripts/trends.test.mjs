@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import * as d3 from 'd3'
-import { LENS_NEED, needLine, reasonText, shortfall, stepPath, usualLine, verdict, weekEnd, weekRange, yScale } from '../src/charts/trendText.js'
+import { LENS_NEED, lensNeed, levelLegend, needLine, noSearchData, reasonText, shortfall, stepPath, usualLine, verdict, weekEnd, weekRange, yScale } from '../src/charts/trendText.js'
 
 const need = LENS_NEED.audience
 const row = (o) => ({ week: '2026-10-05', articles: 105, articles_all: 148, gap: 0.04, insufficient: false, in_progress: false,
@@ -95,4 +95,55 @@ test('usual line breaks where there is no value', () => {
   const y = d3.scaleLinear().domain([0, 20]).range([20, 0])
   assert.equal(stepPath(rows, x, x.step(), y, (r) => r.v), 'M0.0,10.0H10.0V0.0H20.0M30.0,15.0H40.0')
   assert.equal(stepPath(rows, x, x.step(), y, () => null), '')
+})
+
+test('search lens speaks of Google searches, never Wikipedia', () => {
+  const search = lensNeed('search', 'own_history')
+  assert.equal(search, LENS_NEED.search)
+  assert.equal(needLine({ need_week: 182, need_week_raw: 182, need_en: null }, search, 'search'), 'Google searches (index): 182.')
+  assert.equal(reasonText('no_need_data', search, true), 'We do not measure searches for this theme')
+  assert.equal(reasonText('no_need_data', search, false), 'Searches not measured')
+  assert.equal(levelLegend(search), 'Usual level for this much search interest')
+  // a week that has ended but is not imported yet, or one Google held back
+  const gone = row({ gap: null, insufficient: true, reason: 'no_search_data', need_week: 0, expected_week: null, ref: null, expected_4w: null })
+  assert.equal(verdict(gone, 0.4, search), 'Last 4 weeks: not judged. Google gave no search data for one of these 4 weeks.')
+  assert.equal(reasonText('no_search_data', search, false), 'No search data for a week')
+  assert.ok(noSearchData(gone) && noSearchData({ need_week: 40, reason: 'no_search_data' }) && !noSearchData({ need_week: 40, reason: null }))
+  for (const text of [needLine(gone, search, 'search'), verdict(gone, 0.4, search), reasonText('no_need_data', search, true)]) {
+    assert.ok(!/Wikipedia|reader/.test(text ?? ''), text)
+  }
+})
+
+test('the usual line breaks on a week with no search data instead of dropping to 0', () => {
+  const rows = [
+    { week: 'w0', need_week: 100, ref: 2, expected_week: 200 },
+    { week: 'w1', need_week: 110, ref: 2, expected_week: 220 },
+    { week: 'w2', need_week: 90, ref: 2, expected_week: 180 },
+    { week: 'w3', need_week: 100, ref: 2.1, expected_week: 210, expected_4w: 2.1 * 400 },
+    { week: 'w4', need_week: 0, ref: null, expected_week: null, expected_4w: null, reason: 'no_search_data' },
+    { week: 'w5', need_week: 0, expected_week: null, in_progress: true },
+  ]
+  assert.deepEqual(usualLine(rows, 4, true), [200, 220, 180, 210, null, null])
+  // open on the latest scored week: its 4 weeks at its baseline, the missing week still empty
+  assert.deepEqual(usualLine(rows, 3, true), [210, 231, 189, 210, null, null])
+})
+
+test('pooled lenses say expected from other topics, not usual', () => {
+  const hum = lensNeed('humanitarian', 'pooled')
+  assert.ok(hum.pooled && !lensNeed('humanitarian').pooled && !LENS_NEED.humanitarian.pooled)
+  assert.equal(verdict(row(), 0.4, hum), 'Last 4 weeks: 238 articles against about 248 expected from other topics. About as expected.')
+  assert.equal(verdict(row({ gap: 0.51, articles_4w: 166, expected_4w: 279.4 }), 0.4, hum),
+    'Last 4 weeks: 166 articles against about 279 expected from other topics. About 1.7 times fewer articles than expected.')
+  assert.equal(shortfall(-0.47, 0.4, hum), 'About 1.6 times more articles than expected')
+  assert.equal(verdict(row({ gap: null, insufficient: true, reason: 'too_few_expected', articles_4w: 6, expected_4w: 1.8 }), 0.4, hum),
+    'Last 4 weeks: 6 articles against about 1.8 expected from other topics. The expected level is too low to judge.')
+  assert.equal(reasonText('too_few_expected', hum, false), 'Expected level too low to judge')
+  assert.equal(levelLegend(hum), 'Expected level for this many ReliefWeb reports, going by other topics')
+  // one report is below the humanitarian need floor
+  assert.equal(reasonText('too_little_need', hum, false), 'Too few reports to judge')
+  assert.equal(verdict(row({ gap: null, insufficient: true, reason: 'too_little_need' }), 0.4, hum),
+    'Last 4 weeks: not judged. There were too few ReliefWeb reports to judge.')
+  assert.equal(reasonText('too_little_need', LENS_NEED.audience, false), 'Too little data to judge')
+  // own-history lenses keep their usual level
+  assert.equal(verdict(row(), 0.4, lensNeed('audience', 'own_history')), 'Last 4 weeks: 238 articles against about 248 usual. About as usual.')
 })

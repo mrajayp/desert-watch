@@ -34,22 +34,18 @@ DIGEST_MODEL = os.environ.get("DW_DIGEST_MODEL", "claude-haiku-5-5")
 
 # Scoring
 WINDOW_WEEKS = 4            # rolling window per cell
-MIN_NEED_UNITS = {          # below this a cell is "insufficient evidence"
-    "audience": 500,        # pageviews in window
+# Pooled lenses only (scoring.need_floor): below this need in a window a cell is not judged
+# (reason too_little_need). The own-history lenses have no need floor: the audience lens relies on
+# the prior and MIN_EXPECTED_ARTICLES, and the search lens on every week of its window having data
+# (gtrends.flag_missing_weeks).
+MIN_NEED_UNITS = {
     "events": 3,
     "humanitarian": 2,
     "journalist": 1,
 }
-SHRINK_STRENGTH = {"audience": 2000, "events": 10, "humanitarian": 5, "journalist": 2}
-# Search lens (Google Trends, anchor units). A cell is insufficient when any week of its window
-# lacks data (gtrends.flag_missing_weeks), not below a need level. Shrink ~ a quarter of the
-# smallest list's 4-week need (governance, ~57 in 2025-26). Coverage counts there are in the
-# hundreds, so it barely moves the gap (checked 20 / 50 / 100 on the 2026-10-16 snapshot).
-MIN_NEED_UNITS["search"] = 1
-SHRINK_STRENGTH["search"] = 20
 RAW_EVENT_RETENTION_DAYS = 365
 # Gap score: gap = ln((E + A) / (C + A)), E = expected articles (reference x need), C = articles counted.
-PRIOR_ARTICLES = 5          # A: the prior, in articles, for every lens (MIN_NEED_UNITS/SHRINK_STRENGTH no longer decide)
+PRIOR_ARTICLES = 5          # A: the prior, in articles, for every lens (replaces the old per-lens shrink strengths)
 MIN_EXPECTED_ARTICLES = 3   # a cell is judged only when E reaches this
 GAP_RED_FROM = 0.4          # about 1.5 times fewer articles than expected
 PAGEVIEW_SPIKE_CAP = 5      # a title's day counts at most this many times its trailing 28-day median

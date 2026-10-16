@@ -10,13 +10,20 @@ import { ExportMenu } from '../charts/util'
 
 const longDate = (s) => new Date(s + 'T00:00:00Z').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' })
 const andList = (xs) => (xs.length < 2 ? xs.join('') : `${xs.slice(0, -1).join(', ')} and ${xs[xs.length - 1]}`)
+// source names as they read mid-sentence (the labels elsewhere are capitalised)
+const BASIS_WORDS = { rss: 'outlet feeds', galerts: 'Google Alerts', gnews: 'Google News', gdelt: 'GDELT', youtube: 'YouTube channels',
+  gnews_social: 'social posts found through Google', official: 'official statements', user: 'links added by the team' }
+const basisWord = (k) => BASIS_WORDS[k] || sourceLabel(k)
 
 export default function Trends() {
   const { meta, filters, setFilters, lang, openGap, openArticles } = useApp()
   const national = meta.regions.find((r) => r.level === 'national')
   const [regionPick, setRegionPick] = useState(national.id)
   // only regions the lens has need data for (the audience lens is national only)
-  const levels = meta.lenses.find((l) => l.key === filters.lens)?.levels || ['national']
+  const lensMeta = meta.lenses.find((l) => l.key === filters.lens)
+  const levels = lensMeta?.levels || ['national']
+  const pooled = lensMeta?.reference === 'pooled'
+  const need = lensNeed(filters.lens, lensMeta?.reference)
   const regions = meta.regions.filter((r) => levels.includes(r.level))
   const regionId = regions.some((r) => r.id === regionPick) ? regionPick : national.id
   const region = meta.regions.find((r) => r.id === regionId)
@@ -75,14 +82,17 @@ export default function Trends() {
       <main className="page">
         <section className="card">
           <h2>Articles per week, theme by theme</h2>
-          <p className="sub">Bars count the articles each week from the outlets we followed all year. The grey line is the usual level for {lensNeed(filters.lens).usual}. The strip under each chart turns red when the last 4 weeks fell clearly short. Google News finds more for recent weeks when we search back, so bars run higher on the right. The usual level lags behind that rise, so recent weeks can look better covered than they were. Click a bar to see its articles, or the strip under it for the full gap. A theme’s name picks it for the charts below.</p>
+          <p className="sub">Bars count the articles each week from the outlets we followed all year. {pooled
+            ? `The grey line is the expected level for ${need.usual}, going by what other topics get.`
+            : `The grey line is the usual level for ${need.usual}.`} The strip under each chart turns red when the last 4 weeks fell clearly short. Google News finds more for recent weeks when we search back, so bars run higher on the right.{pooled ? '' : ' The usual level lags behind that rise, so recent weeks can look better covered than they were.'} Click a bar to see its articles, or the strip under it for the full gap. A theme’s name picks it for the charts below.</p>
           {!trend ? <div className="empty">Loading…</div> : (
             <>
-              <TrendBars themes={meta.themes} data={trend} lens={filters.lens} lang={lang} selectedId={themeId}
+              <TrendBars themes={meta.themes} data={trend} lens={filters.lens} reference={lensMeta?.reference}
+                scoredWeek={filters.lens === 'search' ? lensMeta?.latest_scored_week : null} lang={lang} selectedId={themeId}
                 onSelect={pickTheme} onPickWeek={pickWeek} onPickBar={pickBar} />
               {basis && basis.outlets > 0 && (
                 <p className="small muted" style={{ margin: '8px 0 0' }}>
-                  The counts cover the {basis.outlets} outlets we collected from all through {longDate(basis.from)} to {longDate(basis.to)}, from {andList(basis.sources.map(sourceLabel))}. We leave out the backfill and newer feeds so a new source does not look like more coverage.</p>)}
+                  The counts cover the {basis.outlets} outlets we collected from all through {longDate(basis.from)} to {longDate(basis.to)}, from {andList(basis.sources.map(basisWord))}. We leave out the backfill and newer feeds so a new source does not look like more coverage.</p>)}
             </>)}
         </section>
         <section className="card" style={{ marginTop: 16 }}>

@@ -11,7 +11,7 @@ from ..db import get_db
 from ..ingest import load_rules, store_article
 from ..models import (CellWeek, Comment, CoverageSeries, GapClaim, GapVote, Item, ItemRegion, ItemTheme, Region,
                       SourceRun, Suggestion, Theme, User, utcnow)
-from ..scoring import LENSES, TREND_WEEKS, latest_complete_week, trend_basis, week_start
+from ..scoring import LENSES, TREND_WEEKS, latest_complete_week, need_floor, trend_basis, week_start
 from .common import (country_or_404, descendants, hydrate_items, items_query, region_or_404, theme_or_404,
                      window_bounds)
 
@@ -45,7 +45,7 @@ def meta(country: str = "LY", s: Session = Depends(get_db), _: User = Depends(au
         "themes": [{"id": t.id, "slug": t.slug, "group": t.group, "name_en": t.name_en, "name_ar": t.name_ar, "version": t.version}
                    for t in themes],
         "lenses": [{"key": k, "levels": v["levels"], "reference": v["reference"],
-                    "min_need": settings.MIN_NEED_UNITS[k], "min_expected": settings.MIN_EXPECTED_ARTICLES,
+                    "min_need": need_floor(k), "min_expected": settings.MIN_EXPECTED_ARTICLES,
                     "unit": v["unit"], "available": k in available, "themes_with_need": with_need.get(k, []),
                     "latest_scored_week": latest_scored[k].isoformat() if k in latest_scored else None}
                    for k, v in LENSES.items()],
@@ -60,15 +60,19 @@ def meta(country: str = "LY", s: Session = Depends(get_db), _: User = Depends(au
 
 
 LENS_RECENT_WEEKS, LENS_MIN_WEEKS = 12, 4
-LENS_MIN_THEMES = 2   # one theme alone (2 UN statements on migration) is not a lens
+LENS_MIN_THEMES = 2   # own-history lenses: one theme alone is not a lens
 
 
 def _lens_status(s: Session, country_id: int, latest: date | None, themes: list[Theme]) -> tuple[set, dict]:
     """(available lenses, lens -> theme ids with any need in the last 52 weeks). A lens is available
-    when at least 2 themes, and at least a third of the themes it can measure (those with need data
-    this year, else all active themes), have a judged national cell in 4 or more of its last 12
-    complete weeks. So a few old scored cells, or one theme on its own, cannot keep a lens on offer,
-    and a lens that can only ever measure a few themes (Google searches) is judged on those."""
+    when enough themes have a judged national cell in 4 or more of its last 12 complete weeks, so a
+    few old scored cells cannot keep a lens on offer.
+    - Pooled lenses (events, humanitarian, journalist) need a third of ALL active themes. Their
+      reference is what other themes get, so a lens with reports on one or two themes compares
+      nothing (one ReliefWeb report on migration is not a humanitarian lens).
+    - Own-history lenses (audience, search) need at least 2 themes and a third of the themes they
+      can measure (those with need data this year, else all active themes). Google searches can
+      only ever measure a few themes, and each theme is judged against its own record."""
     if not latest:
         return set(), {}
     active = {t.id for t in themes}
@@ -88,13 +92,17 @@ def _lens_status(s: Session, country_id: int, latest: date | None, themes: list[
                      .where(CellWeek.country_id == country_id, CellWeek.region_id == national,
                             CellWeek.week_start > latest - timedelta(weeks=LENS_RECENT_WEEKS + 2))).all()
     available = set()
-    for lens in LENSES:
+    for lens, cfg in LENSES.items():
         mine = [r for r in rows if r.lens == lens and not (r.breakdown or {}).get("in_progress")]
         recent = set(sorted({r.week_start for r in mine})[-LENS_RECENT_WEEKS:])
         judged = Counter(r.theme_id for r in mine if r.week_start in recent and not r.insufficient)
-        measurable = with_need.get(lens) or active
         ok = sum(1 for tid in active if judged[tid] >= LENS_MIN_WEEKS)
-        if ok >= max(LENS_MIN_THEMES, -(-len(measurable) // 3)):
+        if cfg["reference"] == "pooled":
+            on = 3 * ok >= len(active) > 0
+        else:
+            measurable = with_need.get(lens) or active
+            on = ok >= max(LENS_MIN_THEMES, -(-len(measurable) // 3))
+        if on:
             available.add(lens)
     return available, {k: sorted(v) for k, v in with_need.items()}
 
@@ -218,17 +226,24 @@ def all_series(country: str = "LY", lens: str = "audience", region_id: int | Non
             cw = by_cell.get((t.id, w))
             b = (cw.breakdown or {}) if cw else {}
             langs = b.get("need_lang_week") or {}
-            # search lens: a week Google gave no data for has no usual level (not a fall to zero)
-            no_data = lens == "search" and cw is not None and not cw.need and not b.get("need_week")
+            # search lens: a week Google gave no data for, or one not imported yet, has no need and
+            # no usual level (the line breaks, it does not fall to zero, and a held-back week's filled
+            # value is not shown as data). A window missing any week has no 4-week usual level either
+            # (it is not judged, so the page never quotes one).
+            missing = b.get("search_missing_weeks") or []
+            no_week = lens == "search" and cw is not None and (w.isoformat() in missing or not b.get("need_week"))
+            no_window = lens == "search" and (no_week or bool(missing))
             rows.append({"week": w.isoformat(), "articles": comp[(t.id, w)], "articles_all": every[(t.id, w)],
-                         "need_week": b.get("need_week"), "need_week_raw": b.get("need_week_raw"),
+                         "need_week": None if no_week else b.get("need_week"),
+                         "need_week_raw": None if no_week else b.get("need_week_raw"),
                          "need_en": langs.get("en", 0) if daily and cw else None,
                          "need_ar": langs.get("ar", 0) if daily and cw else None,
-                         "expected_week": None if no_data else b.get("expected_week"),
+                         "expected_week": None if no_week else b.get("expected_week"),
                          # the cell's baseline (articles per need unit): the chart draws the 4 weeks a
                          # verdict covers at this one, so they add up to its expected_4w
-                         "ref": cw.ref_ratio if cw else None,
-                         "articles_4w": b.get("articles_4w"), "expected_4w": b.get("expected_4w"),
+                         "ref": cw.ref_ratio if cw and not no_week else None,
+                         "articles_4w": b.get("articles_4w"),
+                         "expected_4w": None if no_window else b.get("expected_4w"),
                          "gap": cw.gap if cw else None, "insufficient": cw.insufficient if cw else True,
                          "reason": b.get("reason") if cw else "not_scored",
                          "in_progress": bool(b.get("in_progress")) if cw else w >= current,

@@ -7,16 +7,19 @@
 
 A (settings.PRIOR_ARTICLES) is a prior in articles for every lens, so small cells are pulled
 towards "as expected" by the same amount whatever the need unit. A cell is judged only when
-E >= settings.MIN_EXPECTED_ARTICLES.
+E >= settings.MIN_EXPECTED_ARTICLES and, on a pooled lens, need >= settings.MIN_NEED_UNITS[lens]
+(one report or event is not a pattern, and E built on it can be anything).
 
 The reference depends on the lens:
-  * pooled       - the coverage/need ratio of the comparison set (all themes nationally,
-                   or the theme's national figure for a region). Used for events/humanitarian/journalist.
+  * pooled       - the coverage/need ratio of the comparison set (nationally: the themes with any
+                   need in the window, each theme's articles against its own need; for a region:
+                   the theme's national figure). Used for events/humanitarian/journalist.
   * own_history  - the cell's own ratio over the previous 12 weeks. Used for the audience
-                   lens, because pageview totals depend on which Wikipedia articles were chosen
-                   and are not comparable across themes.
+                   and search lenses, because pageview totals depend on which Wikipedia articles
+                   were chosen (and search lists on which words) and are not comparable across themes.
 Every cell without a gap says why in breakdown.reason: in_progress (the week, or its need data,
-has not ended), building_baseline, no_need_data or too_few_expected."""
+has not ended), building_baseline, no_need_data, too_little_need or too_few_expected. The search
+lens adds no_search_data (gtrends.flag_missing_weeks)."""
 import math
 import statistics
 from bisect import bisect_left
@@ -79,14 +82,23 @@ class Score:
     reason: str | None = None
 
 
+def need_floor(lens: str) -> float:
+    """The need a window must reach before a cell is judged. Pooled lenses only: their reference
+    comes from other themes, so a cell resting on one report would read as many times short.
+    Own-history lenses have no floor (the prior and the expected-articles rule do the job)."""
+    return settings.MIN_NEED_UNITS.get(lens, 0) if LENSES[lens]["reference"] == "pooled" else 0
+
+
 def score_cell(coverage: float, need: float, ref_ratio: float | None, *, prior: float | None = None,
-               min_expected: float | None = None) -> Score:
+               min_expected: float | None = None, min_need: float = 0) -> Score:
     prior = settings.PRIOR_ARTICLES if prior is None else prior
     min_expected = settings.MIN_EXPECTED_ARTICLES if min_expected is None else min_expected
     ratio = coverage / need if need else None
     if not need or ref_ratio is None:
         return Score(ratio, ref_ratio, None, True, None, "no_need_data")
     expected = ref_ratio * need
+    if need < min_need:
+        return Score(ratio, ref_ratio, None, True, expected, "too_little_need")
     if expected < min_expected:
         return Score(ratio, ref_ratio, None, True, expected, "too_few_expected")
     return Score(ratio, ref_ratio, math.log((expected + prior) / (coverage + prior)), False, expected)
@@ -399,10 +411,14 @@ def compute(s: Session, country_id: int, *, weeks: int = 12, today: date | None 
             cfg = LENSES[lens]
             ip = in_progress(wk, lens)
             cut = need_short(wk, lens)  # still waiting, or judged on the days we have after NEED_WAIT
-            # pooled reference for national cells: all themes nationally (each theme's articles
-            # against each theme's need, so the gaps balance out across themes)
-            nat_cov = sum(counted(cur[(t.id, national.id)][0].pairs, keep) for t in themes)
-            nat_need = sum(cur[(t.id, national.id)][1][lens] for t in themes)
+            floor = need_floor(lens)
+            # pooled reference for national cells: the themes with any need nationally in this window
+            # (each theme's articles against its own need, so the gaps balance out across them). A
+            # theme with no need adds no articles: 13 themes' coverage over one theme's report would
+            # make that theme look many times short.
+            pool = [cur[(t.id, national.id)][:2] for t in themes if cur[(t.id, national.id)][1][lens] > 0]
+            nat_cov = sum(counted(p_agg.pairs, keep) for p_agg, _ in pool)
+            nat_need = sum(p_need[lens] for _, p_need in pool)
             pooled_nat = nat_cov / nat_need if nat_need else None
             for t in themes:
                 theme_nat_agg, theme_nat_need, _ = cur[(t.id, national.id)]
@@ -432,7 +448,7 @@ def compute(s: Session, country_id: int, *, weeks: int = 12, today: date | None 
                         ref = pooled_nat if reg.level == "national" else theme_ref
                     partial = wk - timedelta(weeks=settings.WINDOW_WEEKS - 1) < collection_start
                     building = partial or (cfg["reference"] == "own_history" and baseline_windows == 0)
-                    sc = score_cell(scored_cov, need[lens], ref)
+                    sc = score_cell(scored_cov, need[lens], ref, min_need=floor)
                     if ip or building:  # still coming in, or the window/baseline predates collection
                         sc = Score(sc.ratio, sc.ref_ratio, None, True, sc.expected,
                                    "in_progress" if ip else "building_baseline")

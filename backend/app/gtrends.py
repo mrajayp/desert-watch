@@ -165,8 +165,10 @@ def anchor_refs_by_week(anchor_raw: dict[str, int]) -> dict[str, float]:
 # ---------------------------------------------------------------- the lens's data rule
 def flag_missing_weeks(s: Session, country_id: int | None = None) -> int:
     """A search-lens cell is insufficient unless every week of its window has search data (a week
-    Google held back, or one we have not fetched yet, counts as missing). Runs after scoring;
-    returns how many cells it marked."""
+    Google held back, or one we have not fetched yet, counts as missing). On a theme we measure
+    its reason becomes no_search_data, except a week still coming in, which keeps in_progress.
+    A theme with no search data at all keeps no_need_data (we do not measure it). Runs after
+    scoring; returns how many cells it marked."""
     from . import settings
     from .models import CellWeek, Item, ItemTheme
     have = set()
@@ -179,6 +181,7 @@ def flag_missing_weeks(s: Session, country_id: int | None = None) -> int:
     for tid, pub, extra in s.execute(q):
         if (extra or {}).get("has_data", True):
             have.add((tid, week_start(pub.date())))
+    measured = {tid for tid, _ in have}
     cq = select(CellWeek).where(CellWeek.lens == "search")
     if country_id is not None:
         cq = cq.where(CellWeek.country_id == country_id)
@@ -190,6 +193,8 @@ def flag_missing_weeks(s: Session, country_id: int | None = None) -> int:
             continue
         b = dict(c.breakdown or {})
         b["search_missing_weeks"] = missing
+        if c.theme_id in measured and not b.get("in_progress"):
+            b["reason"] = "no_search_data"
         c.breakdown = b
         if not c.insufficient or c.gap is not None:
             c.insufficient, c.gap = True, None

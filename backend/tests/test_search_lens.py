@@ -193,7 +193,7 @@ def test_digest_explains_search_gaps(db):
     assert digest.SEARCH_LIMIT not in digest.build_facts(db, country, week_start(TODAY))["known_limits"]
 
 
-def test_meta_opens_search_on_its_latest_scored_week_and_trends_skip_missing_weeks(client, users, db):
+def test_meta_opens_search_on_its_latest_scored_week_and_trends_mark_missing_weeks(client, users, db):
     themes, regions = ids(db)
     cid = _scored_health(db)
     flag_missing_weeks(db, cid)
@@ -215,9 +215,11 @@ def test_meta_opens_search_on_its_latest_scored_week_and_trends_skip_missing_wee
             ["themes"][str(themes["health"])]["rows"]}
     assert rows[week_start(TODAY).isoformat()]["in_progress"] and rows[week_start(TODAY).isoformat()]["gap"] is None
     assert rows[LAST_FULL.isoformat()]["gap"] is not None
-    # a window with a week Google held back is not judged
-    held = rows.get((HOLE_WEEK + timedelta(weeks=2)).isoformat())
-    assert held is None or (held["gap"] is None and held["insufficient"])
+    # a window with a week Google held back is not judged, says why, and quotes no 4-week usual level
+    held = rows[(HOLE_WEEK + timedelta(weeks=2)).isoformat()]
+    assert held["gap"] is None and held["insufficient"] and held["reason"] == "no_search_data"
+    assert held["expected_4w"] is None and held["expected_week"] is not None
+    assert rows[HOLE_WEEK.isoformat()]["expected_week"] is None    # the held-back week itself has no usual level
 
 
 def test_week_without_data_gets_the_median_of_the_weeks_around_it(db):

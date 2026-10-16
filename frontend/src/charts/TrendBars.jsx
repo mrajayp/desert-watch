@@ -7,18 +7,22 @@
 import * as d3 from 'd3'
 import { memo, useMemo, useRef, useState } from 'react'
 import { fmt, gapFill } from './scales'
-import { DAY, about, articles, judged, lensNeed, needLine, reasonText, shortfall, stepPath, usualLine, utc, verdict, weekRange, yScale } from './trendText'
+import { DAY, about, articles, judged, lensNeed, levelLegend, levelWord, needLine, noSearchData, reasonText, shortfall, stepPath, usualLine, utc, verdict, weekEnd, weekRange, yScale } from './trendText'
 import { HatchDefs, themeLabel, useSize, useTooltip } from './util'
 
 // focus from the keyboard, not from a click (a click opens the week's articles instead)
 const keyFocus = (el) => { try { return el.matches(':focus-visible') } catch { return true } }
 
-const Panel = memo(function Panel({ t, rows, hasNeed, width, lens, red, lang, selected, onSelect, onPickWeek, onPickBar }) {
+const cap = (w) => w[0].toUpperCase() + w.slice(1)
+const dayMonth = d3.utcFormat('%-d %b')
+
+const Panel = memo(function Panel({ t, rows, hasNeed, width, lens, reference, scoredWeek, red, lang, selected, onSelect, onPickWeek, onPickBar }) {
   const wrap = useRef(null)
   const tip = useTooltip()
   const [hover, setHover] = useState(null)
   const [focused, setFocused] = useState(false)
-  const need = lensNeed(lens)
+  const need = lensNeed(lens, reference)
+  const level = cap(levelWord(need))
   const name = (lang === 'ar' ? t.name_ar : t.name_en) || t.name_en
   const L = 30, R = 4, T = 16, y0 = 116, sy = y0 + 3, sh = 7, H = sy + sh + 15
   const xs = d3.scaleBand().domain(rows.map((r) => r.week)).range([L, width - R])
@@ -26,9 +30,13 @@ const Panel = memo(function Panel({ t, rows, hasNeed, width, lens, red, lang, se
   // no usual level on the week still coming in: its need is not complete either
   const lined = (r) => hasNeed && !r.in_progress && r.expected_week != null
   const done = rows.filter((r) => !r.in_progress)
-  const last = done[done.length - 1]
+  // the week the header describes: the latest complete one. On the search lens, when that week has no
+  // search data yet (it comes with the weekly import), the lens's latest scored week instead.
+  const latest = done[done.length - 1]
+  const scored = scoredWeek && latest && scoredWeek < latest.week && noSearchData(latest) ? done.find((r) => r.week === scoredWeek) : null
+  const last = scored || latest
   const lastIdx = last ? rows.indexOf(last) : rows.length - 1
-  // the window in focus: the hovered week, else the latest complete week (the one the header describes)
+  // the window in focus: the hovered week, else the week the header describes
   const focus = hover ?? lastIdx
   const usual = usualLine(rows, focus, hasNeed)
   // the axis allows for every window the reader can focus, so it does not jump on hover
@@ -36,7 +44,7 @@ const Panel = memo(function Panel({ t, rows, hasNeed, width, lens, red, lang, se
   const [y, ticks] = yScale(Math.max(4, d3.max(rows, (r) => r.articles) || 0, usualTop), [y0, T])
   const path = stepPath(rows, xs, step, y, (r, i) => usual[i])
   const cur = rows.find((r) => r.in_progress)
-  const a4 = last ? last.articles_4w ?? d3.sum(done.slice(-4), (r) => r.articles) : 0
+  const a4 = last ? last.articles_4w ?? d3.sum(rows.slice(Math.max(0, lastIdx - 3), lastIdx + 1), (r) => r.articles) : 0
   // month labels at the 1st of each month (quarters only on narrow panels), January shows the year
   const first = utc(rows[0].week)
   const months = d3.utcMonth.range(d3.utcMonth.ceil(first), new Date(utc(rows[rows.length - 1].week).getTime() + 7 * DAY))
@@ -55,7 +63,7 @@ const Panel = memo(function Panel({ t, rows, hasNeed, width, lens, red, lang, se
         <b>{weekRange(r.week)}</b>
         <div>{articles(r.articles)} from outlets we followed all year{r.in_progress ? ' so far' : ''}</div>
         {r.articles_all !== r.articles && <div>{articles(r.articles_all)} from all sources</div>}
-        {lined(r) && <div>Usual for this week: {about(r.expected_week)}</div>}
+        {lined(r) && <div>{level} for this week: {about(r.expected_week)}</div>}
         {nl && <div>{nl}</div>}
         <div style={{ marginTop: 4 }}>{verdict(r, red, need)}</div>
         {onPickBar && <div className="small muted">{keys ? 'Enter lists this week’s articles. G opens the gap.' : 'Click for this week’s articles'}</div>}
@@ -98,10 +106,10 @@ const Panel = memo(function Panel({ t, rows, hasNeed, width, lens, red, lang, se
           <button type="button" className={judged(last) && last.gap >= red ? 'pill flag' : 'pill'}
             title={`${weekRange(last.week)}. ${verdict(last, red, need)} Click for the full gap.`}
             onClick={() => onPickWeek?.(t.id, last.week)}>
-            {judged(last) ? shortfall(last.gap, red) : reasonText(last.reason, need, false)}</button>)}
+            {judged(last) ? shortfall(last.gap, red, need) : reasonText(last.reason, need, false)}</button>)}
       </div>
       <div className="small muted" style={{ margin: '2px 0 4px' }}>
-        Last 4 weeks: {articles(a4)}.{hasNeed && last?.expected_4w != null ? ` Usual: ${about(last.expected_4w)}.` : ''}</div>
+        {scored ? `4 weeks to ${dayMonth(utc(weekEnd(last.week)))}` : 'Last 4 weeks'}: {articles(a4)}.{hasNeed && last?.expected_4w != null ? ` ${level}: ${about(last.expected_4w)}.` : ''}</div>
       <svg viewBox={`0 0 ${width} ${H}`} role="group" aria-label={`${name}: articles per week`}>
         <HatchDefs id={`tb-hatch-${t.id}`} />
         {hover != null && !rows[hover].in_progress && (
@@ -159,13 +167,15 @@ function themeGroups(themes) {
   ]
 }
 
-export default function TrendBars({ themes, data, lens, lang = 'en', selectedId, onSelect, onPickWeek, onPickBar }) {
+// reference: the lens's meta reference (pooled lenses say 'expected' where the others say 'usual'). scoredWeek: the
+// search lens's latest scored week, which the panels open on while the latest week has no search data.
+export default function TrendBars({ themes, data, lens, reference, scoredWeek, lang = 'en', selectedId, onSelect, onPickWeek, onPickBar }) {
   const wrap = useRef(null)
   const W = useSize(wrap, 900)
   const cols = W < 560 ? 1 : W < 900 ? 2 : 3
   const width = Math.max(220, Math.floor((W - 12 * (cols - 1)) / cols) - 22) // card padding + border
   const red = data.red_from ?? 0.4
-  const need = lensNeed(lens)
+  const need = lensNeed(lens, reference)
   const groups = themeGroups(themes.filter((t) => data.themes?.[t.id]?.rows?.length))
   return (
     <div ref={wrap}>
@@ -175,15 +185,15 @@ export default function TrendBars({ themes, data, lens, lang = 'en', selectedId,
           <div className="trend-grid" style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}>
             {g.themes.map((t) => (
               <Panel key={t.id} t={t} rows={data.themes[t.id].rows} hasNeed={data.themes[t.id].has_need} width={width}
-                lens={lens} red={red} lang={lang} selected={t.id === selectedId}
+                lens={lens} reference={reference} scoredWeek={scoredWeek} red={red} lang={lang} selected={t.id === selectedId}
                 onSelect={onSelect} onPickWeek={onPickWeek} onPickBar={onPickBar} />))}
           </div>
         </div>))}
       <div className="legend" style={{ marginTop: 12 }}>
         <span><span className="sw" style={{ background: 'var(--accent)' }} />Articles from the outlets we followed all year</span>
-        <span><span className="sw" style={{ background: 'var(--ink-2)', height: 2, verticalAlign: 3 }} />Usual level for {need.usual}</span>
+        <span><span className="sw" style={{ background: 'var(--ink-2)', height: 2, verticalAlign: 3 }} />{levelLegend(need)}</span>
         <span><span className="ramp" style={{ marginRight: 5 }}>{[2, 3, 4, 5, 6].map((i) => <span key={i} style={{ background: `var(--gap-${i})` }} />)}</span>Last 4 weeks fell clearly short</span>
-        <span><span className="sw" style={{ background: 'var(--gap-0)', boxShadow: 'inset 0 0 0 1px var(--line)' }} />About as usual, or more</span>
+        <span><span className="sw" style={{ background: 'var(--gap-0)', boxShadow: 'inset 0 0 0 1px var(--line)' }} />About as {levelWord(need)}, or more</span>
         <span><svg width="14" height="12" style={{ verticalAlign: -2, marginRight: 5 }}><HatchDefs id="tb-hatch-legend" /><rect width="14" height="12" rx="2" fill="url(#tb-hatch-legend)" /></svg>Not judged</span>
         <span><span className="sw" style={{ border: '1px dashed var(--accent)', background: 'none' }} />This week, still coming in</span>
       </div>

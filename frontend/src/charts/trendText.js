@@ -3,43 +3,74 @@
 import * as d3 from 'd3'
 import { fmt } from './scales.js'
 
-// per lens: the need in the tooltip, the usual-level phrase, and the words when a theme has none
+// per lens: the need in the tooltip, the usual-level phrase, the words when a theme has none and,
+// on the lenses with a need floor, the words when a window has too little need to judge ([pill, sentence])
 export const LENS_NEED = {
   audience: { label: 'Wikipedia views', usual: 'this much reader interest', none: 'No reader data linked to this theme', short: 'No reader data' },
-  events: { label: 'Conflict and protest events', usual: 'this many events', none: 'No event data linked to this theme', short: 'No event data' },
-  humanitarian: { label: 'ReliefWeb reports', usual: 'this many ReliefWeb reports', none: 'No ReliefWeb reports linked to this theme', short: 'No ReliefWeb data' },
-  journalist: { label: 'Gaps flagged by the team', usual: 'this many team flags', none: 'No team flags on this theme', short: 'No team flags' },
+  events: { label: 'Conflict and protest events', usual: 'this many events', none: 'No event data linked to this theme', short: 'No event data',
+    few: ['Too few events to judge', 'There were too few events to judge'] },
+  humanitarian: { label: 'ReliefWeb reports', usual: 'this many ReliefWeb reports', none: 'No ReliefWeb reports linked to this theme', short: 'No ReliefWeb data',
+    few: ['Too few reports to judge', 'There were too few ReliefWeb reports to judge'] },
+  journalist: { label: 'Gaps flagged by the team', usual: 'this many team flags', none: 'No team flags on this theme', short: 'No team flags',
+    few: ['Too few team flags to judge', 'There were too few team flags to judge'] },
+  search: { label: 'Google searches (index)', usual: 'this much search interest', none: 'We do not measure searches for this theme', short: 'Searches not measured' },
 }
-export const lensNeed = (lens) => LENS_NEED[lens] || LENS_NEED.audience
+// reference: the lens's meta reference. A pooled lens compares a theme with what other topics get, so its
+// level is the expected one. The other lenses compare a theme with its own record, its usual level.
+export const lensNeed = (lens, reference) => {
+  const need = LENS_NEED[lens] || LENS_NEED.audience
+  return reference === 'pooled' ? { ...need, pooled: true } : need
+}
+export const levelWord = (need) => (need?.pooled ? 'expected' : 'usual')
+// the grey line in the legend
+export const levelLegend = (need) => (need?.pooled ? `Expected level for ${need.usual}, going by other topics` : `Usual level for ${need.usual}`)
 
 // why a week is not judged: [pill, sentence]. too_few_expected is about the usual level (under 3
 // articles for the reader data we have), not about how many articles the theme got.
 const REASONS = {
   too_few_expected: ['Usual level too low to judge', 'The usual level is too low to judge'],
+  too_little_need: ['Too little data to judge', 'There was too little data to judge'],
+  no_search_data: ['No search data for a week', 'Google gave no search data for one of these 4 weeks'],
   building_baseline: ['Still building a baseline', 'We are still building a baseline for this theme'],
   in_progress: ['Still coming in', 'This week is still coming in'],
 }
-export const reasonText = (reason, need, long) => (reason === 'no_need_data' ? (long ? need.none : need.short)
-  : (REASONS[reason] || ['Not scored yet', 'Not scored yet'])[long ? 1 : 0])
+const POOLED_REASONS = {
+  too_few_expected: ['Expected level too low to judge', 'The expected level is too low to judge'],
+}
+export function reasonText(reason, need, long) {
+  const i = long ? 1 : 0
+  if (reason === 'no_need_data') return long ? need.none : need.short
+  if (reason === 'too_little_need' && need.few) return need.few[i]
+  return ((need.pooled && POOLED_REASONS[reason]) || REASONS[reason] || ['Not scored yet', 'Not scored yet'])[i]
+}
 
 const times = (g) => { const x = Math.exp(g); return x >= 10 ? String(Math.round(x)) : x.toFixed(1) }
 // red_from either way: clearly fewer (red on the page), clearly more (neutral), or about as usual
-export const shortfall = (g, red) => (g >= red ? `About ${times(g)} times fewer articles than usual`
-  : g <= -red ? `About ${times(-g)} times more articles than usual` : 'About as usual')
+// (as expected on a pooled lens)
+export function shortfall(g, red, need) {
+  const w = levelWord(need)
+  return g >= red ? `About ${times(g)} times fewer articles than ${w}`
+    : g <= -red ? `About ${times(-g)} times more articles than ${w}` : `About as ${w}`
+}
 export const articles = (n) => `${fmt(n)} article${n === 1 ? '' : 's'}`
 // one decimal under 10, so a usual level of 2.7 does not read as the 3-article minimum
 export const about = (v) => (v >= 10 ? `about ${fmt(v)}` : v >= 1 ? `about ${+v.toFixed(1)}` : 'less than 1')
 export const judged = (r) => !r.in_progress && !r.insufficient && r.gap != null
+const against = (r, need) => `${articles(r.articles_4w)} against ${about(r.expected_4w)} ${need?.pooled ? 'expected from other topics' : 'usual'}`
 
 // the 4-week verdict for the week ending a row, as one or two sentences
 export function verdict(r, red, need) {
   if (r.in_progress) return 'This week is still coming in. Not judged yet.'
   if (r.reason === 'too_few_expected' && r.articles_4w != null && r.expected_4w != null) {
-    return `Last 4 weeks: ${articles(r.articles_4w)} against ${about(r.expected_4w)} usual. The usual level is too low to judge.`
+    return `Last 4 weeks: ${against(r, need)}. ${reasonText(r.reason, need, true)}.`
   }
   if (!judged(r)) return `Last 4 weeks: not judged. ${reasonText(r.reason, need, true)}.`
-  return `Last 4 weeks: ${articles(r.articles_4w)} against ${about(r.expected_4w)} usual. ${shortfall(r.gap, red)}.`
+  return `Last 4 weeks: ${against(r, need)}. ${shortfall(r.gap, red, need)}.`
 }
+
+// search lens: a week with no search data (not imported yet, or one Google held back). The Trends
+// panels then open on the lens's latest scored week.
+export const noSearchData = (r) => !r.need_week || r.reason === 'no_search_data'
 
 // the lens need for one week, in its unit (Wikipedia views split by language)
 export function needLine(r, need, lens) {
