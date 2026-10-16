@@ -16,4 +16,5 @@ COLLECTORS = {
 # Non-collector jobs shown in the source-health strip.
 EXTRA_HEALTH = {
     "digest": "Weekly AI digest",
+    "resolve": "Outlet links for Google News items",
 }

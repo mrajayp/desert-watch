@@ -65,6 +65,19 @@ def nightly():
         learning.purge_old_events(s)
     for key in ("wikipedia", "acled", "ucdp", "reliefweb"):
         collect(key)
+    _resolve_links()
+
+
+# ---------------------------------------------------------------- engagement (see engagement.py)
+def _resolve_links(days: int = 14, limit: int = 400):
+    from . import resolve
+    with SessionLocal() as s:
+        return run_collector(s, "resolve", lambda sess: resolve.collect(sess, days=days, limit=limit)).status
+
+
+@_locked
+def resolve_links(days: int = 14, limit: int = 400):
+    return _resolve_links(days, limit)
 
 
 @_locked
@@ -121,6 +134,7 @@ JOBS = {
     "recompute": recompute,
     "digest": lambda: weekly_digest(force=True),
     "backfill": backfill,
+    "resolve_links": resolve_links,
 }
 
 

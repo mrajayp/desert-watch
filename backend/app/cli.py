@@ -17,6 +17,7 @@
   reassign-social           move posts filed under a whole platform (facebook.com ...) to their page
   import-social-scrape PATH load the converted social-media scrape JSON (outlets, Facebook register, labels)
   sync-themes               overwrite DB theme terms from config/themes.yaml (bumps versions, re-tags)
+  resolve-links [--days N] [--limit N]  find the outlet's own link for Google News items (default 14 days, 400 items)
 """
 import getpass
 import os
@@ -158,6 +159,13 @@ def main(argv: list[str]):
         from .dedupe import mark_duplicates
         with SessionLocal() as s:
             print(mark_duplicates(s), "articles marked as duplicates")
+    elif cmd == "resolve-links":
+        import json
+        from .resolve import run as run_resolve
+        opt = lambda k, d=None: args[args.index(k) + 1] if k in args else d  # noqa: E731
+        with SessionLocal() as s:
+            print(json.dumps(run_resolve(s, days=int(opt("--days", "14")), limit=int(opt("--limit", "400"))),
+                             ensure_ascii=False, indent=1))
     elif cmd == "recompute":
         from .jobs import recompute
         print(recompute(weeks=int(args[args.index("--weeks") + 1]) if "--weeks" in args else None), "cells")
