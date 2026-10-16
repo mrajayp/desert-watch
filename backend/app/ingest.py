@@ -30,7 +30,7 @@ def domain_of(url: str) -> str:
 # platform, so Facebook pages show up as outlets (and match the Facebook blind-spot register).
 SOCIAL = {"facebook.com": "facebook", "fb.com": "facebook", "instagram.com": "instagram", "x.com": "x",
           "twitter.com": "x", "tiktok.com": "tiktok", "youtube.com": "youtube", "t.me": "telegram"}
-_SOCIAL_CANON = {"fb.com": "facebook.com", "twitter.com": "x.com", "mobile.twitter.com": "x.com"}
+_SOCIAL_CANON = {"fb.com": "facebook.com", "twitter.com": "x.com", "mobile.twitter.com": "x.com", "youtu.be": "youtube.com"}
 # first path segments that are not an account
 _SOCIAL_RESERVED = {"watch", "reel", "reels", "share", "story.php", "photo.php", "photo", "video.php", "events",
                     "hashtag", "p", "tv", "explore", "i", "search", "home", "intent", "shorts", "results",
@@ -61,6 +61,8 @@ def social_outlet(url: str) -> tuple[str, str] | None:
             account = segs[0]
         elif host == "youtube.com" and len(segs) > 1 and segs[0] in ("channel", "c", "user"):
             account = f"{segs[0]}/{segs[1]}"
+        elif host == "youtube.com" and q.get("channel_id"):  # a channel's own feed
+            account = f"channel/{q['channel_id']}"
     elif segs and segs[0].lower() not in _SOCIAL_RESERVED:
         account = segs[0]
     return (f"{host}/{account}" if account else host), SOCIAL[host]
@@ -213,6 +215,10 @@ def store_article(s: Session, country_id: int, rules: Rules, *, url: str, title:
         if not classify_themes(" ".join(x for x in (title, snippet) if x), rules.themes):
             return None, False
     social = social_outlet(url)
+    # A collector that knows the account keeps it when the link names only the platform
+    # (youtube.com/watch?v=..., instagram.com/p/...): the post is filed on the channel.
+    if social and "/" not in social[0] and outlet_domain and outlet_domain.lower().startswith(social[0] + "/"):
+        social = (outlet_domain, social[1])
     # a social post belongs to its page even when a search result names the platform as the source
     domain = social[0] if social else (outlet_domain or domain_of(url))
     outlet = resolve_outlet(s, country_id, domain, None if social else outlet_name, lang,
