@@ -115,22 +115,19 @@ def _public_only(request: httpx.Request):
 
 
 def resolver_client() -> httpx.Client:
-    c = http_client(timeout=20)
+    c = http_client(timeout=10)
     c.event_hooks["request"] = [_public_only]
     return c
 
 
 def wp_available(client: httpx.Client, o: Outlet, today: date) -> bool:
-    """Cached probe of the outlet's WordPress search API (outlet.external['wp_json'])."""
+    """Cached probe of the outlet's WordPress search API (outlet.external['wp_json']). A site that
+    does not answer at all raises: nothing is cached, and run() leaves the site alone until next run."""
     cached = (o.external or {}).get("wp_json") or {}
     if cached.get("checked") and (today - date.fromisoformat(cached["checked"])).days < WP_PROBE_DAYS:
         return bool(cached.get("ok"))
-    try:
-        r = polite_get(client, f"https://{o.domain}/wp-json/wp/v2/search", params={"search": "news", "per_page": 1},
-                       min_interval=1.0, retries=0)
-    except Exception as e:  # noqa: BLE001 - unreachable now: try again next run, cache nothing
-        log.info("wp probe %s: %s", o.domain, e)
-        return False
+    r = polite_get(client, f"https://{o.domain}/wp-json/wp/v2/search", params={"search": "news", "per_page": 1},
+                   min_interval=1.0, retries=0)
     try:
         ok = r.status_code == 200 and isinstance(r.json(), list)
     except ValueError:
@@ -218,8 +215,9 @@ def run(s: Session, *, days: int = 14, limit: int = DEFAULT_LIMIT, client: httpx
     outlets = {o.id: o for o in s.scalars(select(Outlet).where(Outlet.id.in_({it.outlet_id for it in cands})))}
     usable = [it for it in cands if it.outlet_id in outlets and _resolvable(outlets[it.outlet_id])]
     todo = _interleave(usable)[:limit]
-    stats = {"items": len(todo), "copy": 0, "wp_search": 0, "unresolved": 0,
+    stats = {"items": len(todo), "copy": 0, "wp_search": 0, "unresolved": 0, "site_down": 0,
              "skipped_outlets": len(cands) - len(usable), "by_outlet": {}}
+    down: set[str] = set()   # sites that failed to answer this run: not asked again until the next run
 
     # route 1: a copy from the outlet's own feed, Google Alerts or the backfill
     pools = defaultdict(list)
@@ -244,6 +242,9 @@ def run(s: Session, *, days: int = 14, limit: int = DEFAULT_LIMIT, client: httpx
             hit = best_copy(it.title, it.published_at, pools[o.id])
             if hit is not None:
                 url, via = hit.url, "copy"
+            elif o.domain in down:
+                stats["site_down"] += 1     # not counted as a try: the site never answered
+                continue
             else:
                 try:
                     if wp_available(client, o, now.date()):
@@ -251,6 +252,10 @@ def run(s: Session, *, days: int = 14, limit: int = DEFAULT_LIMIT, client: httpx
                         via = "wp_search" if url else None
                 except Exception as e:  # noqa: BLE001 - one bad site never stops the run
                     log.info("resolve %s via %s: %s", it.id, o.domain, e)
+                    down.add(o.domain)
+                    stats["site_down"] += 1
+                    s.commit()
+                    continue
             if url:
                 it.extra = {**(it.extra or {}), "resolved_url": url, "resolved_via": via,
                             "resolved_at": now.isoformat(timespec="seconds")}

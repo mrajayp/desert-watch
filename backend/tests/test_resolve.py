@@ -148,3 +148,26 @@ def test_run_resolves_by_copy_and_wp_and_never_changes_url(db, no_sleep):
 def test_private_addresses_are_refused():
     with pytest.raises(Exception):
         resolve._public_only(httpx.Request("GET", "http://127.0.0.1/wp-json/wp/v2/search"))
+
+
+def test_site_that_does_not_answer_is_left_for_the_next_run(db, no_sleep):
+    country_id = db.scalar(select(Outlet.country_id).limit(1))
+    rules = load_rules(db, country_id)
+    now = datetime(2026, 10, 16, 6)
+    items = [_gnews(db, country_id, rules, f"slow{k}", f"Libya: slow site story number {k} about Sabha water",
+                    PUB - timedelta(hours=k), "slow.ly") for k in range(3)]
+    db.commit()
+    calls = []
+
+    def handler(request):
+        calls.append(str(request.url))
+        raise httpx.ConnectTimeout("timed out")
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as c:
+        stats = resolve.run(db, days=14, limit=10, client=c, now=now)
+    assert len(calls) == 1 and stats["site_down"] == 3 and stats["unresolved"] == 0
+    o = db.scalar(select(Outlet).where(Outlet.domain == "slow.ly"))
+    assert "wp_json" not in (o.external or {})                     # nothing cached: probe again next run
+    for it in items:
+        db.refresh(it)
+        assert "resolve_tries" not in it.extra
