@@ -10,7 +10,7 @@ Articles come from Google News searches, outlet news feeds, Google Alerts, YouTu
 
 The same story often reaches us twice. Google News gives us its own link, and the outlet's feed or the backfill gives the real one. So we look for articles from the same outlet, published within a day of each other, with almost the same headline. We count one copy and keep the outlet's own link. The others are kept but left out of every number. A Facebook page or YouTube channel that the outlet's website links to counts as the same outlet here, and we keep the website's copy.
 
-Coverage also goes up whenever we add a source. The trend charts and the audience gap allow for this. The monthly bars don't.
+Coverage also goes up whenever we add a source. The Trends charts and every gap score allow for this. The monthly bars don't.
 
 ## Social media
 
@@ -28,7 +28,7 @@ We try to keep posts from private people out of the numbers. A social account on
 
 ## Themes and places
 
-A theme is a list of words in Arabic and English. If a headline contains one of the words, the article gets that theme. A summary on its own needs two of the words. Some themes need two sets of words close together, for example women plus violence. A few words do not count when certain other words are in the story. "Killed" in a story about a crash or a flood does not put it under security. When a search or a Google Alert finds an article for a theme, we keep that as a hint. It only counts when the words are really in the text. For Google Alerts we only read the parts of the summary that match the headline, because the rest is often menus and links from the page.
+A theme is a list of words in Arabic and English. If a headline contains one of the words, the article gets that theme. A summary on its own needs two of the words. Some themes need two sets of words close together, for example women plus violence. A few words do not count when certain other words are in the story. "Killed" in a story about a crash or a flood does not put it under security. When a search or a Google Alert finds an article for a theme, we keep that as a hint. It only counts when the words are really in the text. For the six main themes the theme model can also make it count. For Google Alerts we only read the parts of the summary that match the headline, because the rest is often menus and links from the page.
 
 Places work the same way. We look for district and town names, including other spellings. We skip the town a news agency puts at the start of a story, because that is where it filed from. Most articles do not name a place below Libya, so they only count nationally. That is normal and is why the regional numbers are much smaller.
 
@@ -65,15 +65,16 @@ Each cell is one theme, one place and one week, for one lens. It looks at the fo
 We work out how many articles the theme would get if coverage kept pace with need. That is the expected number. Then we compare it with the articles we counted.
 
 - For the audience and search lenses the expected number comes from the same theme's own record over the 12 weeks before. If a theme usually got 1 article for every 100 page views and this window had 3,000, we expect 30 articles. So the gap says "fewer articles for the interest than usual for this topic". It finds changes. A theme that has always had too little coverage looks normal here, and a shortfall that lasts more than about three months becomes the new usual.
-- For the other lenses the expected number uses the average across all themes nationally. For a district it uses that theme's national figure. So the gap says "fewer articles per report or event than other topics get".
+- For the other lenses the expected number uses the average across the themes with need data nationally. For a district it uses that theme's national figure. So the gap says "fewer articles per report or event than other topics get".
 
 Before comparing we add 5 articles to both sides. A theme expecting 8 articles that got 1 then reads as 13 against 6, about 2.2 times fewer. Without this, one missing article in a small theme would look like a collapse. The 5 is counted in articles, so it weighs the same on every lens and every theme, however popular its Wikipedia pages are. The gap is shown as how many times fewer articles there are than expected. The small Trends charts flag a gap from about 1.5 times fewer. Elsewhere anything under about 1.15 times is shown as covered about as expected.
 
-A cell is not judged, and shows as hatched, in four cases.
+A cell is not judged, and shows as hatched, in five cases.
 
 - The week is still coming in. That is always true of the current week. Wikipedia also gives us page views a day or two late, so on the audience lens a week is only judged once most of its Wikipedia articles have page views for the Sunday. For such a week we stop counting articles on the last day we have page views for, so both sides cover the same days. If the page views are still short a week after that Sunday, we stop waiting. The week is then judged on the days we have, cut the same way, and the cell says its need data stops before the week ends.
 - We are still building its baseline. The window or the 12 weeks before it reach back to before we started collecting, which was January 2019.
 - There is no need data. On the audience lens that means no Wikipedia page views for the theme. On the search lens it means Google gave no data for one of the window's four weeks.
+- There is too little need to compare with other topics. On the humanitarian lens that means fewer than 2 reports in the window, and on the events lens fewer than 3 events.
 - Fewer than 3 articles are expected. Then even no articles at all could be chance.
 
 A Wikipedia article listed under two themes counts for both. One day of page views counts for at most five times the article's usual day, which is the middle value of the 28 days before it. That stops a one-day burst of automated traffic from passing as interest. We keep the real count, so this can be undone.
@@ -114,9 +115,9 @@ Data source: Google Trends.
 
 The small charts count articles per week for each theme over the last 52 full weeks, plus the week still coming in. The axis is in articles. The bars only count the outlets we have followed all through that year, as described above. Clicking a bar lists the articles in it, and the list adds up to the bar. The note under the charts says how many outlets that is.
 
-The grey line is the usual level for the theme. It is the number of articles the gap score expects that week, worked out from the theme's own record and its Wikipedia reading. Each week uses the baseline of its own score, and baselines move a little from week to week. So the four weeks a verdict covers are drawn on that verdict's baseline, and their four steps add up to the usual level it quotes. That is the latest full week until you point at another one. Where a theme has no Wikipedia articles linked to it, or we are still building its baseline, there is no line. The verdict for the last four weeks is the gap score itself, with the same numbers. From about 1.5 times fewer articles than usual it turns red. From about 1.5 times more it says so, without the red.
+The grey line is the number of articles the gap score expects for the theme that week. On the audience and search lenses it is the theme's usual level. That comes from the theme's own record and the lens's need data, for example its Wikipedia reading. On the other lenses it comes from what other topics get for the same need. Each week uses the baseline of its own score, and baselines move a little from week to week. So the four weeks a verdict covers are drawn on that verdict's baseline, and their four steps add up to the number it quotes. That is the latest full week until you point at another one. Where the lens has no need data for a theme, or we are still building its baseline, there is no line. The verdict for the last four weeks is the gap score itself, with the same numbers. From about 1.5 times fewer articles than expected it turns red. From about 1.5 times more it says so, without the red.
 
-Google News finds more for recent weeks than for older ones when we search back, so the bars run higher towards the right. The usual level comes from the weeks before, so it lags behind this rise. Recent weeks can look better covered than they were. GDELT counts for economy stayed flat over the same months, so most of that rise comes from how much we find.
+Google News finds more for recent weeks than for older ones when we search back, so the bars run higher towards the right. On the audience and search lenses the line comes from the weeks before, so it lags behind this rise. Recent weeks can look better covered than they were. GDELT counts for economy stayed flat over the same months, so most of that rise comes from how much we find.
 
 The monthly bars count articles per month, coloured by how they reached us: Google News, outlet feeds, the backfill, Google Alerts or elsewhere. The tooltip gives the split by language. The current month is hatched because it is not over yet. Older months come from searching back, which finds fewer articles, so look at the ups and downs between years. The totals don't compare. 2026 is fuller because of the backfill, but even there the backfill follows what one monitoring service picked. Outlet feeds only hold their latest items, so they add a lot to the months since we started reading them.
 
@@ -140,7 +141,7 @@ The gap list shows the biggest gaps in the last four weeks that nobody has voted
 
 Votes and corrections are saved as labels for training. So are article ratings. Theme labels train the theme model described above. Votes and ratings do not change the rankings yet.
 
-The classifier queue picks recent unlabelled articles whose score sits closest to a theme's bar, plus a few the word lists may have got wrong. Label this on any article row does the same job. Each theme on a row also says why it is there: the word that matched, the search that found it, the model's score or a person's label.
+The classifier queue picks recent unlabelled articles the word lists may have got wrong. When a model is live it also picks the ones whose score sits closest to a theme's bar. Label this on any article row does the same job. Each theme on a row also says why it is there: the word that matched, the search that found it, the model's score or a person's label.
 
 ## Weekly digest
 
@@ -164,8 +165,8 @@ Some things we chose not to collect. Bluesky, Reddit, Hacker News and X either b
 
 ## When the numbers update
 
-- Hourly: outlet feeds, YouTube channels and Google Alerts, the theme model on new articles, then scores and the network for the last 12 weeks.
-- Every six hours: Google News, GDELT articles and the official statements.
+- Hourly: outlet feeds, YouTube channels, Google Alerts and the theme model on new articles, then scores and the network for the last 12 weeks.
+- Every six hours: Google News, GDELT articles, the official statements and, once the Meta app is set up, Facebook link readings.
 - Nightly: Wikipedia page views, the social media posts Google has indexed, the outlets' own links for Google News items and a retrain of the theme model on new labels, then the full history of scores and the network.
 - Mondays: the digest.
 - About once a week, by hand: Google searches for the search lens.

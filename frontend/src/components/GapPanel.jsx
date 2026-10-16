@@ -3,6 +3,7 @@ import { api, dwell, qs } from '../api'
 import { useApp } from '../App'
 import { MixBar } from '../charts/Balance'
 import { INFO_FLAGS, DIMENSIONS, LENS_TEXT, flagText, fmt, gapLabel } from '../charts/scales'
+import { about } from '../charts/trendText'
 import Comments from './Comments'
 import ArticleRow from './ArticleRow'
 import BlindSpots from './BlindSpots'
@@ -33,6 +34,7 @@ export default function GapPanel({ themeId, regionId, week: weekProp, lens: lens
   if (!d) return <aside className="drawer" aria-label="Gap detail"><div className="empty">Loading…</div></aside>
   const c = d.cell
   const lensInfo = LENS_TEXT[filters.lens]
+  const lensMeta = meta.lenses.find((l) => l.key === filters.lens)
   const myVote = d.votes.find((v) => v.mine && v.week === d.week)
   const myClaim = d.claims.find((x) => x.mine)
   const vote = async (v) => {
@@ -50,6 +52,8 @@ export default function GapPanel({ themeId, regionId, week: weekProp, lens: lens
   }
   const nm = (o) => (lang === 'ar' ? o.name_ar : o.name_en)
   const b = c?.breakdown || {}
+  // own_history lenses compare with the theme's usual level, pooled ones with what other topics get
+  const reference = lensMeta?.reference || b.reference
   return (
     <aside className="drawer" aria-label="Gap detail">
       <div className="row" style={{ justifyContent: 'space-between' }}>
@@ -65,10 +69,10 @@ export default function GapPanel({ themeId, regionId, week: weekProp, lens: lens
         <div className="stat"><span className="v num">{fmt(c?.coverage ?? d.articles.total)}</span><span className="l">monitored articles</span></div>
         <div className="stat"><span className="v num">{fmt(c?.need ?? 0)}</span><span className="l">{lensInfo.unit}</span></div>
         <div className="stat"><span className="v" style={{ fontSize: 16, maxWidth: 200 }}>{c ? gapLabel(c.insufficient ? null : c.gap) : 'not scored'}</span>
-          <span className="l">{b.reference === 'own_history' ? 'vs this theme’s previous 12 weeks' : 'vs comparable cells'}</span></div>
+          <span className="l">{reference === 'own_history' ? 'vs this theme’s previous 12 weeks' : 'vs comparable cells'}</span></div>
       </div>
       {b.articles_4w != null && b.expected_4w != null && (
-        <p className="small muted" style={{ marginTop: 0 }}>The score counts {fmt(b.articles_4w)} of these, from the outlets we followed through the whole comparison, against about {fmt(b.expected_4w)} usual.</p>)}
+        <p className="small muted" style={{ marginTop: 0 }}>The score counts {fmt(b.articles_4w)} of these, from the outlets we followed through the whole comparison, against {about(b.expected_4w)} {reference === 'pooled' ? 'expected' : 'usual'}.</p>)}
       {c?.flags?.length > 0 && <div className="row">{c.flags.map((f) => <span key={f} className={INFO_FLAGS.has(f) ? "pill" : "pill flag"}>{flagText(f)}</span>)}</div>}
       {filters.lens === 'search' && <SearchTerms search={d.search} missing={b.search_missing_weeks} />}
       {c && (
@@ -129,7 +133,7 @@ export default function GapPanel({ themeId, regionId, week: weekProp, lens: lens
           <h3>Need signals ({fmt(d.need_items.total)})</h3>
           <ul className="list small">{d.need_items.items.slice(0, 20).map((it) => <li key={it.id}>{it.published_at.slice(0, 10)} · {it.title} <span className="muted num">{fmt(it.value)}</span></li>)}</ul>
         </>)}
-      <p className="small muted" style={{ marginTop: 16 }}>Gap = how much less coverage there is than expected given the need signal. Small cells are pulled towards the reference, and cells below the minimum need are not scored.</p>
+      <p className="small muted" style={{ marginTop: 16 }}>Gap = how much less coverage there is than expected given the need signal. Small cells are pulled towards the expected number. A cell is not scored when there is too little need data or we would expect fewer than {lensMeta?.min_expected ?? 3} articles.</p>
     </aside>
   )
 }

@@ -18,8 +18,9 @@ export default function OutletReach({ id }) {
         <ul className="list small">
           {f && <li>Facebook engagement per article over the last {f.weeks} weeks: median {compact(f.median_7d)}, from {f.n} articles read a week after publication.
             <div className="muted">Approximate counts from Facebook.</div></li>}
-          {t && <li>Web rank {t.value ? t.value.toLocaleString() : 'none'} in the Tranco list, as of {t.as_of}.
-            <div className="muted">{t.value ? 'A global ranking of websites by traffic.' : 'The site is not in the Tranco list.'} It says little about reach in Libya, where much of the news is read on Facebook.</div></li>}
+          {t && <li>{t.value ? `Web rank ${t.value.toLocaleString()} in the Tranco list, as of ${t.as_of}.`
+            : `Not in the Tranco list of the busiest websites, as of ${t.as_of}.`}
+            <div className="muted">{t.value ? 'A global ranking of websites by traffic. It says' : 'Web rank says'} little about reach in Libya, where much of the news is read on Facebook.</div></li>}
           {h && <li>Facebook engagement per article {h.period?.from?.slice(0, 7)} to {h.period?.to?.slice(0, 7)}: {h.per_article ?? 'n/a'} (historical).
             <div className="muted">{(h.fb_engagement ?? 0).toLocaleString()} engagements on {(h.fb_posts ?? 0).toLocaleString()} Facebook posts linking {(h.articles ?? 0).toLocaleString()} of its articles. Source: {h.source || 'Social Media scraped data'}, {h.period?.from} to {h.period?.to}.</div></li>}
         </ul>)}

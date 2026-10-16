@@ -155,7 +155,7 @@ function LearnQueue({ ro }) {
     <section className="card" style={{ marginTop: 16 }}>
       <div className="card-head">
         <div><h2><span className="muted">7.</span> Help the classifier learn</h2>
-          <p className="sub">Each label you give trains the classifier that sorts articles into themes, and the queue shows the articles it is least sure about.</p></div>
+          <p className="sub">Each label you give trains the classifier that sorts articles into themes. The queue shows articles the classifier or the word lists may have got wrong.</p></div>
         <div className="row" style={{ gap: 24 }}>
           <span className="stat"><span className="v num">{fmt(given)}</span><span className="l">labels this session</span></span>
           {q && <span className="stat"><span className="v num">{fmt(q.labelled)}</span><span className="l">articles labelled in all</span></span>}

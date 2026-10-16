@@ -298,7 +298,7 @@ function ModelsCard() {
       {!live ? <p>No model is live. Until one is, the classifier changes no themes.</p> : (
         <p className="small">
           Live: <b className="mono">{live.version}</b> · trained {live.trained_on?.date || live.created_at.slice(0, 10)} on {fmtN(live.trained_on?.labels?.items)} labelled
-          and {fmtN(live.trained_on?.base?.items)} rule-tagged articles · {fmtN(d.links.model)} theme links come from the model · {fmtN(d.links.vetoed)} word-list links it switched off
+          articles and {fmtN(live.trained_on?.base?.items)} tagged by the word lists · {fmtN(d.links.model)} theme links come from the model · {fmtN(d.links.vetoed)} word-list links it switched off
         </p>)}
       {live && d.pinned && (
         <div className="row small" style={{ margin: '0 0 8px' }}>

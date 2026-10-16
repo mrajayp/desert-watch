@@ -8,10 +8,12 @@ import { useApp } from '../App'
 
 const words = (slug) => (slug || '').replace(/_/g, ' ')
 const p2 = (x) => (x == null ? '' : Number(x).toFixed(2))
+// the field a rule matched, in the words the help page uses
+const FIELD = { title: 'title', snippet: 'summary' }
 
 // "gnews:governance" -> search: governance, "theme:gender_violence:en" -> alert: gender violence
 function queryText(q) {
-  if (!q) return 'search'
+  if (!q) return 'found by a search'
   const [kind, slug] = q.split(':')
   return `${kind === 'theme' ? 'alert' : 'search'}: ${words(slug)}`
 }
@@ -26,10 +28,11 @@ export function why(d) {
     text = `model ${p2(d.score ?? ev.model)}`
     if (ev.was) more.push(`first linked by ${ev.was === 'query' ? 'a search' : 'a word list'}`)
   } else if (ev.field && ev.field !== 'query' && ev.terms?.length) {
-    text = `${ev.field}: ${ev.terms.length === 1 ? ev.terms[0] : `${ev.terms.length} terms`}`
-    more.push(`words in the ${ev.field}: ${ev.terms.join(', ')}`)
+    const field = FIELD[ev.field] || ev.field
+    text = `${field}: ${ev.terms.length === 1 ? ev.terms[0] : `${ev.terms.length} words`}`
+    more.push(`words in the ${field}: ${ev.terms.join(', ')}`)
   } else if (d.method === 'query' || ev.field === 'query') text = queryText(ev.query)
-  else text = 'rule'
+  else text = 'word list'
   if (ev.query && d.method !== 'query') more.push(`also returned by ${queryText(ev.query)}`)
   if (d.score != null && d.method !== 'model') more.push(`model ${p2(d.score)}`)
   if (ev.veto != null) more.push(`the model said no (${p2(ev.veto)})`)
