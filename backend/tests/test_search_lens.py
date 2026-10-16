@@ -114,24 +114,33 @@ def test_new_list_version_retires_old_items(db):
     assert len(live) == 4 and all(":v2:" in i.dedupe_key for i in live)
 
 
-def test_search_lens_scores_against_own_history_and_needs_every_week(db):
-    themes, regions = ids(db)
+TODAY = date(2026, 10, 14)                          # a Wednesday: no search data for this week yet
+LAST_FULL = week_start(TODAY) - timedelta(weeks=1)
+START = LAST_FULL - timedelta(weeks=29, days=1)     # the Sunday 30 weeks back
+HOLE_WEEK = START + timedelta(weeks=10, days=1)     # Google held this week back
+
+
+def _scored_health(db):
+    """30 weeks of health searches with one hole, steady coverage that stops in the last five weeks."""
     g = _cfg(db)
     cid = db.scalar(select(Country.id))
     rules = load_rules(db, cid)
-    today = date(2026, 10, 14)                       # a Wednesday: no search data for this week yet
-    last_full = week_start(today) - timedelta(weeks=1)
-    start = last_full - timedelta(weeks=29, days=1)  # the Sunday 30 weeks back
-    import_rows(db, _rows(g, ["health"], weeks=30, start=start, has=lambda sl, i: i != 10))
-    hole_week = start + timedelta(weeks=10, days=1)
+    import_rows(db, _rows(g, ["health"], weeks=30, start=START, has=lambda sl, i: i != 10))
     for w in range(31):
-        day = week_start(today) - timedelta(weeks=w)
+        day = week_start(TODAY) - timedelta(weeks=w)
         if w >= 5:  # coverage stops in the last five weeks
             for k in range(5):
                 store_article(db, cid, rules, url=f"https://ex.com/s/{w}/{k}", title="Hospital shortages in Sabha",
                               published_at=datetime.combine(day, datetime.min.time()), source_key="test")
     db.commit()
-    compute(db, cid, weeks=24, today=today, lenses=("search",))
+    compute(db, cid, weeks=24, today=TODAY, lenses=("search",))
+    return cid
+
+
+def test_search_lens_scores_against_own_history_and_needs_every_week(db):
+    themes, regions = ids(db)
+    today, last_full, hole_week = TODAY, LAST_FULL, HOLE_WEEK
+    cid = _scored_health(db)
     assert flag_missing_weeks(db, cid) > 0
     nat = regions["national"]
 
@@ -149,6 +158,66 @@ def test_search_lens_scores_against_own_history_and_needs_every_week(db):
     assert not steady.insufficient and abs(steady.gap) < 0.3
     assert cell("migration", last_full).insufficient       # no word list: never scored
     assert flag_missing_weeks(db, cid) == 0                # nothing left to mark
+    # the hole week counts as its neighbours in later baselines, not as zero need
+    after = cell("health", hole_week + timedelta(weeks=5))
+    assert not after.insufficient and abs(after.gap) < 0.05
+
+
+def test_meta_opens_search_on_its_latest_scored_week_and_trends_skip_missing_weeks(client, users, db):
+    themes, regions = ids(db)
+    cid = _scored_health(db)
+    flag_missing_weeks(db, cid)
+    login(client, "j@example.org", "journo-password-1")
+    m = client.get("/api/meta").json()
+    search = next(x for x in m["lenses"] if x["key"] == "search")
+    assert m["latest_week"] == week_start(TODAY).isoformat()
+    assert search["available"] and search["latest_scored_week"] == LAST_FULL.isoformat()
+    assert next(x for x in m["lenses"] if x["key"] == "audience")["latest_scored_week"] is None
+    rows = client.get("/api/cells/trends", params={"lens": "search"}).json()["series"][str(themes["health"])]
+    weeks = {r["week"] for r in rows}
+    assert week_start(TODAY).isoformat() not in weeks and LAST_FULL.isoformat() in weeks
+    assert (HOLE_WEEK + timedelta(weeks=2)).isoformat() not in weeks
+    assert not any(r["breakdown"].get("search_missing_weeks") for r in rows)
+
+
+def test_week_without_data_gets_the_median_of_the_weeks_around_it(db):
+    g = _cfg(db)
+    out = import_rows(db, iter(_rows(g, ["services"], weeks=12, value=lambda sl, i: 0 if i == 5 else 10 + (i % 3),
+                                     has=lambda sl, i: i != 5)))  # a generator is read once
+    assert out["created"] == 12 and out["weeks_filled"] == 1
+    items = sorted(db.scalars(select(Item).where(Item.kind == "search")), key=lambda i: i.published_at)
+    hole = items[5]
+    assert not hole.extra["has_data"] and hole.extra["filled"] and hole.extra["value_raw"] == 0
+    near = sorted(i.value for i in items[1:10] if i is not hole)
+    assert hole.value == (near[3] + near[4]) / 2 and hole.value > 0
+    assert "no data" in hole.title
+
+
+def test_reimport_keeps_a_users_relevance_decision(db):
+    g = _cfg(db)
+    import_rows(db, _rows(g, ["economy"], weeks=4))
+    items = sorted(db.scalars(select(Item).where(Item.kind == "search")), key=lambda i: i.published_at)
+
+    def mark_irrelevant(it):  # what /items/{id}/correction does
+        it.relevant = False
+        it.extra = {**it.extra, "user_relevance": False}
+    mark_irrelevant(items[0])
+    db.commit()
+    import_rows(db, _rows(g, ["economy"], weeks=4, value=lambda sl, i: 12, fetched="2026-10-23T06:00:00+00:00"))
+    db.refresh(items[0])
+    assert items[0].extra["user_relevance"] is False and not items[0].relevant and items[0].value == 60.0
+    c = db.scalar(select(Country))
+    c.config = {**c.config, "gtrends": {**g, "version": 2}}
+    db.commit()
+    assert import_rows(db, _rows(g, ["economy"], weeks=4))["retired"] == 3   # the three still counting
+    mark_irrelevant(items[1])                                               # marked while retired
+    c.config = {**c.config, "gtrends": g}
+    db.commit()
+    import_rows(db, _rows(g, ["economy"], weeks=4))                         # back to version 1
+    for it in items:
+        db.refresh(it)
+    assert [it.relevant for it in items] == [False, False, True, True]
+    assert items[0].extra["user_relevance"] is False and items[1].extra["user_relevance"] is False
 
 
 def test_gap_panel_lists_search_words_with_glosses(client, users, db):

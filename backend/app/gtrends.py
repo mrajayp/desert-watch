@@ -143,11 +143,13 @@ def build_rows(points: list[dict], slots: list[tuple[str, list[str]]], anchor: s
 def anchor_refs(rows: list[dict]) -> dict[str, float]:
     """week -> centred median of the anchor over ANCHOR_SMOOTH_WEEKS weeks, for the rows of one
     request (weeks where the anchor had no data are left out of the median)."""
-    by_week = {}
-    for r in rows:
-        if r["anchor_raw"] > 0:
-            by_week[r["week"]] = r["anchor_raw"]
-    weeks = sorted({r["week"] for r in rows})
+    return anchor_refs_by_week({r["week"]: r["anchor_raw"] for r in rows})
+
+
+def anchor_refs_by_week(anchor_raw: dict[str, int]) -> dict[str, float]:
+    """The same from one request's {week: anchor_raw}, so an import can stream its rows."""
+    by_week = {wk: v for wk, v in anchor_raw.items() if v > 0}
+    weeks = sorted(anchor_raw)
     half = ANCHOR_SMOOTH_WEEKS // 2
     out = {}
     for i, wk in enumerate(weeks):
