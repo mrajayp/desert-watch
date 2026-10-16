@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import { NavLink, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { api, setTracking, track } from './api'
+import { lensWeek } from './lensWeek'
 import GapPanel from './components/GapPanel'
 import ItemPanel from './components/ItemPanel'
 import OutletPanel from './components/OutletPanel'
@@ -61,7 +62,8 @@ function Shell({ me, setMe }) {
     setMeta(m)
     setFiltersState((f) => {
       const avail = m.lenses.filter((l) => l.available).map((l) => l.key)
-      return { ...f, lens: avail.includes(f.lens) ? f.lens : (avail[0] || 'audience'), week: m.latest_week }
+      const lens = avail.includes(f.lens) ? f.lens : (avail[0] || 'audience')
+      return { ...f, lens, week: lensWeek(m, lens) }
     })
   }) }, [version])
 

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useApp } from '../App'
 import { DIMENSIONS, LENS_TEXT } from '../charts/scales'
+import { lensPatch } from '../lensWeek'
 
 export default function Filters({ showTheme = true, showColor = true, showWeek = true, children }) {
   const { meta, filters, setFilters } = useApp()
@@ -22,8 +23,8 @@ export default function Filters({ showTheme = true, showColor = true, showWeek =
       <span className="seg" role="group" aria-label="Need lens">
         {meta.lenses.map((l) => (
           <button key={l.key} aria-pressed={filters.lens === l.key} disabled={!l.available}
-            title={l.available ? LENS_TEXT[l.key]?.blurb : `${LENS_TEXT[l.key]?.label}: waiting for data source key`}
-            onClick={() => setFilters({ lens: l.key })}>{LENS_TEXT[l.key]?.label || l.key}</button>))}
+            title={l.available ? LENS_TEXT[l.key]?.blurb : `${LENS_TEXT[l.key]?.label}: ${LENS_TEXT[l.key]?.waiting || 'waiting for data source key'}`}
+            onClick={() => setFilters(lensPatch(meta, filters, l.key))}>{LENS_TEXT[l.key]?.label || l.key}</button>))}
       </span>
       {showTheme && (
         <label>Theme

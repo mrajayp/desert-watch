@@ -80,6 +80,8 @@ def _retag_theme(theme_id: int, recompute: bool = True):
         retag_theme(s, theme_id)
         if recompute:
             compute_all(s)
+            from ..gtrends import flag_missing_weeks
+            flag_missing_weeks(s)  # search lens: the same rule as jobs.recompute
 
 
 @router.post("/themes")

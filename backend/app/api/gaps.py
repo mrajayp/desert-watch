@@ -35,6 +35,9 @@ def meta(country: str = "LY", s: Session = Depends(get_db), _: User = Depends(au
     # a lens is "available" only when it has at least one scored (sufficient) cell
     available = {l for (l,) in s.execute(select(CellWeek.lens).where(
         CellWeek.country_id == c.id, CellWeek.insufficient.is_(False)).distinct())}
+    # per lens: the search lens has no data for the week in progress, so the UI opens it on this week
+    latest_scored = dict(s.execute(select(CellWeek.lens, func.max(CellWeek.week_start)).where(
+        CellWeek.country_id == c.id, CellWeek.insufficient.is_(False)).group_by(CellWeek.lens)).all())
     return {
         "country": {"id": c.id, "iso2": c.iso2, "name_en": c.name_en, "name_ar": c.name_ar,
                     "boundaries": c.config.get("boundaries", {}), "district_geo": c.config.get("district_geo", {}),
@@ -44,7 +47,9 @@ def meta(country: str = "LY", s: Session = Depends(get_db), _: User = Depends(au
         "themes": [{"id": t.id, "slug": t.slug, "group": t.group, "name_en": t.name_en, "name_ar": t.name_ar, "version": t.version}
                    for t in themes],
         "lenses": [{"key": k, "levels": v["levels"], "reference": v["reference"],
-                    "min_need": settings.MIN_NEED_UNITS[k], "available": k in available} for k, v in LENSES.items()],
+                    "min_need": settings.MIN_NEED_UNITS[k], "available": k in available,
+                    "latest_scored_week": latest_scored[k].isoformat() if k in latest_scored else None}
+                   for k, v in LENSES.items()],
         "weeks": [w.isoformat() for w in weeks],
         "latest_week": latest.isoformat() if latest else None,
         "window_weeks": settings.WINDOW_WEEKS,
@@ -54,13 +59,13 @@ def meta(country: str = "LY", s: Session = Depends(get_db), _: User = Depends(au
 
 @router.get("/sources/health")
 def sources_health(s: Session = Depends(get_db), _: User = Depends(auth.current_user)):
-    from ..collectors import COLLECTORS, EXTRA_HEALTH
+    from ..collectors import COLLECTORS, EXTRA_HEALTH, STALE_HOURS
     out = []
     for key, label in [*((k, v[1]) for k, v in COLLECTORS.items()), *EXTRA_HEALTH.items()]:
         last = s.scalar(select(SourceRun).where(SourceRun.source_key == key).order_by(SourceRun.id.desc()).limit(1))
         last_ok = s.scalar(select(SourceRun).where(SourceRun.source_key == key, SourceRun.status.in_(("ok", "partial")))
                            .order_by(SourceRun.id.desc()).limit(1))
-        stale = last_ok is None or (utcnow() - (last_ok.finished_at or last_ok.started_at)).total_seconds() > 48 * 3600
+        stale = last_ok is None or (utcnow() - (last_ok.finished_at or last_ok.started_at)).total_seconds() > STALE_HOURS.get(key, 48) * 3600
         out.append({"key": key, "label": label, "status": last.status if last else "never_run",
                     "last_run": last.started_at.isoformat() if last else None,
                     "last_ok": (last_ok.finished_at or last_ok.started_at).isoformat() if last_ok else None,
@@ -127,6 +132,8 @@ def all_series(country: str = "LY", lens: str = "audience", region_id: int | Non
         region_id = s.scalar(select(Region.id).where(Region.country_id == c.id, Region.level == "national"))
     rows = s.scalars(select(CellWeek).where(CellWeek.country_id == c.id, CellWeek.region_id == region_id,
                                             CellWeek.lens == lens).order_by(CellWeek.week_start)).all()
+    # search lens: a window missing a week of search data would plot that week's need as zero
+    rows = [r for r in rows if not (r.breakdown or {}).get("search_missing_weeks")]
     out = defaultdict(list)
     for r in rows:
         out[r.theme_id].append(_cell_json(r))
@@ -221,7 +228,16 @@ def gap_detail(theme_id: int, region_id: int, lens: str = "audience", week: date
         "claims": [{"user": names.get(c.user_id), "mine": c.user_id == u.id, "status": c.status,
                     "published_url": c.published_url, "at": c.updated_at.isoformat()} for c in claims],
         "object_key": k,
+        **_search_lens_terms(s, lens, region.country_id, theme),
     }
+
+
+def _search_lens_terms(s: Session, lens: str, country_id: int, theme: Theme) -> dict:
+    """Search lens only: the theme's search words with English glosses (they set the size)."""
+    if lens != "search":
+        return {}
+    from ..gtrends import search_terms
+    return {"search": search_terms(s, country_id, theme.slug, theme.group)}
 
 
 class VoteIn(BaseModel):

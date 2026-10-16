@@ -53,6 +53,8 @@ def recompute(weeks: int | None = None):
         since = None if full else datetime.now() - timedelta(weeks=weeks + 5)
         dups = dedupe.mark_duplicates(s, since)
         n = scoring.compute_all(s, weeks=weeks)
+        from .gtrends import flag_missing_weeks
+        flag_missing_weeks(s)  # search lens: no score when a week of the window lacks search data
         e = network.compute_all(s, weeks=weeks)
         lb = learning.build_labels(s)
         log.info("recompute: %s new duplicates, %s cells, %s edges, %s new labels", dups, n, e, lb)

@@ -32,6 +32,18 @@ cd ../frontend && npm install && npm run build
 cd ../backend && .venv/Scripts/python -m uvicorn app.main:app --port 8090
 ```
 
+Search lens (Google Trends): fetch on your own machine about once a week, never on the server. Each run
+writes a new file that holds the whole 5-year series, so only the newest one is needed. Upload that file
+where the app runs (like the backfill JSON), load it and recompute. Older files can be deleted.
+
+```bash
+cd backend && .venv/Scripts/python scripts/fetch_gtrends.py   # 5 requests, 10 s apart -> ../data/imports/gtrends/gtrends-<UTC time>.jsonl
+.venv/Scripts/python -m app.cli import-search ../data/imports/gtrends   # a folder loads its newest file
+.venv/Scripts/python -m app.cli recompute --weeks 12
+```
+
+If Google turns the fetcher away twice it stops and will not run again for 24 hours (`--force` overrides).
+
 Dev frontend with hot reload: `npm run dev` (port 5190, proxies `/api` to 8090).
 Tests: `cd backend && .venv/Scripts/python -m pytest -q`.
 
@@ -42,3 +54,4 @@ Tests: `cd backend && .venv/Scripts/python -m pytest -q`.
 - GDELT throttles aggressively (1 request / 5 s, and sometimes blocks); the app runs without it.
 - Outlet base locations and political alignment are not seeded: they are contested and must be added with evidence.
 - The audience lens is national-only; regional gaps need the events / humanitarian lenses (keys pending).
+- The search lens is national-only and measures economy, services, health and governance. Migration, security and the gender themes fall below Google's privacy threshold or follow foreign news (see `gtrends` in `config/countries/libya.yaml`).

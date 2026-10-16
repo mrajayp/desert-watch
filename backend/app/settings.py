@@ -18,6 +18,9 @@ ACLED_EMAIL = os.environ.get("ACLED_EMAIL")
 ACLED_PASSWORD = os.environ.get("ACLED_PASSWORD")
 UCDP_TOKEN = os.environ.get("UCDP_TOKEN")
 RELIEFWEB_APPNAME = os.environ.get("RELIEFWEB_APPNAME")
+# Search lens providers (both optional; the default route is a local fetch + import-search).
+SERPAPI_KEY = os.environ.get("SERPAPI_KEY")
+GOOGLE_TRENDS_API_KEY = os.environ.get("GOOGLE_TRENDS_API_KEY")  # official API: closed alpha
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY")
 # Weekly digest model: Haiku per the approved plan (one short call per week). Override to e.g.
 # claude-opus-5-5 for a richer brief.
@@ -32,4 +35,10 @@ MIN_NEED_UNITS = {          # below this a cell is "insufficient evidence"
     "journalist": 1,
 }
 SHRINK_STRENGTH = {"audience": 2000, "events": 10, "humanitarian": 5, "journalist": 2}
+# Search lens (Google Trends, anchor units). A cell is insufficient when any week of its window
+# lacks data (gtrends.flag_missing_weeks), not below a need level. Shrink ~ a quarter of the
+# smallest list's 4-week need (governance, ~57 in 2025-26). Coverage counts there are in the
+# hundreds, so it barely moves the gap (checked 20 / 50 / 100 on the 2026-10-16 snapshot).
+MIN_NEED_UNITS["search"] = 1
+SHRINK_STRENGTH["search"] = 20
 RAW_EVENT_RETENTION_DAYS = 365

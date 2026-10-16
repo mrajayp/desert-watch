@@ -7,6 +7,7 @@ import Comments from './Comments'
 import ArticleRow from './ArticleRow'
 import BlindSpots from './BlindSpots'
 import SourceFilter from './SourceFilter'
+import SearchTerms from './SearchTerms'
 
 const VOTES = [
   ['real', 'Real gap', 'This is under-reported and worth covering'],
@@ -67,6 +68,7 @@ export default function GapPanel({ themeId, regionId, week: weekProp, lens: lens
           <span className="l">{b.reference === 'own_history' ? 'vs this theme’s previous 12 weeks' : 'vs comparable cells'}</span></div>
       </div>
       {c?.flags?.length > 0 && <div className="row">{c.flags.map((f) => <span key={f} className={INFO_FLAGS.has(f) ? "pill" : "pill flag"}>{flagText(f)}</span>)}</div>}
+      {filters.lens === 'search' && <SearchTerms search={d.search} missing={b.search_missing_weeks} />}
       {c && (
         <>
           <h3>Who is covering it</h3>

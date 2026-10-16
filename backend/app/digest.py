@@ -50,6 +50,13 @@ def has_credentials() -> bool:
     return bool(os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN"))
 
 
+# Gaps on the search lens (Google Trends) read differently from the others: the model must see why.
+SEARCH_LIMIT = ("search lens: need is a Google Trends index of searches from Libya for the theme's own words, "
+                "per 100 searches for an everyday word. The word list sets its size, so compare a theme only "
+                "with its own past. A search gap means searches rose and monitored coverage did not keep up. "
+                "It does not show that nobody reported the subject")
+
+
 def build_facts(s: Session, country: Country, week: date) -> dict:
     themes = {t.id: t for t in s.scalars(select(Theme).where(Theme.active.is_(True)))}
     regions = {r.id: r for r in s.scalars(select(Region).where(Region.country_id == country.id))}
@@ -144,7 +151,8 @@ def build_facts(s: Session, country: Country, week: date) -> dict:
         "known_limits": ["monitored coverage only (Facebook only as the sample of posts Google indexes, no Telegram)",
                          "event and humanitarian need data are pending source keys" if not
                          {"events", "humanitarian"} & {g["lens"] for g in gaps} else "",
-                         "most articles name no district"],
+                         "most articles name no district",
+                         *([SEARCH_LIMIT] if "search" in {g["lens"] for g in gaps} else [])],
     }
 
 

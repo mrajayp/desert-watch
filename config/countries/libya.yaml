@@ -315,3 +315,74 @@ social_parents:
   ncdc.org.ly: [facebook.com/NCDC.LY]
   unsmil.unmissions.org: [facebook.com/UNSMIL, x.com/unsmilibya, instagram.com/unsmilibya]
   libya.unfpa.org: [facebook.com/UNFPALibya, x.com/UNFPALibya]
+# Google Trends search interest for the search lens: national, weekly, Google users located in Libya.
+# Fetched on a local machine (backend/scripts/fetch_gtrends.py), never from the server, and loaded
+# with `python -m app.cli import-search PATH`. Each list is one OR slot ('a + b') and uses only that
+# theme's own ar_terms from themes.yaml. A list is kept when at most 10% of its weeks lack data.
+# Checked live on 2026-10-16 (5 years weekly, 16 requests). Weeks without data since 2022:
+#   economy 0/249, services 0/249, health 0/249, governance 6/249.
+# Size against the anchor: economy 2.96x, services 1.22x, health 0.91x, governance 0.21x.
+# Anchor «مطعم» (restaurant): everyday and in no theme. No week without data, CV 0.22 over 2022-26 where
+# it is not rounded down (mean 15, low 7). It dips in Ramadan, so each week is divided by the anchor's
+# median over 13 weeks around it. It runs about 10% higher in July and August.
+# Rejected anchors: translate, «ترجمة», «معنى», «كيفية» and «تفسير الاحلام» (searches fell by a third to a
+# half since 2023), «تطبيق» (rising, and three times the lists), «خريطة» (jumps with news, e.g. Derna in
+# Sep 2023), «سيارات للبيع» (16% of weeks without data), «مطاعم» (too small).
+# Rejected lists:
+#   security: «اشتباكات + ميليشيات + مليشيات + اختطاف + جماعات مسلحة» lacked data in 116 of 249 weeks.
+#     «اشتباكات + اختطاف + اغتيال + انفجار + مسلحين» passes (3/249) but its biggest weeks are foreign news
+#     (the Trump shooting and the killing of Haniyeh, July 2024). Add it under baskets to try it.
+#   governance: «الانتخابات + انتخابات + الحكومة + البرلمان + الفساد» passes but peaks with the Turkish
+#     (May 2023) and US (Nov 2024) elections. The Libyan institutions below are used instead.
+#   health: adding «مرض» (disease) passes but makes that one generic word about 64% of the list.
+#   migration and the gender themes: lists from their own ar_terms lacked data in 37 to 53 of 53 weeks
+#     (verifier probe, 2026-10-16).
+# Not probed: the draft themes (fuel_supply, cash_salaries_prices, education, environment,
+#   reconstruction, political_process). fuel_supply shares «البنزين» and «الديزل» with services, and
+#   cash_salaries_prices shares «المرتبات» and «سعر الصرف» with economy. A word may sit in one list only
+#   (check_baskets refuses it), so those themes would need words of their own.
+# Changing a list or the anchor: bump version. Items from older versions stop counting on the next import.
+gtrends:
+  geo: LY
+  anchor: مطعم
+  version: 1
+  since: 2022-01-03          # Google changed its data collection on 1 Jan 2022
+  groups: [[economy, services, health], [governance]]   # lists that share a request (big with big)
+  baskets:
+    economy: [الدينار, المرتبات, السيولة, النفط, سعر الصرف]
+    services: [الكهرباء, طرح الأحمال, المياه, البنزين, الديزل]
+    health: [مستشفى, المستشفيات, وزارة الصحة, الأدوية, الأطباء]
+    governance: [مجلس النواب, المجلس الرئاسي, حكومة الوحدة الوطنية, المجلس الأعلى للدولة, الانتخابات البلدية]
+  glosses:
+    مطعم: restaurant
+    الدينار: dinar
+    المرتبات: salaries
+    السيولة: cash shortage (liquidity)
+    النفط: oil
+    سعر الصرف: exchange rate
+    الكهرباء: electricity
+    طرح الأحمال: load shedding (planned power cuts)
+    المياه: water
+    البنزين: petrol
+    الديزل: diesel
+    مستشفى: hospital
+    المستشفيات: hospitals
+    وزارة الصحة: health ministry
+    الأدوية: medicines
+    الأطباء: doctors
+    مجلس النواب: House of Representatives
+    المجلس الرئاسي: Presidential Council
+    حكومة الوحدة الوطنية: Government of National Unity
+    المجلس الأعلى للدولة: High Council of State
+    الانتخابات البلدية: municipal elections
+  # Shown in the gap panel for themes we cannot measure.
+  unmeasured:
+    security: The Libyan words are searched too rarely. The general ones mostly follow news from abroad.
+    migration: Too few searches from Libya to measure.
+    gender: Too few searches from Libya to measure.
+    fuel_supply: Not checked yet. Its search words are in the services list for now.
+    cash_salaries_prices: Not checked yet. Its search words are in the economy list for now.
+    education: Not checked yet.
+    environment: Not checked yet.
+    reconstruction: Not checked yet.
+    political_process: Not checked yet.
