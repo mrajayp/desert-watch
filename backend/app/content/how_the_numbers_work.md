@@ -41,7 +41,7 @@ We divide coverage by need to get a ratio. Then we compare that ratio with a ref
 
 Small cells are pulled towards the reference before comparing, so a district with two reports cannot swing wildly. The gap is shown as how many times less coverage there is than expected. Anything under about 1.15 times is shown as covered about as expected.
 
-If need is below a minimum the cell is not scored and shows as hatched. The minimums are 500 page views, 2 reports, 3 events or 1 flag in the window. The search lens has no minimum. A window goes unscored when Google gave no data for one of its four weeks. Weeks before we started collecting are not scored either.
+If need is below a minimum the cell is not scored and shows as hatched. The minimums are 500 page views, 2 reports, 3 events, 1 flag or 1 point of the search index in the window. Every measured search theme clears that easily. A search window also goes unscored when Google gave no data for one of its four weeks. Weeks before we started collecting are not scored either.
 
 For the audience and search lenses we only count outlets we were collecting from across the whole 16 weeks being compared, through the same route. So Al Wasat through Google News counts, because we have years of it. Al Wasat through its own feed only started in October, so it is left out until it has 16 weeks behind it. The same goes for Google Alerts and for outlets Google News only turns up for recent weeks. The backfill is never used in these comparisons. How much it holds for a week depends on how many stories the monitoring review chose to cite, and that grew through the year. The gap panel and the article lists still show every article.
 
@@ -59,19 +59,19 @@ The search lens uses Google Trends. Google gives an index from 0 to 100 for each
 
 It only counts people using Google from Libya. Google handles about 98% of web searches there and about 88% of people are online (StatCounter and DataReportal, 2026). Everyone else is missing.
 
-The word list sets the number. Each theme has a handful of its own Arabic words, listed in the gap panel. Change the words and the number changes. That is why we only compare a theme with its own past. Words also catch things we don't mean. «الانتخابات» (elections) peaks with the Turkish and US elections, so governance uses the names of Libyan institutions instead.
+Each theme has a handful of its own Arabic words, listed in the gap panel, and those words set the size of the number. Change the words and the number changes. That is why we only compare a theme with its own past. A word sits in one theme's list only, so one search never counts for two themes. Words also catch things we don't mean. «الانتخابات» (elections) peaks with the Turkish and US elections, so governance uses the names of Libyan institutions instead.
 
-Searching is not the same as worrying. Many electricity searches are people topping up a meter or checking the load shedding times. A rise means more people looked something up.
+A rise means more people looked something up. It does not tell us they were worried. Many electricity searches are people topping up a meter or checking the load shedding times.
 
-Small subjects vanish. Google holds back any week with too few searches. Migration and every gender theme fall below that line for their whole word list, so we can't measure them here. For security the Libyan words fall below it in about half of all weeks, and the general ones mostly follow news from abroad, so security is left out too. Governance lacks data in a few weeks. A four-week window that includes one of them is not scored.
+Google holds back any week with too few searches. Migration and every gender theme fall below that line for their whole word list, so we can't measure them here. For security the Libyan words fall below it in about half of all weeks, and the general ones mostly follow news from abroad, so security is left out too. Governance lacks data in a few weeks. A four-week window that includes one of them is not scored. When such a week falls in the 12 weeks we compare against, it counts at the typical level of the weeks around it.
 
-The numbers are a sample. Google draws them from a share of all searches and revises the latest two weeks. We mark those two weeks as provisional and replace them at the next import. The current week is never scored.
+Google draws these numbers from a share of all searches and revises the latest two weeks. We mark those two weeks as provisional and replace them at the next import. A week only gets search data at the first import after it ends, so the search lens opens on the latest week it could score.
 
-News drives searches. When something happens people look it up, and reporters write about it at the same time. So a gap here means searches rose and coverage did not keep up. It does not prove that nobody reported it.
+When something happens people look it up, and reporters write about it at the same time. So a gap here means searches rose and coverage did not keep up. It does not prove that nobody reported it.
 
-Google changed how it collects this data on 1 January 2022. Earlier weeks don't compare, so we start there. In July and August 2026 searches for the services words ran about twice the rest of the year. From 2022 to 2025 the summer rise was 10 to 25%, so summer 2026 was unusual.
+Google changed how it collects this data on 1 January 2022. Earlier weeks don't compare, so we start there. In July and August 2026 searches for the services words ran about twice the rest of the year. From 2022 to 2025 the summer rise was 10 to 25%, so summer 2026 was unusual. Economy searches came close to doubling in Ramadan 2026 against the weeks before, and the biggest economy gaps sit there. Earlier Ramadans showed little or no rise.
 
-We fetch the data about once a week on a computer outside the server and load it by hand. Google marks these requests as automated, so we keep them slow and few. The official Google Trends API is still a closed trial. We have also built a route through SerpApi, a paid service. It stays switched off because Google is suing SerpApi over how it collects Google's results.
+We fetch the data about once a week on a computer outside the server and load it by hand. Google marks these requests as automated, so we keep them slow and few. The official Google Trends API is still a closed trial. We have also built a route through SerpApi, a paid service. It stays switched off because Google is suing SerpApi over how it collects Google's results. If no import arrives for 10 days the source strip marks the search data as stale.
 
 Data source: Google Trends.
 

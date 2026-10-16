@@ -1,4 +1,10 @@
 // Search lens only: the words behind the number. The word list sets its size, so it is shown with every gap.
+// "the week of A" or "the weeks of A, B and C"
+function weeksOf(weeks) {
+  const w = [...weeks].sort()
+  return w.length === 1 ? `the week of ${w[0]}` : `the weeks of ${w.slice(0, -1).join(', ')} and ${w[w.length - 1]}`
+}
+
 export default function SearchTerms({ search, missing }) {
   if (!search) return null
   return (
@@ -21,8 +27,8 @@ export default function SearchTerms({ search, missing }) {
         </>)}
       {search.measured && missing?.length > 0 && (
         <p className="small muted">
-          No search data for the week of {missing.join(', ')}, so this window is not scored. Google holds back weeks
-          with too few searches, and the latest week arrives with the next import.
+          This window is not scored because there is no search data for {weeksOf(missing)}. Google holds back weeks
+          with too few searches, and a week only gets data at the first import after it ends.
         </p>)}
     </>
   )
