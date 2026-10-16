@@ -3,6 +3,7 @@ from . import galerts, gdelt, gnews, gnews_social, keyed, official, rss, wikiped
 # key -> (callable, human description). Order = scheduler order.
 COLLECTORS = {
     "rss": (rss.collect, "Outlet RSS feeds"),
+    "youtube": (rss.collect_youtube, "YouTube channel feeds"),
     "galerts": (galerts.collect, "Google Alerts feeds"),
     "official": (official.collect, "Official statements + ReliefWeb reports"),
     "gnews": (gnews.collect, "Google News search (Arabic + English)"),

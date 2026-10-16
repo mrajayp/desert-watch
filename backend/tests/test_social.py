@@ -173,18 +173,31 @@ def test_seed_links_existing_social_accounts_to_their_website(db):
     assert not (stranger.external or {}).get("parent") and "scope" not in _cats(db, stranger.id)
 
 
-def test_youtube_feed_retries_and_files_videos_on_the_channel(db, monkeypatch):
-    from types import SimpleNamespace
-    from app.collectors import rss
-    from app.models import Item
-    monkeypatch.setattr(rss, "YOUTUBE_BACKOFF", 0)
+def _youtube_only(db):
     db.query(Outlet).filter(Outlet.rss_url.is_not(None), ~Outlet.domain.like("youtube.com/channel/UCTj%")).update(
         {"rss_url": None}, synchronize_session=False)
     db.commit()
-    feed = """<?xml version="1.0"?><feed xmlns="http://www.w3.org/2005/Atom" xmlns:media="http://search.yahoo.com/mrss/">
-      <entry><title>انقطاع الكهرباء في سبها لساعات</title><link rel="alternate" href="https://www.youtube.com/watch?v=abc"/>
-      <published>2026-10-15T10:00:00+00:00</published><media:group><media:description>تقرير</media:description></media:group></entry>
-    </feed>"""
+
+
+def _fails(status=500):
+    from types import SimpleNamespace
+    return lambda *a, **k: SimpleNamespace(content=b"", status_code=status,
+                                           raise_for_status=lambda: (_ for _ in ()).throw(RuntimeError(str(status))))
+
+
+YT_FEED = """<?xml version="1.0"?><feed xmlns="http://www.w3.org/2005/Atom" xmlns:media="http://search.yahoo.com/mrss/">
+  <entry><title>{t}</title><link rel="alternate" href="https://www.youtube.com/watch?v={v}"/>
+  <published>2026-10-15T10:00:00+00:00</published><media:group><media:description>تقرير</media:description></media:group></entry>
+</feed>"""
+
+
+def test_youtube_feed_retries_and_files_videos_on_the_channel(db, monkeypatch):
+    from types import SimpleNamespace
+    from app.collectors import COLLECTORS, rss
+    from app.models import Item
+    monkeypatch.setattr(rss, "YOUTUBE_BACKOFF", 0)
+    _youtube_only(db)
+    feed = YT_FEED.format(t="انقطاع الكهرباء في سبها لساعات", v="abc")
     calls = []
 
     def fake_get(client, url, **kw):
@@ -193,15 +206,38 @@ def test_youtube_feed_retries_and_files_videos_on_the_channel(db, monkeypatch):
         return SimpleNamespace(content=feed.encode(), status_code=200 if ok else 404,
                                raise_for_status=(lambda: None) if ok else (lambda: (_ for _ in ()).throw(RuntimeError("404"))))
     monkeypatch.setattr(rss, "polite_get", fake_get)
-    res = rss.collect(db)
+    assert rss.collect(db).rows == 0 and calls == []     # the website feeds collector leaves YouTube alone
+    assert COLLECTORS["youtube"][0] is rss.collect_youtube
+    res = rss.collect_youtube(db)
     assert len(calls) == 2 and res.errors == 0 and res.rows == 1
     it = db.scalar(select(Item).where(Item.source_key == "youtube"))
     assert db.get(Outlet, it.outlet_id).domain == "youtube.com/channel/UCTjGk6smzE1z4P_nI8dUqJw" and it.relevant
 
     # a run where every try fails is noted, not an error, until it happens three runs in a row
-    monkeypatch.setattr(rss, "polite_get", lambda *a, **k: SimpleNamespace(
-        content=b"", status_code=500, raise_for_status=lambda: (_ for _ in ()).throw(RuntimeError("500"))))
-    assert [rss.collect(db).errors for _ in range(3)] == [0, 0, 1]
+    calls.clear()
+    monkeypatch.setattr(rss, "polite_get", lambda *a, **k: (calls.append(1), _fails()())[1])
+    assert [rss.collect_youtube(db).errors for _ in range(3)] == [0, 0, 1]
+    assert len(calls) == 3 * 3                # three tries a run until the streak reaches three
+    assert rss.collect_youtube(db).errors == 1 and len(calls) == 10   # then one try a run, no pauses
+
+
+def test_youtube_streak_resets_after_a_good_run(db, monkeypatch):
+    from types import SimpleNamespace
+    from app.collectors import rss
+    monkeypatch.setattr(rss, "YOUTUBE_BACKOFF", 0)
+    _youtube_only(db)
+    wasat = db.scalar(select(Outlet).where(Outlet.domain.like("youtube.com/channel/UCTj%")))
+    monkeypatch.setattr(rss, "polite_get", _fails(404))
+    assert [rss.collect_youtube(db).errors for _ in range(2)] == [0, 0]
+    assert wasat.external["feed_failed_runs"] == 2
+    good = YT_FEED.format(t="سبها", v="z1").encode()
+    monkeypatch.setattr(rss, "polite_get", lambda *a, **k: SimpleNamespace(content=good, status_code=200,
+                                                                          raise_for_status=lambda: None))
+    assert rss.collect_youtube(db).errors == 0
+    db.refresh(wasat)
+    assert "feed_failed_runs" not in wasat.external and wasat.external["parent"] == "alwasat.ly"
+    monkeypatch.setattr(rss, "polite_get", _fails(404))
+    assert [rss.collect_youtube(db).errors for _ in range(3)] == [0, 0, 1]   # a new streak starts from zero
 
 
 def test_gnews_social_post_text():

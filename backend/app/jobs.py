@@ -71,6 +71,7 @@ def nightly():
 @_locked
 def hourly():
     collect("rss")
+    collect("youtube")
     collect("galerts")
 
 
@@ -113,6 +114,7 @@ def weekly_digest(force: bool = False):
 
 JOBS = {
     "rss": lambda: _locked(collect)("rss"),
+    "youtube": lambda: _locked(collect)("youtube"),
     "galerts": lambda: _locked(collect)("galerts"),
     "gnews": lambda: _locked(collect)("gnews"),
     "gnews_social": lambda: _locked(collect)("gnews_social"),
