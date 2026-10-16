@@ -262,13 +262,16 @@ ITEM = """<item><title>{t}</title><link>https://news.google.com/rss/articles/{k}
 <pubDate>Wed, 15 Oct 2026 10:00:00 GMT</pubDate><source url="https://www.facebook.com">Facebook</source></item>"""
 
 
-def _fake_google(monkeypatch, answers):
+def _fake_google(monkeypatch, answers, log=None):
     from types import SimpleNamespace
     from app.collectors import gnews_social
     calls = []
 
     def fake(client, url, params=None, **kw):
+        assert kw["min_interval"] >= 2 and kw["retries"] == 0      # polite: 2 s apart, no hidden retries
         calls.append(params)
+        if log is not None:
+            log.append("get")
         status, body = answers(params) if callable(answers) else answers.pop(0)
         return SimpleNamespace(status_code=status, content=body.encode())
     monkeypatch.setattr(gnews_social, "polite_get", fake)
@@ -299,8 +302,12 @@ def test_gnews_social_one_fixed_day_per_window(db, monkeypatch):
         ITEM.format(t="ليبيا أخبار. . المصرف المركزي يعلن سعر صرف الدينار الليبي - Facebook", k="k2"),
         ITEM.format(t="ليبيا أخبار - Facebook", k="k3"),
         ITEM.format(t="ليبيا أخبار. . صورة اليوم من الشاطئ الجميل في الصيف - Facebook", k="k4")]))
-    calls = _fake_google(monkeypatch, lambda p: (200, body if "after:2026-10-15" in p["q"] else RSS.format("")))
+    from sqlalchemy import event
+    log = []
+    event.listen(db, "after_commit", lambda sess: log.append("commit"))
+    calls = _fake_google(monkeypatch, lambda p: (200, body if "after:2026-10-15" in p["q"] else RSS.format("")), log)
     res = gnews_social.collect(db, today=date(2026, 10, 16))
+    assert log[:2] == ["get", "commit"]                   # the first window is committed before the next request
     # only the register page; one fixed 1-day window for yesterday and one for the day before
     assert [p["q"] for p in calls] == ["site:facebook.com/libyaakhbar after:2026-10-15 before:2026-10-16",
                                        "site:facebook.com/libyaakhbar after:2026-10-14 before:2026-10-15"]
@@ -311,6 +318,72 @@ def test_gnews_social_one_fixed_day_per_window(db, monkeypatch):
     db.refresh(old)
     assert old.outlet_id == page.id                      # moved off the whole-platform outlet
     assert "'capped': 0" in res.detail and "'no_theme': 1" in res.detail
+    assert page.external["page_names"] == {"ليبيا أخبار": 3}
+
+
+def test_gnews_social_english_edition_and_longer_accounts(db, monkeypatch):
+    from datetime import date
+    from app.collectors import gnews_social
+    c = db.scalar(select(Country))
+    site = db.scalar(select(Outlet).where(Outlet.domain == "libyaobserver.ly"))
+    site.languages = ["en", "ar"]
+    en_page = Outlet(country_id=c.id, name="lyobserver", domain="facebook.com/lyobserver", languages=["ar"],
+                     external={"parent": "libyaobserver.ly", "social_media_scrape": {"kind": "media", "posts": 9}})
+    ar_page = Outlet(country_id=c.id, name="lyobserver.arabic", domain="facebook.com/lyobserver.arabic", languages=["ar"],
+                     external={"social_media_scrape": {"kind": "media", "posts": 5}})
+    db.add_all([en_page, ar_page])
+    db.commit()
+    calls = _fake_google(monkeypatch, lambda p: (200, RSS.format("")))
+    gnews_social.collect(db, today=date(2026, 10, 16), days=1)
+    asked = [(p["ceid"], p["q"]) for p in calls]
+    assert asked == [
+        ("EG:ar", "site:facebook.com/lyobserver -site:facebook.com/lyobserver.arabic after:2026-10-15 before:2026-10-16"),
+        ("US:en", "site:facebook.com/lyobserver -site:facebook.com/lyobserver.arabic after:2026-10-15 before:2026-10-16"),
+        ("EG:ar", "site:facebook.com/lyobserver.arabic after:2026-10-15 before:2026-10-16")]
+    assert {p["hl"] for p in calls if p["ceid"] == "US:en"} == {"en-US"}
+
+
+def test_gnews_social_repeated_post_is_kept_once_and_not_learned_as_a_name(db, monkeypatch):
+    from datetime import date
+    from app.collectors import gnews_social
+    from app.models import Item
+    c = db.scalar(select(Country))
+    page = Outlet(country_id=c.id, name="MsdrNews", domain="facebook.com/MsdrNews",
+                  external={"social_media_scrape": {"kind": "media"},
+                            "page_names": ["مصدر نيوز", "#عاجل | انقطاع الكهرباء في سبها لساعات طويلة اليوم"]})
+    db.add(page)
+    db.commit()
+    post = "#عاجل | انقطاع الكهرباء في سبها لساعات طويلة اليوم - Facebook"
+    body = RSS.format("".join([ITEM.format(t=post, k="r1"), ITEM.format(t=post, k="r2"),
+                               ITEM.format(t="مصدر نيوز Msdr News - Facebook", k="r3"),
+                               ITEM.format(t="مصدر نيوز Msdr News - Facebook", k="r4")]))
+    _fake_google(monkeypatch, lambda p: (200, body if "after:2026-10-15" in p["q"] else RSS.format("")))
+    res = gnews_social.collect(db, today=date(2026, 10, 16))
+    stored = db.scalars(select(Item).where(Item.source_key == "gnews_social")).all()
+    assert [i.title for i in stored] == ["#عاجل | انقطاع الكهرباء في سبها لساعات طويلة اليوم"]
+    assert res.rows == 1 and "'repeated': 1" in res.detail
+    # the short repeated title is a name, the post is not, and an old post saved as a name is dropped
+    assert page.external["page_names"] == {"مصدر نيوز": 1, "مصدر نيوز Msdr News": 1}
+
+
+def test_gnews_social_rotates_accounts_when_over_budget(db, monkeypatch):
+    from datetime import date
+    from app.collectors import gnews_social
+    c = db.scalar(select(Country))
+    db.add_all([Outlet(country_id=c.id, name=f"p{i}", domain=f"facebook.com/page{i}",
+                       external={"social_media_scrape": {"kind": "media", "posts": 10 - i}}) for i in range(4)])
+    db.commit()
+    first = lambda calls: calls[0]["q"].split()[0]  # noqa: E731
+    calls = _fake_google(monkeypatch, lambda p: (200, RSS.format("")))
+    gnews_social.collect(db, today=date(2026, 10, 16), max_queries=8)    # fits: busiest first
+    assert first(calls) == "site:facebook.com/page0" and len(calls) == 8
+    starts = set()
+    for d in range(16, 20):
+        calls = _fake_google(monkeypatch, lambda p: (200, RSS.format("")))
+        gnews_social.collect(db, today=date(2026, 10, d), max_queries=4)
+        assert len(calls) == 4
+        starts.add(first(calls))
+    assert len(starts) == 4                                                 # a different account leads each day
 
 
 def test_gnews_social_stops_after_three_refusals(db, monkeypatch):
