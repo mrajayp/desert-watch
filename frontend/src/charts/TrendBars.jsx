@@ -7,7 +7,7 @@
 import * as d3 from 'd3'
 import { memo, useMemo, useRef, useState } from 'react'
 import { fmt, gapFill } from './scales'
-import { DAY, about, articles, judged, lensNeed, levelLegend, levelWord, needLine, noSearchData, reasonText, shortfall, stepPath, usualLine, utc, verdict, weekEnd, weekRange, yScale } from './trendText'
+import { DAY, about, articles, judged, lensNeed, levelLegend, levelWord, needLine, noSearchData, reasonText, shortfall, stepPath, trendGroups, usualLine, utc, verdict, weekEnd, weekRange, yScale } from './trendText'
 import { HatchDefs, themeLabel, useSize, useTooltip } from './util'
 
 // focus from the keyboard, not from a click (a click opens the week's articles instead)
@@ -16,7 +16,7 @@ const keyFocus = (el) => { try { return el.matches(':focus-visible') } catch { r
 const cap = (w) => w[0].toUpperCase() + w.slice(1)
 const dayMonth = d3.utcFormat('%-d %b')
 
-const Panel = memo(function Panel({ t, rows, hasNeed, width, lens, reference, scoredWeek, red, lang, selected, onSelect, onPickWeek, onPickBar }) {
+const Panel = memo(function Panel({ t, rows, hasNeed, note, fullName, width, lens, reference, scoredWeek, red, lang, selected, onSelect, onPickWeek, onPickBar }) {
   const wrap = useRef(null)
   const tip = useTooltip()
   const [hover, setHover] = useState(null)
@@ -101,7 +101,7 @@ const Panel = memo(function Panel({ t, rows, hasNeed, width, lens, reference, sc
     <div ref={wrap} className="card viz trend-panel">
       <div className="trend-head">
         <button type="button" className="linkish" aria-pressed={!!selected} title={`${name}. Show this theme in the charts below.`}
-          onClick={() => onSelect?.(t.id)}>{themeLabel(t, lang)}</button>
+          onClick={() => onSelect?.(t.id)}>{fullName ? name : themeLabel(t, lang)}</button>
         {last && (
           <button type="button" className={judged(last) && last.gap >= red ? 'pill flag' : 'pill'}
             title={`${weekRange(last.week)}. ${verdict(last, red, need)} Click for the full gap.`}
@@ -109,7 +109,7 @@ const Panel = memo(function Panel({ t, rows, hasNeed, width, lens, reference, sc
             {judged(last) ? shortfall(last.gap, red, need) : reasonText(last.reason, need, false)}</button>)}
       </div>
       <div className="small muted" style={{ margin: '2px 0 4px' }}>
-        {scored ? `4 weeks to ${dayMonth(utc(weekEnd(last.week)))}` : 'Last 4 weeks'}: {articles(a4)}.{hasNeed && last?.expected_4w != null ? ` ${level}: ${about(last.expected_4w)}.` : ''}</div>
+        {scored ? `4 weeks to ${dayMonth(utc(weekEnd(last.week)))}` : 'Last 4 weeks'}: {articles(a4)}.{hasNeed && last?.expected_4w != null ? ` ${level}: ${about(last.expected_4w)}.` : ''}{!hasNeed && note ? ` ${note}` : ''}</div>
       <svg viewBox={`0 0 ${width} ${H}`} role="group" aria-label={`${name}: articles per week`}>
         <HatchDefs id={`tb-hatch-${t.id}`} />
         {hover != null && !rows[hover].in_progress && (
@@ -157,16 +157,6 @@ const Panel = memo(function Panel({ t, rows, hasNeed, width, lens, reference, sc
   )
 })
 
-// themes grouped like the heatmap: General first, then each group with its own heading
-function themeGroups(themes) {
-  const plain = themes.filter((t) => !t.group)
-  const named = [...new Set(themes.filter((t) => t.group).map((t) => t.group))]
-  return [
-    ...(plain.length ? [{ label: 'General', themes: plain }] : []),
-    ...named.map((g) => ({ label: g[0].toUpperCase() + g.slice(1), themes: themes.filter((t) => t.group === g) })),
-  ]
-}
-
 // reference: the lens's meta reference (pooled lenses say 'expected' where the others say 'usual'). scoredWeek: the
 // search lens's latest scored week, which the panels open on while the latest week has no search data.
 export default function TrendBars({ themes, data, lens, reference, scoredWeek, lang = 'en', selectedId, onSelect, onPickWeek, onPickBar }) {
@@ -176,15 +166,16 @@ export default function TrendBars({ themes, data, lens, reference, scoredWeek, l
   const width = Math.max(220, Math.floor((W - 12 * (cols - 1)) / cols) - 22) // card padding + border
   const red = data.red_from ?? 0.4
   const need = lensNeed(lens, reference)
-  const groups = themeGroups(themes.filter((t) => data.themes?.[t.id]?.rows?.length))
+  const groups = trendGroups(themes, data, lens)
   return (
     <div ref={wrap}>
       {groups.map((g) => (
         <div key={g.label}>
           {groups.length > 1 && <div className="trend-group">{g.label}</div>}
+          {g.note && <p className="small muted" style={{ margin: '0 0 8px' }}>{g.note}</p>}
           <div className="trend-grid" style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}>
             {g.themes.map((t) => (
-              <Panel key={t.id} t={t} rows={data.themes[t.id].rows} hasNeed={data.themes[t.id].has_need} width={width}
+              <Panel key={t.id} t={t} rows={data.themes[t.id].rows} hasNeed={data.themes[t.id].has_need} note={data.themes[t.id].note} fullName={g.fullNames} width={width}
                 lens={lens} reference={reference} scoredWeek={scoredWeek} red={red} lang={lang} selected={t.id === selectedId}
                 onSelect={onSelect} onPickWeek={onPickWeek} onPickBar={onPickBar} />))}
           </div>

@@ -248,7 +248,11 @@ def all_series(country: str = "LY", lens: str = "audience", region_id: int | Non
                          "reason": b.get("reason") if cw else "not_scored",
                          "in_progress": bool(b.get("in_progress")) if cw else w >= current,
                          "flags": cw.flags if cw else []})
-        out["themes"][t.id] = {"has_need": any(x.need > 0 for x in cells if x.theme_id == t.id), "rows": rows}
+        has_need = any(x.need > 0 for x in cells if x.theme_id == t.id)
+        out["themes"][t.id] = {"has_need": has_need, "rows": rows}
+        if lens == "search" and not has_need:  # why there is no usual level to compare with
+            from ..gtrends import search_terms
+            out["themes"][t.id]["note"] = search_terms(s, c.id, t.slug, t.group)["unmeasured_reason"]
     out["weeks"] = [w.isoformat() for w in weeks]
     out["basis"] = {
         "from": span_start.isoformat(), "to": end.isoformat(), "first_week": first.isoformat(),

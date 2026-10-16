@@ -215,6 +215,10 @@ def test_meta_opens_search_on_its_latest_scored_week_and_trends_mark_missing_wee
             ["themes"][str(themes["health"])]["rows"]}
     assert rows[week_start(TODAY).isoformat()]["in_progress"] and rows[week_start(TODAY).isoformat()]["gap"] is None
     assert rows[LAST_FULL.isoformat()]["gap"] is not None
+    # themes Google cannot measure keep their chart and say why there is nothing to compare with
+    by_theme = client.get("/api/cells/trends", params={"lens": "search"}).json()["themes"]
+    assert by_theme[str(themes["migration"])]["note"].startswith("Too few people in Libya")
+    assert "note" not in by_theme[str(themes["health"])] and by_theme[str(themes["migration"])]["rows"]
     # a window with a week Google held back is not judged, says why, and quotes no 4-week usual level
     held = rows[(HOLE_WEEK + timedelta(weeks=2)).isoformat()]
     assert held["gap"] is None and held["insufficient"] and held["reason"] == "no_search_data"

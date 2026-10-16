@@ -11,7 +11,7 @@ export default function SearchTerms({ search, missing }) {
     <>
       <h3>Search words</h3>
       {!search.measured ? (
-        <p className="small muted">{search.unmeasured_reason || 'We do not measure searches for this theme.'}</p>
+        <p className="small muted">{search.unmeasured_reason || 'Too few people in Libya search for this theme for Google to report it, so there is nothing to compare its coverage with.'}</p>
       ) : (
         <>
           <ul className="list small">

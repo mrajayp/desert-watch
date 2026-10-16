@@ -377,9 +377,9 @@ gtrends:
     الانتخابات البلدية: municipal elections
   # Shown in the gap panel for themes we cannot measure.
   unmeasured:
-    security: The Libyan words are searched too rarely. The general ones mostly follow news from abroad.
-    migration: Too few searches from Libya to measure.
-    gender: Too few searches from Libya to measure.
+    security: Libyan security words are searched too rarely to show interest. The general ones mostly follow news from abroad.
+    migration: Too few people in Libya search for these words for Google to report them.
+    gender: Too few people in Libya search for these words for Google to report them.
     fuel_supply: Not checked yet. Its search words are in the services list for now.
     cash_salaries_prices: Not checked yet. Its search words are in the economy list for now.
     education: Not checked yet.

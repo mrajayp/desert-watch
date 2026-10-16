@@ -13,7 +13,7 @@ export const LENS_NEED = {
     few: ['Too few reports to judge', 'There were too few ReliefWeb reports to judge'] },
   journalist: { label: 'Gaps flagged by the team', usual: 'this many team flags', none: 'No team flags on this theme', short: 'No team flags',
     few: ['Too few team flags to judge', 'There were too few team flags to judge'] },
-  search: { label: 'Google searches (index)', usual: 'this much search interest', none: 'We do not measure searches for this theme', short: 'Searches not measured' },
+  search: { label: 'Google searches (index)', usual: 'this much search interest', none: 'Too few searches in Libya to compare', short: 'Too few searches to compare' },
 }
 // reference: the lens's meta reference. A pooled lens compares a theme with what other topics get, so its
 // level is the expected one. The other lenses compare a theme with its own record, its usual level.
@@ -129,4 +129,25 @@ export function stepPath(rows, x, step, y, value) {
     open = true
   }
   return path
+}
+
+// Panel groups. Most lenses: General first, then each named group (Gender). On the search lens the themes
+// Google can measure come first, and the rest keep their charts under a heading that says why there is
+// nothing to compare them with.
+export const SEARCH_FEW = 'Google reports too few searches from Libya on these themes to show interest, so there is no usual level to measure their coverage against. The bars still show the articles.'
+export function trendGroups(themes, data, lens) {
+  const shown = themes.filter((t) => data?.themes?.[t.id]?.rows?.length)
+  const byGroup = (list) => {
+    const plain = list.filter((t) => !t.group)
+    const named = [...new Set(list.filter((t) => t.group).map((t) => t.group))]
+    return [...(plain.length ? [{ label: 'General', themes: plain }] : []),
+      ...named.map((g) => ({ label: g[0].toUpperCase() + g.slice(1), themes: list.filter((t) => t.group === g) }))]
+  }
+  if (lens !== 'search') return byGroup(shown)
+  const measured = shown.filter((t) => data.themes[t.id].has_need)
+  const rest = shown.filter((t) => !data.themes[t.id].has_need)
+  if (!measured.length || !rest.length) return byGroup(shown)
+  // these headings mix groups, so panels keep the full name ("Gender: ...")
+  return [{ label: 'Enough searches to compare', themes: measured, fullNames: true },
+    { label: 'Too few searches to compare', themes: rest, note: SEARCH_FEW, fullNames: true }]
 }

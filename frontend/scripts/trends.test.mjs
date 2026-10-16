@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import * as d3 from 'd3'
-import { LENS_NEED, lensNeed, levelLegend, needLine, noSearchData, reasonText, shortfall, stepPath, usualLine, verdict, weekEnd, weekRange, yScale } from '../src/charts/trendText.js'
+import { LENS_NEED, SEARCH_FEW, lensNeed, trendGroups, levelLegend, needLine, noSearchData, reasonText, shortfall, stepPath, usualLine, verdict, weekEnd, weekRange, yScale } from '../src/charts/trendText.js'
 
 const need = LENS_NEED.audience
 const row = (o) => ({ week: '2026-10-05', articles: 105, articles_all: 148, gap: 0.04, insufficient: false, in_progress: false,
@@ -101,8 +101,8 @@ test('search lens speaks of Google searches, never Wikipedia', () => {
   const search = lensNeed('search', 'own_history')
   assert.equal(search, LENS_NEED.search)
   assert.equal(needLine({ need_week: 182, need_week_raw: 182, need_en: null }, search, 'search'), 'Google searches (index): 182.')
-  assert.equal(reasonText('no_need_data', search, true), 'We do not measure searches for this theme')
-  assert.equal(reasonText('no_need_data', search, false), 'Searches not measured')
+  assert.equal(reasonText('no_need_data', search, true), 'Too few searches in Libya to compare')
+  assert.equal(reasonText('no_need_data', search, false), 'Too few searches to compare')
   assert.equal(levelLegend(search), 'Usual level for this much search interest')
   // a week that has ended but is not imported yet, or one Google held back
   const gone = row({ gap: null, insufficient: true, reason: 'no_search_data', need_week: 0, expected_week: null, ref: null, expected_4w: null })
@@ -146,4 +146,16 @@ test('pooled lenses say expected from other topics, not usual', () => {
   assert.equal(reasonText('too_little_need', LENS_NEED.audience, false), 'Too little data to judge')
   // own-history lenses keep their usual level
   assert.equal(verdict(row(), 0.4, lensNeed('audience', 'own_history')), 'Last 4 weeks: 238 articles against about 248 usual. About as usual.')
+})
+
+test('search lens: measured themes first, the rest keep their charts under a heading that says why', () => {
+  const themes = [{ id: 1, group: null }, { id: 2, group: null }, { id: 3, group: 'gender' }, { id: 4, group: null }]
+  const data = { themes: { 1: { has_need: false, rows: [1] }, 2: { has_need: true, rows: [1] }, 3: { has_need: false, rows: [1] }, 4: { has_need: true, rows: [1] } } }
+  const g = trendGroups(themes, data, 'search')
+  assert.deepEqual(g.map((x) => [x.label, x.themes.map((t) => t.id)]), [['Enough searches to compare', [2, 4]], ['Too few searches to compare', [1, 3]]])
+  assert.equal(g[1].note, SEARCH_FEW)
+  assert.ok(g.every((x) => x.fullNames))
+  assert.equal(reasonText('no_need_data', lensNeed('search'), false), 'Too few searches to compare')
+  // other lenses keep General then Gender
+  assert.deepEqual(trendGroups(themes, data, 'audience').map((x) => x.label), ['General', 'Gender'])
 })

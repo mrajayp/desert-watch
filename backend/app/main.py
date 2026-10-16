@@ -61,4 +61,5 @@ if settings.FRONTEND_DIST.exists():
         f = settings.FRONTEND_DIST / path
         if path and f.is_file() and settings.FRONTEND_DIST in f.resolve().parents:
             return FileResponse(f)
-        return FileResponse(settings.FRONTEND_DIST / "index.html")
+        # the page shell names the hashed bundle: browsers must ask again, or a deploy shows the old app
+        return FileResponse(settings.FRONTEND_DIST / "index.html", headers={"Cache-Control": "no-cache"})
