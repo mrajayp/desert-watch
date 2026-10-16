@@ -184,9 +184,18 @@ def test_a_theme_edit_keeps_the_missing_week_rule(db, monkeypatch):
 
 def test_digest_explains_search_gaps(db):
     from app import digest
+    themes, regions = ids(db)
     cid = _scored_health(db)
     flag_missing_weeks(db, cid)
     country = db.get(Country, cid)
+    # the digest only reports lenses the site offers, and one judged theme is not a lens
+    assert not any(g["lens"] == "search" for g in digest.build_facts(db, country, LAST_FULL)["top_gaps"])
+    for cw in db.scalars(select(CellWeek).where(CellWeek.theme_id == themes["services"], CellWeek.lens == "search",
+                                                CellWeek.region_id == regions["national"],
+                                                CellWeek.week_start > LAST_FULL - timedelta(weeks=4),
+                                                CellWeek.week_start <= LAST_FULL)):
+        cw.insufficient, cw.gap, cw.breakdown = False, 0.0, {}
+    db.commit()
     f = digest.build_facts(db, country, LAST_FULL)
     assert any(g["lens"] == "search" for g in f["top_gaps"])
     assert digest.SEARCH_LIMIT in f["known_limits"]

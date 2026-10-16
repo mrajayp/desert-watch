@@ -1,3 +1,4 @@
+import threading
 from collections import Counter
 from datetime import timedelta
 
@@ -73,22 +74,63 @@ def preview_theme(body: ThemeIn, days: int = 30, tid: int | None = None, s: Sess
 
 def _retag_theme(theme_id: int, recompute: bool = True, classify: bool | None = None):
     """Re-run rule tagging for one theme over all articles. Rule links follow the rules, query
-    links count only when the rules confirm them, user and model links are kept (retag.py).
+    links count only when the rules confirm them, user links are kept and a model link goes back
+    to the rules once they match it (retag.py).
     With a model live the model then re-scores every article (classify_all, as after Activate), before
     the recompute. classify defaults to recompute: sync-themes retags several themes without either
-    and is told to run classify-items --all once at the end."""
-    from ..jobs import JOBS
+    and is told to run classify-items --all once at the end. The re-score and the recompute run as
+    one follow-up (_follow_up), so saves close together share them."""
     from ..ml.registry import active
     from ..retag import retag_theme
-    from ..scoring import compute_all
     classify = recompute if classify is None else classify
     with SessionLocal() as s:
         retag_theme(s, theme_id)
         live = active(s)
-    if live and classify:
-        JOBS["classify_all"]()
-    elif live:
+    if live and not classify:
         print(f"A theme model is live ({live.version}): run classify-items --all after the themes are retagged.")
+    _follow_up(classify=bool(live and classify), recompute=recompute)
+
+
+# The work after a theme save. One thread at a time does it, under the job lock, so two saves close
+# together never run a full re-score beside a recompute on the 512 MB machine. A save that comes
+# while a follow-up waits for the lock joins it. One that comes while it runs gets one more round
+# after it (its retag may have changed links the running re-score had already read), shared by any
+# other save in the meantime.
+_FOLLOW = {"classify": False, "recompute": False, "running": False}
+_FOLLOW_LOCK = threading.Lock()
+
+
+def _follow_up(classify: bool, recompute: bool) -> bool:
+    """Ask for a re-score (classify) and/or a recompute. Returns False when the thread already doing
+    them takes this request over."""
+    from .. import joblock
+    with _FOLLOW_LOCK:
+        _FOLLOW["classify"] |= classify
+        _FOLLOW["recompute"] |= recompute
+        if _FOLLOW["running"]:
+            return False
+        _FOLLOW["running"] = True
+    try:
+        while True:
+            with joblock.held():
+                with _FOLLOW_LOCK:
+                    classify, recompute = _FOLLOW["classify"], _FOLLOW["recompute"]
+                    _FOLLOW["classify"] = _FOLLOW["recompute"] = False
+                    if not (classify or recompute):
+                        _FOLLOW["running"] = False
+                        return True
+                _follow_round(classify, recompute)
+    except BaseException:
+        with _FOLLOW_LOCK:
+            _FOLLOW["running"] = False
+        raise
+
+
+def _follow_round(classify: bool, recompute: bool) -> None:
+    from ..jobs import JOBS
+    from ..scoring import compute_all
+    if classify:
+        JOBS["classify_all"]()
     if recompute:
         with SessionLocal() as s:
             compute_all(s)

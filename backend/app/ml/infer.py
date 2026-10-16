@@ -254,7 +254,8 @@ def classify_items(s: Session, model: ThemeModel, *, since: datetime | None = No
 def reset_model_links(s: Session, chunk: int = 500) -> dict:
     """Undo everything a model wrote: model links go back to what they were (or off), vetoed rule
     links come back. Scores stay for the record. Used when no model should be live.
-    Loads only model links and vetoed rule links, a few hundred articles at a time, committing each."""
+    Loads only model links and vetoed rule links, a few hundred articles at a time, committing each.
+    It does not run the rules: retag-all afterwards turns a link back on wherever they match it."""
     out = Counter()
     touched = or_(ItemTheme.method == "model",
                   (ItemTheme.method == "rule") & func.json_extract(ItemTheme.evidence, "$.veto").is_not(None))

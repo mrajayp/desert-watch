@@ -1,6 +1,8 @@
 #!/bin/sh
 # One-off data steps after deploying the 2026-10-16 review changes. Run from the backend
-# directory as the app user. Idempotent: every step can be re-run.
+# directory as the app user, with the scheduler paused (docs/DEPLOY.md has the whole runbook).
+# Each step takes the job lock, so it waits for a scheduled job that is still running.
+# Idempotent: every step can be re-run.
 #   PY        python to use (default: python)
 #   IMPORTS   folder holding gold_labels_2026-10-16.jsonl, the model bundle and the search JSONL
 #   MODEL     the theme model bundle (.joblib) trained locally on a snapshot after the re-tag

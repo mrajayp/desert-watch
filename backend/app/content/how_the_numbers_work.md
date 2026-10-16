@@ -133,7 +133,7 @@ The lines join each outlet to the districts its articles name. Line thickness is
 
 We take the outlets with at least 10 articles in the last 12 weeks, up to 120 of them. For each one we work out which themes it covers more or less than the average outlet. Outlets with similar patterns are linked, and a standard community method splits them into clusters. Each cluster is named after the two themes it over-covers most.
 
-Arrows between clusters are reprints. Two headlines count as the same story when most of their words match and they appeared within two days of each other. The arrow points from the outlet that published first.
+Arrows between clusters are reprints. Two headlines count as the same story when most of their words match and they appeared within two days of each other. The arrow points from the outlet that published first. A page or channel and its own website count as one outlet here, so a story they both carry draws no arrow between them.
 
 ## Contribute page
 
@@ -151,7 +151,7 @@ Once a week we work out the facts here first. These are the biggest gaps with th
 
 Engagement is how much attention an article got after it came out. We measure two things per article and keep a few dated figures per outlet.
 
-Story pickup is the number of outlets that ran the same story. We use the headline match from the reprint arrows. Most of the words match and the articles appeared within two days of each other. It is worked out whenever the network updates, for the last 12 weeks. Rewritten and translated versions are missed, so it undercounts. Most stories only ever appear in one outlet. Close to nine in ten articles in the last 12 weeks were single-outlet stories. Link shorteners like t.co are left out because they are not outlets.
+Story pickup is the number of outlets that ran the same story. A page or channel and its own website count as one outlet. We use the headline match from the reprint arrows. Most of the words match and the articles appeared within two days of each other. It is worked out whenever the network updates, for the last 12 weeks. Rewritten and translated versions are missed, so it undercounts. Most stories only ever appear in one outlet. Close to nine in ten articles in the last 12 weeks were single-outlet stories. Link shorteners like t.co are left out because they are not outlets.
 
 Facebook engagement is the total that Facebook reports for an article's link. Hover over it to see the breakdown. We read it about two days after the article came out and again after about a week. The week-old reading is the one we trust most. Facebook says its counts are approximate on purpose, so we show them rounded with a ≈ sign. This needs an app ID and secret from a Meta developer account. Until both are set the source shows as waiting for its key. We read at most 400 links a day. If Facebook says we are asking too often we stop and try again six hours later. We skip LANA because its links drew no Facebook posts at all in the 2023-24 scrape.
 

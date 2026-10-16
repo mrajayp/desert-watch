@@ -37,13 +37,17 @@ theme model (app/ml):
   train-small-model         refit the label-trained part of the live model; promote it if it does no worse
   model-status              live model, registry, labels per theme
   activate-model VERSION [--let-nightly] | rollback-model  live by hand; nightly versions then stay inactive
+
+Commands that write data take the job lock (app/joblock.py) first, the same lock the scheduler's jobs
+hold. If a scheduled job is running, the command says so and waits for it to finish.
+Deploy steps and their order: docs/DEPLOY.md.
 """
 import getpass
 import os
 import sys
 
-from .db import SessionLocal, init_db
-from .seed import seed_all
+# Quick or read-only commands that do not wait for a running job. A --dry-run never waits either.
+NO_LOCK = {"init", "create-admin", "invite", "review", "alerts-list", "model-status", "train-theme-model"}
 
 
 def main(argv: list[str]):
@@ -51,6 +55,16 @@ def main(argv: list[str]):
         print(__doc__)
         return 1
     cmd, args = argv[0], argv[1:]
+    if cmd in NO_LOCK or "--dry-run" in args:
+        return _run(cmd, args)
+    from .joblock import held
+    with held(note=lambda m: print(m, file=sys.stderr, flush=True)):
+        return _run(cmd, args)
+
+
+def _run(cmd: str, args: list[str]):
+    from .db import SessionLocal, init_db
+    from .seed import seed_all
     init_db()
     from .ml.commands import COMMANDS as ML_COMMANDS, run as run_ml
     if cmd in ML_COMMANDS:  # no seed_all: the scheduler runs these hourly, and seeding brings back deleted key events

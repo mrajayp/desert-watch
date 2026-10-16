@@ -107,6 +107,14 @@ def _lens_status(s: Session, country_id: int, latest: date | None, themes: list[
     return available, {k: sorted(v) for k, v in with_need.items()}
 
 
+def available_lenses(s: Session, country_id: int) -> set:
+    """The lenses the site offers now, as /api/meta reports them. The weekly digest and the Contribute
+    gap list leave out cells on the other lenses."""
+    themes = s.scalars(select(Theme).where(Theme.active.is_(True))).all()
+    latest = s.scalar(select(func.max(CellWeek.week_start)).where(CellWeek.country_id == country_id))
+    return _lens_status(s, country_id, latest, themes)[0]
+
+
 @router.get("/sources/health")
 def sources_health(s: Session = Depends(get_db), _: User = Depends(auth.current_user)):
     from ..collectors import COLLECTORS, EXTRA_HEALTH, STALE_HOURS

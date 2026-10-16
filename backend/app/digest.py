@@ -85,9 +85,11 @@ def build_facts(s: Session, country: Country, week: date) -> dict:
                          "arabic": c.get("ar", 0), "english": c.get("en", 0),
                          "previous_window": sum(p.values())})
 
-    # scored gaps for every lens that has data this week
+    # scored gaps for every lens the site offers (a lens it switched off has too few judged themes)
+    from .api.gaps import available_lenses
+    offered = available_lenses(s, country.id)
     gaps = []
-    for lens in LENSES:
+    for lens in (k for k in LENSES if k in offered):
         for cell in s.scalars(select(CellWeek).where(CellWeek.country_id == country.id, CellWeek.week_start == week,
                                                      CellWeek.lens == lens, CellWeek.insufficient.is_(False),
                                                      CellWeek.gap.is_not(None))):

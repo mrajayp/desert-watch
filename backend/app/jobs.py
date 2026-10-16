@@ -1,9 +1,10 @@
 """Scheduled jobs. Each opens its own session; collectors are wrapped by run_collector
-so failures are recorded, not raised. Jobs share one lock so SQLite sees one writer."""
+so failures are recorded, not raised. Jobs share one lock so SQLite sees one writer: the job lock
+(joblock.py) covers this process's threads and the CLI commands in other processes, so a deploy's
+data steps and the scheduler's jobs take turns."""
 import logging
-import threading
 
-from . import dedupe, learning, network, scoring
+from . import dedupe, joblock, learning, network, scoring
 from .collectors import COLLECTORS
 from .collectors.base import run_collector
 from .db import SessionLocal
@@ -11,7 +12,6 @@ from .ingest import apply_relevance_guard, infer_bases, infer_scopes
 from .models import Country
 
 log = logging.getLogger("desert_watch.jobs")
-_LOCK = threading.Lock()
 
 # Learned models only switch on above these label counts (plan: sparse-data safeguard).
 THRESHOLDS = {"theme_classifier_new_labels": 50, "gap_ranker_votes": 150}
@@ -19,7 +19,7 @@ THRESHOLDS = {"theme_classifier_new_labels": 50, "gap_ranker_votes": 150}
 
 def _locked(fn):
     def wrapper(*a, **kw):
-        with _LOCK:
+        with joblock.held(note=lambda m: log.info("%s: %s", fn.__name__, m)):
             return fn(*a, **kw)
     wrapper.__name__ = fn.__name__
     return wrapper
@@ -82,6 +82,8 @@ def model_job(source_key: str, *args: str) -> dict | None:
             # one BLAS thread and one fitting thread: the job shares a 512 MB machine with the web process
             env = {**os.environ, "OPENBLAS_NUM_THREADS": "1", "OMP_NUM_THREADS": "1", "MKL_NUM_THREADS": "1",
                    "DW_NJOBS": "1"}
+            if joblock.is_held():  # the child's command must not wait for the lock its parent holds
+                env[joblock.HELD_ENV] = "1"
             p = subprocess.run([sys.executable, "-m", "app.cli", *args], cwd=Path(__file__).resolve().parents[1],
                                capture_output=True, text=True, encoding="utf-8", timeout=3600, env=env)
             try:

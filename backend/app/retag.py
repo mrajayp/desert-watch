@@ -2,9 +2,12 @@
 
 Only rule and query links change: a rule link is active when the rules match, a query link
 (a search or alert result) is active only when the rules confirm it. A rule link the rules no
-longer confirm becomes a query link when the item's own search or alert asked for that theme. User corrections and
-learned-model links are never touched. Articles are read in id order, BATCH at a time, and
-each batch is committed and dropped from the session so memory stays flat.
+longer confirm becomes a query link when the item's own search or alert asked for that theme. User corrections are
+never touched. A learned-model link stays the model's while the rules do not match it. Once they
+do, it goes back to the rules as an active rule link (its score stays in the score column), so it
+no longer depends on the model alone: a later classify-items --reset or a version that scores it
+lower leaves it counted. Articles are read in id order, BATCH at a time, and each batch is
+committed and dropped from the session so memory stays flat.
 
 With a theme model live the decision is 'rule OR p >= t' for non-gender themes (ml/infer.py), so a
 link the rules no longer confirm stays counted when its stored score is at or above the live
@@ -12,14 +15,15 @@ threshold: it becomes the model's link (method 'model', evidence kept, 'was' say
 to). A gender rule link the model vetoed (evidence.veto) stays off while the rules still match.
 Re-tagging scores nothing itself: classify-items --all brings the rest in line afterwards.
 
-Writes are guarded UPDATEs (WHERE method is still 'rule' or 'query'), so a correction a user
-makes while a batch is being worked out is never written over. A dry run writes nothing at all:
+Writes are guarded UPDATEs (WHERE method is still the one the plan was worked out from), so a
+correction a user makes, or a change the model makes, while a batch is being worked out is never
+written over. A dry run writes nothing at all:
 it works out the same changes in memory and adds them to the counts taken at the start, so it
 never holds the database write lock."""
 from collections import Counter
 from dataclasses import dataclass, field
 
-from sqlalchemy import and_, bindparam, case, func, insert, or_, select
+from sqlalchemy import and_, bindparam, case, func, insert, select
 from sqlalchemy.orm import Session
 
 from .classify import clean_snippet, tag_places
@@ -35,7 +39,7 @@ _T, _R = ItemTheme.__table__, ItemRegion.__table__
 @dataclass
 class Plan:
     """What re-tagging changes for one article.
-    links: theme_id -> (method, active, theme_version, evidence, new row?)
+    links: theme_id -> (method, active, theme_version, evidence, method it was worked out from or None for a new row)
     regions: region_id -> (active, new row?)"""
     links: dict = field(default_factory=dict)
     regions: dict = field(default_factory=dict)
@@ -56,9 +60,10 @@ def model_thresholds(s: Session) -> dict[int, float]:
 
 def plan_item(item: Item, rules: Rules, links: dict, regions: dict | None = None, themes: list | None = None,
               alert_themes: dict | None = None, model_t: dict | None = None) -> Plan:
-    """Bring one article's rule and query links in line with the rules. `links` maps theme_id ->
-    ItemTheme; with `regions` (region_id -> ItemRegion) rule place tags are re-run too. `model_t`
-    (model_thresholds) keeps the links the live model supports. Reads only."""
+    """Bring one article's rule and query links in line with the rules, and give a model link the
+    rules match back to them. `links` maps theme_id -> ItemTheme; with `regions` (region_id ->
+    ItemRegion) rule place tags are re-run too. `model_t` (model_thresholds) keeps the links the
+    live model supports. Reads only."""
     themes = rules.themes if themes is None else themes
     snippet = clean_snippet(item.source_key, item.title, item.snippet)
     hits = theme_hits(rules, item.title, snippet, themes)
@@ -67,7 +72,12 @@ def plan_item(item: Item, rules: Rules, links: dict, regions: dict | None = None
         lk, hit = links.get(r.theme_id), hits.get(r.theme_id)
         if lk is None:
             if hit:
-                p.links[r.theme_id] = ("rule", True, r.version, evidence(*hit, query_key(item, r.slug, alert_themes)), True)
+                p.links[r.theme_id] = ("rule", True, r.version, evidence(*hit, query_key(item, r.slug, alert_themes)), None)
+            continue
+        if lk.method == "model":
+            if hit:  # the rules match the model's link (again, or a new term): it goes back to the rules
+                p.links[r.theme_id] = ("rule", True, r.version, evidence(*hit, query_key(item, r.slug, alert_themes)),
+                                       "model")
             continue
         if lk.method not in OURS:
             continue
@@ -88,7 +98,7 @@ def plan_item(item: Item, rules: Rules, links: dict, regions: dict | None = None
             method, active, ev = "model", True, {**stored, "model": lk.score, "was": method}
         new = (method, active, r.version, ev)
         if (lk.method, lk.active, lk.theme_version, lk.evidence) != new:
-            p.links[r.theme_id] = (*new, False)
+            p.links[r.theme_id] = (*new, lk.method)
     if regions is not None:
         placed = set(tag_places(" ".join(x for x in (item.title, snippet) if x), rules.places))
         for rid in placed - regions.keys():
@@ -102,7 +112,7 @@ def plan_item(item: Item, rules: Rules, links: dict, regions: dict | None = None
 # ---------------------------------------------------------------- writing
 _UPD_LINK = (_T.update()
              .where(_T.c.item_id == bindparam("k_item"), _T.c.theme_id == bindparam("k_theme"),
-                    or_(_T.c.method == "rule", _T.c.method == "query"))
+                    _T.c.method == bindparam("k_method", type_=_T.c.method.type))
              .values(method=bindparam("v_method", type_=_T.c.method.type),
                      active=bindparam("v_active", type_=_T.c.active.type),
                      theme_version=bindparam("v_version", type_=_T.c.theme_version.type),
@@ -127,12 +137,12 @@ def _insert_new(s: Session, table):
 def write_plans(s: Session, plans: list[tuple[int, Plan]]) -> None:
     upd, new, rupd, rnew = [], [], [], []
     for item_id, p in plans:
-        for tid, (method, active, version, ev, is_new) in p.links.items():
-            if is_new:
+        for tid, (method, active, version, ev, was) in p.links.items():
+            if was is None:
                 new.append({"item_id": item_id, "theme_id": tid, "method": method, "active": active,
                             "theme_version": version, "evidence": ev, "score": None, "model_version": None})
             else:
-                upd.append({"k_item": item_id, "k_theme": tid, "v_method": method, "v_active": active,
+                upd.append({"k_item": item_id, "k_theme": tid, "k_method": was, "v_method": method, "v_active": active,
                             "v_version": version, "v_evidence": ev})
         for rid, (active, is_new) in p.regions.items():
             if is_new:

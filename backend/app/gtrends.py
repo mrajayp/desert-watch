@@ -167,8 +167,9 @@ def flag_missing_weeks(s: Session, country_id: int | None = None) -> int:
     """A search-lens cell is insufficient unless every week of its window has search data (a week
     Google held back, or one we have not fetched yet, counts as missing). On a theme we measure
     its reason becomes no_search_data, except a week still coming in, which keeps in_progress.
-    A theme with no search data at all keeps no_need_data (we do not measure it). Runs after
-    scoring; returns how many cells it marked."""
+    A theme with no search data at all keeps no_need_data (we do not measure it). Every cell that
+    misses a week also loses its 4-week usual level (expected_4w), so no page quotes one for a
+    window the search data does not cover. Runs after scoring; returns how many cells it marked."""
     from . import settings
     from .models import CellWeek, Item, ItemTheme
     have = set()
@@ -193,6 +194,7 @@ def flag_missing_weeks(s: Session, country_id: int | None = None) -> int:
             continue
         b = dict(c.breakdown or {})
         b["search_missing_weeks"] = missing
+        b["expected_4w"] = None
         if c.theme_id in measured and not b.get("in_progress"):
             b["reason"] = "no_search_data"
         c.breakdown = b
