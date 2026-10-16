@@ -292,3 +292,18 @@ def test_apply_theme_terms_touches_only_term_fields(db):
     assert gov.en_terms == ["admin term"] and gov.version == v_gov and terms_gov != gov.en_terms
     assert apply_theme_terms(db, ["security"]) == {"security": []}       # unchanged: no new version
     assert sec.version == v_sec + 1
+
+
+def test_admin_theme_edit_keeps_fields_the_form_does_not_send(client, users, db):
+    from tests.conftest import login
+    gv = db.scalar(select(Theme).where(Theme.slug == "gender_violence"))
+    sec = db.scalar(select(Theme).where(Theme.slug == "security"))
+    cooc, veto = gv.cooc, sec.veto
+    login(client, "admin@example.org", "admin-password-1")
+    form = lambda t: {"name_en": t.name_en, "name_ar": t.name_ar, "en_terms": t.en_terms, "ar_terms": t.ar_terms,  # noqa: E731
+                      "exclude": t.exclude, "active": True, "acled_event_types": [], "reliefweb_themes": []}
+    assert client.put(f"/api/themes/{gv.id}", json=form(gv)).status_code == 200
+    assert client.put(f"/api/themes/{sec.id}", json=form(sec)).status_code == 200
+    db.expire_all()
+    assert gv.cooc == cooc and gv.strict and gv.group == "gender"
+    assert sec.veto == veto and veto

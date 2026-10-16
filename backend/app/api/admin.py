@@ -92,7 +92,8 @@ def update_theme(tid: int, body: ThemeIn, bg: BackgroundTasks, s: Session = Depe
     t = s.get(Theme, tid)
     if not t:
         raise HTTPException(404, "Unknown theme")
-    for k, v in body.model_dump().items():
+    # fields the form does not send (cooc, strict, group, veto, mask) keep their stored values
+    for k, v in body.model_dump(exclude_unset=True).items():
         if v is not None or k not in ("veto", "mask"):
             setattr(t, k, v)
     t.version += 1

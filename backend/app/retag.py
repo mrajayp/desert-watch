@@ -55,23 +55,24 @@ def retag_item(s: Session, item: Item, rules: Rules, links: dict, regions: dict 
     return n
 
 
-def _batches(s: Session, batch: int, item_filter=()):
+def _batches(s: Session, batch: int):
     """Articles in id order, `batch` at a time, with their theme and region links."""
     last = 0
     while True:
-        items = s.scalars(select(Item).where(Item.kind == "article", Item.id > last, *item_filter)
+        items = s.scalars(select(Item).where(Item.kind == "article", Item.id > last)
                           .order_by(Item.id).limit(batch)).all()
         if not items:
             return
-        lo, hi = items[0].id, items[-1].id
+        last = items[-1].id
+        # by id range, articles only: page-view items sit between articles and carry many links
+        span = (Item.kind == "article", Item.id.between(items[0].id, last))
         links: dict = {}
-        for lk in s.scalars(select(ItemTheme).where(ItemTheme.item_id.between(lo, hi))):
+        for lk in s.scalars(select(ItemTheme).join(Item, Item.id == ItemTheme.item_id).where(*span)):
             links.setdefault(lk.item_id, {})[lk.theme_id] = lk
         regions: dict = {}
-        for ir in s.scalars(select(ItemRegion).where(ItemRegion.item_id.between(lo, hi))):
+        for ir in s.scalars(select(ItemRegion).join(Item, Item.id == ItemRegion.item_id).where(*span)):
             regions.setdefault(ir.item_id, {})[ir.region_id] = ir
         yield items, links, regions
-        last = hi
 
 
 def _done_batch(s: Session, dry_run: bool) -> None:
