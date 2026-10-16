@@ -1,6 +1,7 @@
 """Labelling for the theme model: full theme-set labels on an article, the review queue that picks
 what to label next, and the model registry for admins. No scikit-learn here: scores come from
 item_theme and from item.extra['model'], which classify-items writes."""
+import random
 import re
 from datetime import timedelta
 
@@ -53,7 +54,7 @@ def label_item(item_id: int, body: LabelsIn, s: Session = Depends(get_db), u: Us
     by_id = {t.id: t for t in active}
     if any(t not in by_id for t in body.themes):
         raise HTTPException(400, "Unknown or switched-off theme")
-    chosen = set(body.themes)
+    chosen = set(body.themes) if body.libya else set()  # not about the country: no theme counts
     cluster = duplicate_cluster(s, it)
     for x in cluster:
         for t in active:
@@ -103,8 +104,9 @@ def review_queue(n: int = 10, country: str = "LY", s: Session = Depends(get_db),
                                                              *conds))) if ids else set()
 
     queues: list[tuple[str, list[int]]] = []
-    if live:
-        queues.append(("uncertain", [r[0] for r in sorted((r for r in rows if r[3] is not None), key=lambda r: -r[3])[:n]]))
+    if live:  # u: how close the score nearest to its bar is (1 = right at it); shuffled within the top 3n
+        top = [r[0] for r in sorted((r for r in rows if r[3]), key=lambda r: -r[3])[:n * 3]]
+        queues.append(("uncertain", random.sample(top, min(n, len(top)))))
     women = [r[0] for r in rows if _WOMEN_RE.search(text[r[0]])][:n * 20]
     has_gender = linked(women, ItemTheme.theme_id.in_([t.id for t in themes if t.group == "gender"]))
     queues.append(("gender_candidate", [i for i in women if i not in has_gender][:n]))
@@ -132,7 +134,8 @@ def review_queue(n: int = 10, country: str = "LY", s: Session = Depends(get_db),
         mark = (rows[d["id"]].extra or {}).get("model") or {}
         scores = {str(x["theme_id"]): x["score"] for x in d["theme_detail"] if x["score"] is not None}
         scores |= {str(slug2id[sl]): p for sl, p in (mark.get("near") or {}).items() if sl in slug2id}
-        d.update(reason=picks[d["id"]], scores=scores, uncertainty=mark.get("u"), generic_term=generic_terms.get(d["id"]))
+        d.update(reason=picks[d["id"]], scores=scores, uncertainty=mark.get("u"), closest=mark.get("ut"),
+                 generic_term=generic_terms.get(d["id"]))
     return {"items": out, "model": live.version if live else None, "labelled": len(done)}
 
 
@@ -140,18 +143,22 @@ def review_queue(n: int = 10, country: str = "LY", s: Session = Depends(get_db),
 @router.get("/admin/models")
 def models(s: Session = Depends(get_db), _: User = Depends(auth.require_admin)):
     themes = s.scalars(select(Theme).where(Theme.active.is_(True)).order_by(Theme.id)).all()
-    stats = L.theme_stats(L.item_vectors(s, themes), themes)
+    vectors = L.item_vectors(s, themes)
+    stats = L.theme_stats(vectors, themes)
+    people = L.theme_stats(vectors, themes, people_only=True)
     live = registry.active(s)
     m = (live.metrics or {}).get("themes", {}) if live else {}
     rows = s.scalars(select(ModelRegistry).order_by(ModelRegistry.id.desc())).all()
     by = s.execute(select(Label.origin, Label.label_type, func.count()).group_by(Label.origin, Label.label_type)).all()
     return {
         "active": live.version if live else None,
+        "pinned": registry.is_pinned(live),
         "models": [registry.row_json(r) for r in rows],
         "labels": {"by_origin": {o: sum(n for oo, _, n in by if oo == o) for o in {o for o, _, _ in by}},
                    "by_type": {t: sum(n for _, tt, n in by if tt == t) for t in {t for _, t, _ in by}},
                    "by_origin_and_type": [{"origin": o, "label_type": t, "n": n} for o, t, n in by]},
         "themes": [{"id": t.id, "slug": t.slug, "group": t.group, **stats[t.slug],
+                    "people_labelled": people[t.slug]["labelled"], "people_positives": people[t.slug]["positives"],
                     "threshold": (live.thresholds or {}).get(t.slug) if live else None,
                     "gate": m.get(t.slug, {}).get("gate")} for t in themes],
         "links": {"model": s.scalar(select(func.count()).where(ItemTheme.method == "model", ItemTheme.active.is_(True))),
@@ -161,14 +168,20 @@ def models(s: Session = Depends(get_db), _: User = Depends(auth.require_admin)):
 
 
 @router.post("/admin/models/{version}/activate")
-def activate_model(version: str, bg: BackgroundTasks, s: Session = Depends(get_db),
+def activate_model(version: str, bg: BackgroundTasks, pin: bool = True, s: Session = Depends(get_db),
                    _: User = Depends(auth.require_admin)):
-    """Make a version live (also how to roll back), then re-score every article with it."""
+    """Make a version live (also how to roll back), then re-score every article with it. A version made
+    live here is pinned: nightly retraining keeps new versions inactive until an admin activates one.
+    pin=false on the live version lets nightly retraining replace it again (no re-score)."""
     from ..jobs import JOBS
+    was = registry.active(s)
     try:
-        row = registry.activate(s, version)
+        row = registry.activate(s, version, by_hand=pin)
     except ValueError:
         raise HTTPException(404, "Unknown model version")
+    except FileNotFoundError:
+        raise HTTPException(409, "This version's file was removed to save space. Pick a newer one.")
     s.commit()
-    bg.add_task(JOBS["classify_all"])
+    if not (was and was.id == row.id):
+        bg.add_task(JOBS["classify_all"])
     return registry.row_json(row)

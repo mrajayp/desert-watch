@@ -14,7 +14,7 @@ from sqlalchemy import select
 from app.ingest import load_rules, store_article
 from app.ml import labels as L
 from app.ml import registry
-from app.models import Country, Event, Item, ItemTheme, Label, ModelRegistry, SourceRun, Theme, utcnow
+from app.models import Country, Event, Item, ItemTheme, KeyEvent, Label, ModelRegistry, SourceRun, Theme, utcnow
 
 from .conftest import ids, login
 
@@ -55,13 +55,19 @@ def make_corpus(db, n_per_topic=40, seed=0) -> dict[int, str | None]:
     return truth
 
 
-def add_labels(db, truth: dict, n: int, seed: int = 1, origin: str = "explicit", start: int = 0) -> list[int]:
+def add_labels(db, truth: dict, n: int, seed: int = 1, origin: str = "explicit", start: int = 0,
+               ref: str | None = None, noise: bool = False) -> list[int]:
+    """n theme_set labels on synthetic items. ref: a review tag (source_ref '<ref>:<id>', as
+    import-gold-labels writes). noise: random themes instead of the true one."""
     of = [t.slug for t in db.scalars(select(Theme).where(Theme.active.is_(True)))]
-    picked = random.Random(seed).sample(sorted(truth), n)
+    rng = random.Random(seed)
+    picked = rng.sample(sorted(truth), n)
     for i, iid in enumerate(picked):
+        themes = rng.sample(of, 3) if noise else [truth[iid]] if truth[iid] else []
         db.add(Label(label_type="theme_set", object_type="item", object_key=str(iid), origin=origin,
-                     weight=1.0 if origin == "explicit" else 0.5, source_ref=f"t:{start + i}:{iid}",
-                     value={"themes": [truth[iid]] if truth[iid] else [], "libya": True, "of": of}))
+                     weight=1.0 if origin == "explicit" else 0.5,
+                     source_ref=f"{ref}:{iid}" if ref else f"t:{start + i}:{iid}",
+                     value={"themes": themes, "libya": True, "of": of}))
     db.commit()
     return picked
 
@@ -102,7 +108,11 @@ def test_label_vectors_priority_and_shapes(db):
     assert v[4]["y"] == {themes["services"]: 1}
     st = L.theme_stats(v, t_all)
     assert st["economy"] == {"labelled": 2, "positives": 0}
+    assert v[1]["o"][themes["health"]] == "explicit" and v[3]["o"][themes["migration"]] == "silver"
+    people = L.theme_stats(v, t_all, people_only=True)  # what the gender veto gate counts
+    assert people["migration"] == {"labelled": 1, "positives": 0} and people["security"] == {"labelled": 1, "positives": 1}
     assert L.labelled_item_ids(db) >= {1, 2, 3, 4}
+    assert L.gold_tag("gold_labels_2026-10-16.jsonl") == "gold2026-10-16"
 
 
 def test_import_gold_labels_idempotent(db, tmp_path):
@@ -144,10 +154,16 @@ def test_registry_activate_and_rollback(db, tmp_path):
 
 
 def test_should_promote():
-    from app.ml.train import should_promote
-    assert should_promote({"non_gender": 0.70, "gender": 0.60}, {"non_gender": 0.705, "gender": 0.60})[0]
-    assert not should_promote({"non_gender": 0.68, "gender": 0.70}, {"non_gender": 0.70, "gender": 0.60})[0]
-    assert not should_promote({"non_gender": 0.75, "gender": 0.59}, {"non_gender": 0.70, "gender": 0.60})[0]
+    from app.ml.train import live_reference, should_promote
+    assert should_promote(0.70, 0.705)[0]
+    assert not should_promote(0.68, 0.70)[0]
+    assert should_promote(0.75, 0.70, {"gender_violence": (0.80, 0.80)})[0]
+    assert not should_promote(0.75, 0.70, {"gender_violence": (0.79, 0.80)})[0]
+    # bundles from before the reference block: the gold file named in eval_set
+    old = {"metrics": {"eval_set": "gold_labels_2026-10-16.jsonl", "eval_items": 502,
+                       "macro": {"non_gender": {"model": {"f1": 0.72}}}}}
+    assert live_reference(old) == {"set": "gold2026-10-16", "items": 502, "non_gender": 0.72}
+    assert live_reference({"metrics": {"eval_set": "all labelled items"}}) is None
 
 
 # ---------------------------------------------------------------- decision rule (fake model)
@@ -213,28 +229,75 @@ def test_decision_rule(db):
     db.expire_all()
     assert db.get(ItemTheme, (d.id, themes["gender_violence"])).active
     run({A: [0.1, 0.9, 0.0], B: [0, 0, 0], D: [0.0, 0.0, 0.1]}, [False, False, True])
+    assert db.get(Item, a.id).extra["model"]["ut"] in slugs and 0 <= db.get(Item, a.id).extra["model"]["u"] <= 1
     assert reset_model_links(db) == {"model_links_off": 1, "vetoes_lifted": 1}
     db.expire_all()
     assert db.get(ItemTheme, (d.id, themes["gender_violence"])).active
     assert not db.get(ItemTheme, (a.id, themes["migration"])).active
 
 
+def test_label_saved_during_a_batch_wins(db, monkeypatch):
+    """A person labels an article after the batch loaded its links and before it writes them."""
+    from app.db import SessionLocal
+    from app.ml import infer
+    themes, _ = ids(db)
+    c = db.scalar(select(Country))
+    rules = load_rules(db, c.id)
+    when = utcnow() - timedelta(days=1)
+    A, D = "Militia clashes in Tripoli, Libya", "Domestic violence against a woman in Sabha, Libya"
+    a, _ = store_article(db, c.id, rules, url="https://ex.ly/A", title=A, published_at=when, source_key="rss")
+    d, _ = store_article(db, c.id, rules, url="https://ex.ly/D", title=D, published_at=when, source_key="rss")
+    db.commit()
+    real_lock = infer._take_write_lock
+
+    def person_then_lock(s):
+        with SessionLocal() as other:  # what POST /api/items/{id}/labels writes
+            other.add(ItemTheme(item_id=a.id, theme_id=themes["migration"], method="user", active=False))
+            lk = other.get(ItemTheme, (d.id, themes["gender_violence"]))
+            lk.method, lk.active = "user", True
+            it = other.get(Item, a.id)
+            it.extra = {**(it.extra or {}), "user_relevance": True}
+            other.commit()
+        real_lock(s)
+
+    monkeypatch.setattr(infer, "_take_write_lock", person_then_lock)
+    slugs = ["security", "migration", "gender_violence"]
+    res = infer.classify_items(db, FakeModel(slugs, {A: [0.9, 0.9, 0.0], D: [0.0, 0.0, 0.1]}, [0.3, 0.3, 0.5],
+                                             [False, False, True]))
+    db.expire_all()
+    assert res["kept_for_people"] == 2 and res["failed_items"] == 0
+    m = db.get(ItemTheme, (a.id, themes["migration"]))
+    assert m.method == "user" and not m.active                  # the model's new link gave way
+    g = db.get(ItemTheme, (d.id, themes["gender_violence"]))
+    assert g.method == "user" and g.active and "veto" not in (g.evidence or {})
+    ex = db.get(Item, a.id).extra
+    assert ex["user_relevance"] is True and ex["model"]["v"] == "fake-1"
+
+
 # ---------------------------------------------------------------- training end to end (small synthetic corpus)
+REF = "gold2026-10-16"
+
+
 def test_train_register_classify_retrain(db, tmp_path):
     from app.ml.infer import ThemeModel, classify_items, load_bundle
-    from app.ml.train import bundle_meta, retrain_small, save_bundle, train_full
+    from app.ml.train import bundle_meta, labels_fingerprint, retrain_small, save_bundle, train_full
     truth = make_corpus(db)
-    add_labels(db, truth, 150)
+    add_labels(db, truth, 150, origin="silver", ref=REF)  # the review labels: the fixed reference set
     b = train_full(db, None, n_keep=3000, min_df=(1, 1), log=lambda m: None)
     assert b["base"]["items"] == len(truth) - 150
     assert set(b["thresholds"]) == set(b["themes"]) and all(0 < t < 1 for t in b["thresholds"].values())
     assert b["policy"]["security"] == "or" and b["policy"]["gender_violence"] == "and"
-    assert set(b["gates"]) == {t for t in b["themes"] if t.startswith("gender")}
     m = b["metrics"]
     assert m["eval_items"] == 150 and m["themes"]["security"]["eval_positives"] > 10
+    assert m["reference"]["set"] == REF and m["reference"]["non_gender"] == m["macro"]["non_gender"]["model"]["f1"]
     assert m["themes"]["security"]["model"]["f1"] >= 0.7 and m["macro"]["non_gender"]["model"]["f1"] is not None
     assert m["themes"]["security"]["rules"]["p_ci"][0] <= m["themes"]["security"]["rules"]["p"]
     assert b["small_has"][b["themes"].index("security")] and not b["small_has"][b["themes"].index("gender_lgbtq")]
+    # silver labels never open the gender veto, however many there are
+    gv = m["themes"]["gender_violence"]
+    assert b["gates_from"] == "people" and set(b["gates"]) == {t for t in b["themes"] if t.startswith("gender")}
+    assert not any(b["gates"].values()) and gv["positives"] >= 10 and gv["people"]["labelled"] == 0
+    assert not ThemeModel(dict(b, gates={"gender_violence": True}, gates_from=None)).veto.any()  # an old bundle
 
     path = save_bundle(b, tmp_path / "bundle.joblib")
     row = registry.register(db, path, bundle_meta(b), activate_now=True)
@@ -250,17 +313,87 @@ def test_train_register_classify_retrain(db, tmp_path):
     assert scored and all(x.model_version == b["version"] for x in scored)
     assert all((it.extra or {}).get("model", {}).get("v") == b["version"] for it in db.scalars(select(Item)))
 
-    assert retrain_small(db, load_bundle(row.path)) == (None, {"skipped": "no new labels since the live model"})
-    add_labels(db, truth, 5, seed=7, start=1000)
-    cand, decision = retrain_small(db, load_bundle(row.path))
-    assert cand["version"].endswith("-small") and isinstance(decision["promote"], bool)
-    assert cand["thresholds"] == b["thresholds"]  # fewer than 100 new labels: live thresholds kept
-    assert cand["metrics"]["compared_with"] == b["version"]
+    live = load_bundle(row.path)
+    assert retrain_small(db, live)[0] is None  # nothing new
+    add_labels(db, truth, 5, seed=7, start=1000)  # five correct labels from people
+    assert retrain_small(db, live, seen=[labels_fingerprint(db)])[0] is None  # already tried on this live version
+    cand, decision = retrain_small(db, live)
+    assert cand["version"].endswith("-small") and cand["metrics"]["compared_with"] == b["version"]
+    assert {sl: t for sl, t in cand["thresholds"].items() if b["policy"][sl] == "or"} == \
+        {sl: t for sl, t in b["thresholds"].items() if b["policy"][sl] == "or"}  # < 100 new labels: kept
+    comp = cand["metrics"]["comparison"]
+    assert comp["set"] == REF and comp["items"] == 150 and comp["live"]["non_gender"] == m["reference"]["non_gender"]
+    assert decision["promote"], decision["reason"]
+
+    # people label the same 150 articles: now the gate counts them (and only them)
+    add_labels(db, truth, 150, origin="explicit", start=2000)
+    cand, _ = retrain_small(db, live)
+    gv = cand["metrics"]["themes"]["gender_violence"]
+    assert gv["people"]["labelled"] >= 150 and gv["people"]["positives"] >= 10
+    assert gv["gate"] == (0 < gv["people"]["veto_cv"]["f1"] >= gv["people"]["rules"]["f1"])
+
+    # 400 wrong labels from people: the candidate is worse on the review set and stays inactive
+    add_labels(db, truth, 300, seed=99, start=5000, noise=True)
+    cand, decision = retrain_small(db, live)
+    comp = cand["metrics"]["comparison"]
+    assert not decision["promote"], decision["reason"]
+    assert comp["candidate"]["non_gender"] < comp["live"]["non_gender"] - 0.01
+    assert not any(cand["gates"].values())  # random labels never open a gender veto (it finds nothing right)
+
+
+def test_nightly_respects_a_hand_pick_and_prunes_old_files(client, users, db, tmp_path, monkeypatch):
+    from app import jobs
+    from app.ml import commands, infer, train
+    n = iter(range(100))
+
+    def fake_retrain(s, bundle, seen=(), log=None):
+        i = next(n)
+        return ({"version": f"theme-n{i:02d}-small", "metrics": {}, "thresholds": {},
+                 "trained_on": {"labels": {"fingerprint": [i, i]}, "small_from": bundle["version"]}},
+                {"promote": True, "reason": "passed"})
+
+    def fake_save(b, path):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"x")
+        return path
+
+    monkeypatch.setattr(train, "retrain_small", fake_retrain)
+    monkeypatch.setattr(train, "save_bundle", fake_save)
+    monkeypatch.setattr(infer, "load_bundle", lambda p: {"version": registry.active(db).version})
+    registry.register(db, *_fake_bundle_file(tmp_path, "theme-base"), activate_now=True)
+    db.commit()
+    out = commands.train_small_model(db, [])
+    assert out["promoted"] and registry.active(db).version == "theme-n00-small" and not out["pinned"]
+    registry.activate(db, "theme-base", by_hand=True)  # an admin goes back by hand
+    db.commit()
+    out = commands.train_small_model(db, [])
+    assert not out["promoted"] and out["pinned"] and registry.active(db).version == "theme-base"
+    assert "made live by hand" in registry.get(db, out["version"]).note
+    registry.set_pinned(db, False)  # Admin: let nightly updates take over
+    db.commit()
+    for _ in range(8):
+        assert commands.train_small_model(db, [])["promoted"]
+    db.expire_all()
+    rows = {r.version: r for r in db.scalars(select(ModelRegistry))}
+    with_file = {v for v, r in rows.items() if registry.has_file(r)}
+    assert len([v for v in with_file if v.endswith("-small")]) == registry.KEEP_NIGHTLY and "theme-base" in with_file
+    assert "theme-n00-small" not in with_file and rows["theme-n00-small"].trained_on["file_removed"]
+    with pytest.raises(FileNotFoundError):
+        registry.activate(db, "theme-n00-small")
+    monkeypatch.setitem(jobs.JOBS, "classify_all", lambda: None)
+    login(client, "admin@example.org", "admin-password-1")
+    assert client.post("/api/admin/models/theme-n00-small/activate").status_code == 409
+    assert {m["version"]: m["file"] for m in client.get("/api/admin/models").json()["models"]}["theme-n00-small"] is False
 
 
 def test_cli_commands(db, capsys):
     from app.cli import main
+    ev = db.scalar(select(KeyEvent))  # config-seeded; an admin deleted it
+    db.delete(ev)
+    db.commit()
     assert main(["classify-items", "--days", "3"]) == 0
+    db.expire_all()
+    assert db.scalar(select(KeyEvent).where(KeyEvent.label == ev.label)) is None  # the hourly job does not re-seed
     assert json.loads(capsys.readouterr().out.strip().splitlines()[-1])["skipped"] == "no active theme model"
     assert main(["model-status"]) == 0
     assert json.loads(capsys.readouterr().out.strip().splitlines()[-1])["active"] is None
@@ -304,6 +437,9 @@ def test_full_vector_labels_cover_duplicates(client, users, db):
     db.expire_all()
     assert not db.get(Item, a.id).relevant and not db.get(Item, b.id).relevant
     assert db.get(Item, b.id).extra["user_relevance"] is False
+    client.post(f"/api/items/{a.id}/labels", json={"themes": [themes["health"]], "libya": False})
+    db.expire_all()
+    assert not db.get(ItemTheme, (a.id, themes["health"])).active  # not about Libya: no theme counts
     assert client.post(f"/api/items/{a.id}/labels", json={"themes": [99999], "libya": True}).status_code == 400
     create_user(db, "v@example.org", "viewer-password-1", "Viewer", "viewer")
     db.commit()
@@ -339,7 +475,7 @@ def test_review_queue(client, users, db, tmp_path):
     g1 = mk("g1", "Minister visits Sabha, Libya")
     g2 = mk("g2", "Minister opens a school in Misrata, Libya")
     u = mk("u", "Talks continue in Tripoli, Libya")
-    u.extra = {"model": {"v": "theme-x", "u": 4.2, "near": {"health": 0.12}}}
+    u.extra = {"model": {"v": "theme-x", "u": 0.93, "ut": "health", "near": {"health": 0.12}}}
     db.commit()
     login(client, "j@example.org", "journo-password-1")
     d = client.get("/api/review-queue?n=10").json()
@@ -355,6 +491,7 @@ def test_review_queue(client, users, db, tmp_path):
     by = {x["id"]: x for x in d["items"]}
     assert g1.id not in by and g2.id in by
     assert by[u.id]["reason"] == "uncertain" and by[u.id]["scores"] == {str(themes["health"]): 0.12}
+    assert by[u.id]["closest"] == "health"
     assert d["model"] == "theme-x" and d["labelled"] >= 1
 
 
@@ -373,9 +510,13 @@ def test_admin_models(client, users, db, tmp_path, monkeypatch):
     d = client.get("/api/admin/models").json()
     assert d["active"] == "theme-1" and [m["version"] for m in d["models"]] == ["theme-2", "theme-1"]
     assert {t["slug"] for t in d["themes"]} >= {"security", "gender_violence"}
-    assert client.post("/api/admin/models/theme-2/activate").json()["active"] is True
+    r = client.post("/api/admin/models/theme-2/activate").json()
+    assert r["active"] is True and r["pinned"] is True  # picked by hand: nightly versions stay inactive
     assert queued == ["classify_all"]  # a newly live version re-scores everything
-    assert client.get("/api/admin/models").json()["active"] == "theme-2"
+    d = client.get("/api/admin/models").json()
+    assert d["active"] == "theme-2" and d["pinned"] is True
+    assert client.post("/api/admin/models/theme-2/activate?pin=false").json()["pinned"] is False
+    assert queued == ["classify_all"]  # already live: no second re-score
     assert client.post("/api/admin/models/nope/activate").status_code == 404
     learning = client.get("/api/admin/learning").json()
     assert learning["models"][0]["version"] == "theme-2" and learning["note"] is None
@@ -407,9 +548,13 @@ def test_fields_the_frontend_reads(client, users, db, tmp_path):
     by = {(x["origin"], x["label_type"]): x["n"] for x in m["labels"]["by_origin_and_type"]}
     assert by[("explicit", "theme_set")] == 1 and by[("silver", "theme_set")] == 1
     assert set(m["links"]) == {"model", "vetoed"}
-    assert {"slug", "group", "labelled", "positives", "threshold", "gate"} <= set(m["themes"][0])
+    assert {"slug", "group", "labelled", "positives", "people_labelled", "people_positives", "threshold",
+            "gate"} <= set(m["themes"][0])
+    h = next(t for t in m["themes"] if t["id"] == themes["health"])
+    assert h["people_labelled"] == 1 and h["people_positives"] == 1
     live = next(x for x in m["models"] if x["active"])
-    assert {"version", "created_at", "trained_on", "metrics", "note"} <= set(live)
+    assert {"version", "created_at", "trained_on", "metrics", "note", "pinned", "file"} <= set(live)
+    assert "pinned" in m
     assert live["trained_on"]["labels"]["items"] == 3
 
 
@@ -420,16 +565,23 @@ def test_model_job_runs_in_child_process(db, tmp_path, monkeypatch):
 
     def fake_run(cmd, **kw):
         calls.append(cmd)
-        return subprocess.CompletedProcess(cmd, 0, stdout='table\n{"changed": 7}\n', stderr="")
+        assert kw["env"]["DW_NJOBS"] == "1" and kw["env"]["OPENBLAS_NUM_THREADS"] == "1"
+        if "boom" in cmd:
+            raise OSError("no such file")
+        return subprocess.CompletedProcess(cmd, 0, stdout='table\n{"changed": 7, "reason": "x"}\n', stderr="")
 
     monkeypatch.setattr(subprocess, "run", fake_run)
     assert jobs.model_job("theme_model", "classify-items", "--days", "3") is None and not calls  # no live model
     registry.register(db, *_fake_bundle_file(tmp_path, "theme-j"), activate_now=True)
     db.commit()
-    assert jobs.model_job("theme_model", "classify-items", "--days", "3") == {"changed": 7}
+    assert jobs.model_job("theme_model", "classify-items", "--days", "3") == {"changed": 7, "reason": "x"}
     assert calls[0][1:] == ["-m", "app.cli", "classify-items", "--days", "3"]
     run = db.scalar(select(SourceRun).where(SourceRun.source_key == "theme_model"))
-    assert run.status == "ok" and run.rows == 7
+    assert run.status == "ok" and run.rows == 7 and run.error is None
+    jobs.model_job("theme_model_train", "boom")
+    db.expire_all()
+    run = db.scalar(select(SourceRun).where(SourceRun.source_key == "theme_model_train"))
+    assert run.status == "error" and "no such file" in run.error and run.finished_at is not None
 
 
 def test_web_app_does_not_import_sklearn():

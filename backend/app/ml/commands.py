@@ -1,7 +1,6 @@
 """Theme-model commands for app.cli. Each prints a JSON summary as its last line; jobs.py reads it
 back when it runs a command in a child process."""
 import json
-import re
 import time
 from datetime import timedelta
 from pathlib import Path
@@ -10,7 +9,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .. import settings
-from ..models import Item, ItemTheme, Label, Theme, utcnow
+from ..models import Item, ItemTheme, Label, ModelRegistry, Theme, utcnow
 from . import labels as L
 from . import registry
 
@@ -101,8 +100,7 @@ def classify_items_cmd(s: Session, args: list[str]) -> dict:
 def import_gold_labels(s: Session, args: list[str]) -> dict:
     """Blind review labels as silver theme_set labels. Idempotent (source_ref = <tag>:<item id>)."""
     path = Path(args[0])
-    m = re.search(r"\d{4}-\d{2}-\d{2}", path.name)
-    tag = f"gold{m.group(0)}" if m else "gold"
+    tag = L.gold_tag(path.name)
     of = [t.slug for t in s.scalars(select(Theme).where(Theme.active.is_(True)).order_by(Theme.id))]
     rows = [json.loads(x) for x in open(path, encoding="utf-8") if x.strip()]
     have = set()
@@ -129,21 +127,33 @@ def import_gold_labels(s: Session, args: list[str]) -> dict:
 
 
 def train_small_model(s: Session, args: list[str]) -> dict:
+    """Nightly: retrain the label-trained part on top of the live version. It goes live only if it
+    passes the check and the live version was not picked by hand."""
     from .infer import load_bundle
     from .train import bundle_meta, retrain_small, save_bundle
     row = registry.active(s)
     if not row:
         return {"skipped": "no active theme model", "changed": 0}
-    cand, decision = retrain_small(s, load_bundle(row.path))
+    seen = [(r.trained_on or {}).get("labels", {}).get("fingerprint") for r in s.scalars(select(ModelRegistry))
+            if (r.trained_on or {}).get("small_from") == row.version]
+    cand, decision = retrain_small(s, load_bundle(row.path), seen=[f for f in seen if f])
     if cand is None:
         return {**decision, "live": row.version, "changed": 0}
+    pinned = registry.is_pinned(row)
+    promote = decision["promote"] and not pinned
     path = save_bundle(cand, registry.models_dir() / f"{cand['version']}.joblib")
-    note = ("promoted: " if decision["promote"] else "kept inactive: ") + decision["reason"]
-    registry.register(s, path, bundle_meta(cand), activate_now=decision["promote"], note=note)
+    if promote:
+        note = "promoted: " + decision["reason"]
+    elif pinned and decision["promote"]:
+        note = f"kept inactive: {row.version} was made live by hand (it passed the check: {decision['reason']})"
+    else:
+        note = "kept inactive: " + decision["reason"]
+    registry.register(s, path, bundle_meta(cand), activate_now=promote, note=note)
+    removed = registry.prune(s)
     s.commit()
     print(note)
-    return {"version": cand["version"], "promoted": decision["promote"], "reason": decision["reason"],
-            "live": cand["version"] if decision["promote"] else row.version, "changed": 1}
+    return {"version": cand["version"], "promoted": promote, "reason": decision["reason"], "pinned": pinned,
+            "live": cand["version"] if promote else row.version, "files_removed": removed, "changed": 1}
 
 
 def model_status(s: Session, args: list[str]) -> dict:
@@ -156,26 +166,34 @@ def model_status(s: Session, args: list[str]) -> dict:
                                                  func.json_extract(ItemTheme.evidence, "$.veto").is_not(None)))
     by_origin = dict(s.execute(select(Label.origin, func.count()).where(Label.label_type.in_(L.THEME_LABELS))
                                .group_by(Label.origin)).all())
-    print(f"live model: {act.version if act else 'none'}")
+    people = L.theme_stats(L.item_vectors(s, themes), themes, people_only=True)
+    print(f"live model: {act.version if act else 'none'}{' (made live by hand)' if registry.is_pinned(act) else ''}")
     for r in registry.summary(s):
-        print(f"  {'*' if r['active'] else ' '} {r['version']}  {r['created_at'][:16]}  {r['note'] or ''}")
+        print(f"  {'*' if r['active'] else ' '} {r['version']}  {r['created_at'][:16]}  "
+              f"{'' if r['file'] else '(file removed) '}{r['note'] or ''}")
     print("labels per theme (labelled / positives): " + ", ".join(f"{k} {v['labelled']}/{v['positives']}" for k, v in stats.items()))
+    print("people's labels, gender themes (gate needs 100 / 10): " + ", ".join(
+        f"{t.slug} {people[t.slug]['labelled']}/{people[t.slug]['positives']}" for t in themes if t.group == "gender"))
     print(f"links: {links}; vetoed rule links: {vetoed}")
-    return {"active": act.version if act else None, "gates": (act.metrics or {}).get("themes") and {
-        k: v.get("gate") for k, v in act.metrics["themes"].items() if "gate" in v} if act else None,
-        "labels_by_origin": by_origin, "theme_labels": stats, "links": links, "vetoed": vetoed}
+    return {"active": act.version if act else None, "pinned": registry.is_pinned(act),
+            "gates": (act.metrics or {}).get("themes") and {
+                k: v.get("gate") for k, v in act.metrics["themes"].items() if "gate" in v} if act else None,
+            "labels_by_origin": by_origin, "theme_labels": stats, "people_labels": people, "links": links,
+            "vetoed": vetoed}
 
 
 def activate_model(s: Session, args: list[str]) -> dict:
-    row = registry.activate(s, args[0])
+    """activate-model VERSION [--let-nightly]: by hand, so the version is pinned unless --let-nightly."""
+    row = registry.activate(s, args[0], by_hand="--let-nightly" not in args)
     s.commit()
-    return {"active": row.version, "changed": 1, "next": "classify-items --all"}
+    return {"active": row.version, "pinned": registry.is_pinned(row), "changed": 1, "next": "classify-items --all"}
 
 
 def rollback_model(s: Session, args: list[str]) -> dict:
     row = registry.rollback(s)
     s.commit()
-    return {"active": row.version if row else None, "changed": int(row is not None), "next": "classify-items --all"}
+    return {"active": row.version if row else None, "pinned": registry.is_pinned(row), "changed": int(row is not None),
+            "next": "classify-items --all"}
 
 
 HANDLERS = {"train-theme-model": train_theme_model, "register-model": register_model,
