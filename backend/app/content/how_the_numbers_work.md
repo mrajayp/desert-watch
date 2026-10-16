@@ -22,9 +22,10 @@ You can change the words for any theme in Admin → Themes and preview what they
 
 ## Need
 
-Need is the other side of the comparison. It is what suggests a topic should be getting coverage. We have four kinds, one per lens.
+Need is the other side of the comparison. It is what suggests a topic should be getting coverage. We have five kinds, one per lens.
 
 - The audience lens uses Wikipedia page views for articles linked to each theme. National only.
+- The search lens uses Google searches from people in Libya for each theme's words. National only. See Search interest below.
 - The humanitarian lens uses ReliefWeb reports on Libya, matched to themes by the same words.
 - The events lens will use conflict and protest events from ACLED and UCDP. It stays empty until the keys arrive.
 - The journalists lens counts gaps people flag in the app, one unit each.
@@ -35,14 +36,14 @@ Each cell is one theme, one place and one week, for one lens. It looks at the fo
 
 We divide coverage by need to get a ratio. Then we compare that ratio with a reference.
 
-- For the audience lens the reference is the same theme's own ratio over the 12 weeks before. So the gap says "less coverage for the interest than usual for this topic".
+- For the audience and search lenses the reference is the same theme's own ratio over the 12 weeks before. So the gap says "less coverage for the interest than usual for this topic".
 - For the other lenses the reference is the average across all themes nationally. For a district it is that theme's national ratio. So the gap says "less coverage per report or event than other topics get".
 
 Small cells are pulled towards the reference before comparing, so a district with two reports cannot swing wildly. The gap is shown as how many times less coverage there is than expected. Anything under about 1.15 times is shown as covered about as expected.
 
-If need is below a minimum the cell is not scored and shows as hatched. The minimums are 500 page views, 2 reports, 3 events or 1 flag in the window. Weeks before we started collecting are not scored either.
+If need is below a minimum the cell is not scored and shows as hatched. The minimums are 500 page views, 2 reports, 3 events or 1 flag in the window. The search lens has no minimum. A window goes unscored when Google gave no data for one of its four weeks. Weeks before we started collecting are not scored either.
 
-For the audience lens we only count outlets we were collecting from across the whole 16 weeks being compared, through the same route. So Al Wasat through Google News counts, because we have years of it. Al Wasat through its own feed only started in October, so it is left out until it has 16 weeks behind it. The same goes for Google Alerts and for outlets Google News only turns up for recent weeks. The backfill is never used in these comparisons. How much it holds for a week depends on how many stories the monitoring review chose to cite, and that grew through the year. The gap panel and the article lists still show every article.
+For the audience and search lenses we only count outlets we were collecting from across the whole 16 weeks being compared, through the same route. So Al Wasat through Google News counts, because we have years of it. Al Wasat through its own feed only started in October, so it is left out until it has 16 weeks behind it. The same goes for Google Alerts and for outlets Google News only turns up for recent weeks. The backfill is never used in these comparisons. How much it holds for a week depends on how many stories the monitoring review chose to cite, and that grew through the year. The gap panel and the article lists still show every article.
 
 ## Flags on a cell
 
@@ -51,6 +52,28 @@ For the audience lens we only count outlets we were collecting from across the w
 - Only covered from outside. No Libyan outlet covered it, only international or diaspora ones.
 - One side only. Every outlet with a known political alignment that covered it is on the same side. This uses our own alignment labels, never the ones from the social media scrape.
 - Mostly unplaced. More than 80% of the articles name no place, so the regional picture is weak.
+
+## Search interest
+
+The search lens uses Google Trends. Google gives an index from 0 to 100 for each week, scaled to the busiest week in the request. It never says how many searches there were. So we ask for each theme's words next to an everyday word that belongs to no theme, «مطعم» (restaurant). Each week is stored as searches for the theme's words per 100 searches for the everyday word. We use the everyday word's usual level over the 13 weeks around that week, so one odd week for «مطعم» does not move every theme. That matters in Ramadan, when far fewer people search for restaurants.
+
+It only counts people using Google from Libya. Google handles about 98% of web searches there and about 88% of people are online (StatCounter and DataReportal, 2026). Everyone else is missing.
+
+The word list sets the number. Each theme has a handful of its own Arabic words, listed in the gap panel. Change the words and the number changes. That is why we only compare a theme with its own past. Words also catch things we don't mean. «الانتخابات» (elections) peaks with the Turkish and US elections, so governance uses the names of Libyan institutions instead.
+
+Searching is not the same as worrying. Many electricity searches are people topping up a meter or checking the load shedding times. A rise means more people looked something up.
+
+Small subjects vanish. Google holds back any week with too few searches. Migration and every gender theme fall below that line for their whole word list, so we can't measure them here. For security the Libyan words fall below it in about half of all weeks, and the general ones mostly follow news from abroad, so security is left out too. Governance lacks data in a few weeks. A four-week window that includes one of them is not scored.
+
+The numbers are a sample. Google draws them from a share of all searches and revises the latest two weeks. We mark those two weeks as provisional and replace them at the next import. The current week is never scored.
+
+News drives searches. When something happens people look it up, and reporters write about it at the same time. So a gap here means searches rose and coverage did not keep up. It does not prove that nobody reported it.
+
+Google changed how it collects this data on 1 January 2022. Earlier weeks don't compare, so we start there. In July and August 2026 searches for the services words ran about twice the rest of the year. From 2022 to 2025 the summer rise was 10 to 25%, so summer 2026 was unusual.
+
+We fetch the data about once a week on a computer outside the server and load it by hand. Google marks these requests as automated, so we keep them slow and few. The official Google Trends API is still a closed trial. We have also built a route through SerpApi, a paid service. It stays switched off because Google is suing SerpApi over how it collects Google's results.
+
+Data source: Google Trends.
 
 ## Trends page
 
@@ -88,4 +111,5 @@ Once a week we work out the facts here first. These are the biggest gaps with th
 - Every six hours: Google News, GDELT articles and the official statements.
 - Nightly: Wikipedia page views, then the full history of scores and the network.
 - Mondays: the digest.
+- About once a week, by hand: Google searches for the search lens.
 - By hand only: the GDELT long-run line and anything in the backfill job.
