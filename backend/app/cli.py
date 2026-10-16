@@ -25,6 +25,9 @@
   import-search PATH        load Google Trends search rows (JSONL from scripts/fetch_gtrends.py, or a folder: its newest file)
   collect-search [--provider serpapi|official] [--daily]  fetch search rows with a keyed provider and load them
   repair-wiki-themes        file existing Wikipedia pageview days under every theme that lists the title
+  resolve-links [--days N] [--limit N] [--minutes N]  find the outlet's own link for Google News items
+                            (default 14 days, at most 400 site searches and 15 minutes. Probes and post dates come on top of the searches)
+  reach-snapshot [--limit N]            Tranco web rank for Libyan outlets + the 100 busiest (outlet.external['reach'])
 """
 import getpass
 import os
@@ -206,6 +209,20 @@ def main(argv: list[str]):
         from .dedupe import mark_duplicates
         with SessionLocal() as s:
             print(mark_duplicates(s), "articles marked as duplicates")
+    elif cmd == "resolve-links":
+        import json
+        from .resolve import run as run_resolve
+        opt = lambda k, d=None: args[args.index(k) + 1] if k in args else d  # noqa: E731
+        with SessionLocal() as s:
+            print(json.dumps(run_resolve(s, days=int(opt("--days", "14")), limit=int(opt("--limit", "400")),
+                                         minutes=float(opt("--minutes", "15"))),
+                             ensure_ascii=False, indent=1))
+    elif cmd == "reach-snapshot":
+        import json
+        from .reach import snapshot
+        with SessionLocal() as s:
+            print(json.dumps(snapshot(s, limit=int(args[args.index("--limit") + 1]) if "--limit" in args else None),
+                             ensure_ascii=False, indent=1))
     elif cmd == "recompute":
         from .jobs import recompute
         print(recompute(weeks=int(args[args.index("--weeks") + 1]) if "--weeks" in args else None), "cells")

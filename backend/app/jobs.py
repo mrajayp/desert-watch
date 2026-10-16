@@ -68,6 +68,26 @@ def nightly():
     for key in ("wikipedia", "acled", "ucdp", "reliefweb"):
         collect(key)
     collect("gnews_social")   # yesterday and the day before, one fixed day each (Google indexes late)
+    _resolve_links()
+
+
+# ---------------------------------------------------------------- engagement (see engagement.py)
+def _resolve_links(days: int = 14, limit: int = 400):
+    from . import resolve
+    with SessionLocal() as s:
+        return run_collector(s, "resolve", lambda sess: resolve.collect(sess, days=days, limit=limit)).status
+
+
+@_locked
+def resolve_links(days: int = 14, limit: int = 400):
+    return _resolve_links(days, limit)
+
+
+@_locked
+def reach_snapshot(limit: int | None = None):
+    from . import reach
+    with SessionLocal() as s:
+        return run_collector(s, "reach", lambda sess: reach.collect(sess, limit=limit)).status
 
 
 @_locked
@@ -82,6 +102,7 @@ def six_hourly():
     collect("official")
     collect("gnews")
     collect("gdelt")
+    collect("fb_url")   # Facebook readings at ~48 h and ~7 days (awaiting key until the Meta app exists)
 
 
 @_locked
@@ -127,6 +148,9 @@ JOBS = {
     "recompute": recompute,
     "digest": lambda: weekly_digest(force=True),
     "backfill": backfill,
+    "resolve_links": resolve_links,
+    "fb_url": lambda: _locked(collect)("fb_url"),
+    "reach": reach_snapshot,
 }
 
 
@@ -141,5 +165,6 @@ def start_scheduler():
     # the digest waits for Sunday's page views (a day or two late): later runs write it once they are in
     sched.add_job(weekly_digest, "cron", day_of_week="tue-thu", hour=6, minute=0)
     sched.add_job(weekly_digest, "cron", day_of_week="mon", hour=6, minute=0)  # after Sunday's data
+    sched.add_job(reach_snapshot, "cron", day=1, hour=4, minute=40)            # outlet web rank, monthly
     sched.start()
     return sched

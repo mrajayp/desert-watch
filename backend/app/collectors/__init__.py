@@ -1,4 +1,4 @@
-from . import galerts, gdelt, gnews, gnews_social, keyed, official, rss, wikipedia
+from . import fb_engagement, galerts, gdelt, gnews, gnews_social, keyed, official, rss, wikipedia
 
 # key -> (callable, human description). Order = scheduler order.
 COLLECTORS = {
@@ -14,11 +14,12 @@ COLLECTORS = {
     "acled": (keyed.acled, "ACLED events"),
     "ucdp": (keyed.ucdp, "UCDP events"),
     "reliefweb": (keyed.reliefweb, "ReliefWeb reports"),
+    "fb_url": (fb_engagement.collect, "Facebook link engagement"),
 }
 # Non-collector jobs shown in the source-health strip.
 EXTRA_HEALTH = {
     "digest": "Weekly AI digest",
-    "gtrends": "Google searches (weekly import)",
+from . import fb_engagement, galerts, gdelt, gnews, gnews_social, keyed, official, rss, wikipedia
 }
 # Hours before a source counts as stale (48 unless listed). Search data is imported by hand each week.
 STALE_HOURS = {"gtrends": 10 * 24}

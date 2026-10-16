@@ -101,7 +101,7 @@ def add_item(body: AddIn, s: Session = Depends(get_db), u: User = Depends(auth.r
 def list_items(country: str = "LY", theme_id: int | None = None, region_id: int | None = None,
                outlet_id: int | None = None, q: str | None = None, days: int = 28, kind: str = "article",
                source: str | None = None, lang: str | None = None,
-               start: date | None = None, end: date | None = None, basis: str | None = None,
+               start: date | None = None, end: date | None = None, basis: str | None = None, sort: str | None = None,
                limit: int = 50, offset: int = 0, s: Session = Depends(get_db), _: User = Depends(auth.current_user)):
     c = country_or_404(s, country)
     pairs = None
@@ -121,7 +121,7 @@ def list_items(country: str = "LY", theme_id: int | None = None, region_id: int 
     total, rows, by_source = items_query(
         s, country_id=c.id, theme_id=theme_id, region=region, start=lo, end=hi,
         kinds=(kind,), limit=min(limit, 200), offset=offset, outlet_id=outlet_id, q=q, source=source, lang=lang,
-        with_sources=True, pairs=pairs)
+        with_sources=True, pairs=pairs, sort=sort)
     return {"total": total, "items": hydrate_items(s, rows), "by_source": by_source}
 
 

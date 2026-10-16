@@ -13,6 +13,9 @@ from .models import SourceRun
 from .seed import seed_all
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+# httpx logs every request URL at INFO. Some URLs carry keys, so request lines stay out of the log.
+for _name in ("httpx", "httpcore"):
+    logging.getLogger(_name).setLevel(logging.WARNING)
 _state = {"scheduler": None}
 
 
