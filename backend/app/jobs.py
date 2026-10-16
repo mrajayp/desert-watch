@@ -138,6 +138,8 @@ def start_scheduler():
     sched.add_job(nightly, "cron", hour=2, minute=5)
     sched.add_job(recompute, "cron", minute=45, kwargs={"weeks": 12})   # recent weeks hourly
     sched.add_job(recompute, "cron", hour=3, minute=30)                   # full history nightly
+    # the digest waits for Sunday's page views (a day or two late): later runs write it once they are in
+    sched.add_job(weekly_digest, "cron", day_of_week="tue-thu", hour=6, minute=0)
     sched.add_job(weekly_digest, "cron", day_of_week="mon", hour=6, minute=0)  # after Sunday's data
     sched.start()
     return sched

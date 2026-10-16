@@ -3,7 +3,7 @@
   init                      create tables + seed config
   create-admin EMAIL NAME   prompts for a password (or DW_ADMIN_PASSWORD)
   invite EMAIL [ROLE]       prints an invite path
-  collect KEY [--weeks N]   run one collector (rss, gnews, gdelt, gdelt_timeline, wikipedia, ...)
+  collect KEY [--weeks N] [--themes a,b]  run one collector (rss, gnews, gdelt, gdelt_timeline, wikipedia, ...)
   backfill [WEEKS]          gnews + wikipedia + gdelt history + rss
   recompute                 duplicates + scores + network + labels
   dedupe                    mark every duplicate copy of a story (full pass)
@@ -24,6 +24,7 @@
   sync-themes               overwrite DB theme terms from config/themes.yaml (bumps versions, re-tags)
   import-search PATH        load Google Trends search rows (JSONL from scripts/fetch_gtrends.py, or a folder: its newest file)
   collect-search [--provider serpapi|official] [--daily]  fetch search rows with a keyed provider and load them
+  repair-wiki-themes        file existing Wikipedia pageview days under every theme that lists the title
 """
 import getpass
 import os
@@ -65,6 +66,8 @@ def main(argv: list[str]):
             kw["weeks"] = int(args[args.index("--weeks") + 1])
         if "--days" in args:
             kw["days"] = int(args[args.index("--days") + 1])
+        if "--themes" in args:
+            kw["themes"] = args[args.index("--themes") + 1].split(",")
         print(collect(args[0], **kw))
     elif cmd == "backfill":
         from .jobs import backfill
@@ -195,6 +198,10 @@ def main(argv: list[str]):
         from .imports.alignment_sources import run as run_align
         with SessionLocal() as s:
             print(run_align(s))
+    elif cmd == "repair-wiki-themes":
+        from .collectors.wikipedia import repair_themes
+        with SessionLocal() as s:
+            print(repair_themes(s), "theme links added")
     elif cmd == "dedupe":
         from .dedupe import mark_duplicates
         with SessionLocal() as s:

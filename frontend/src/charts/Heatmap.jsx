@@ -1,8 +1,7 @@
 // Theme × region grid. Fill = gap (red ramp); hatched = insufficient evidence;
 // each cell also prints the raw counts so the score is never a black box.
-import * as d3 from 'd3'
 import { useRef } from 'react'
-import { INFO_FLAGS, fmt, gapFill, gapLabel, flagText, sourceLabel } from './scales'
+import { INFO_FLAGS, fmt, gapFill, gapLabel, flagText } from './scales'
 import { HatchDefs, fitLabel, groupedRows, themeLabel, useSize, useTooltip } from './util'
 
 export default function Heatmap({ themes, regions, cells, onSelect, svgRef, unit = 'need', lang = 'en', feedback = {} }) {
@@ -66,91 +65,6 @@ export default function Heatmap({ themes, regions, cells, onSelect, svgRef, unit
         <span><svg width="14" height="12" style={{ verticalAlign: -2, marginRight: 5 }}><rect width="14" height="12" fill="url(#hm-hatch)" rx="2" /></svg>insufficient evidence</span>
         <span>Number = monitored articles (4 weeks)</span>
         <span><svg width="10" height="10" style={{ verticalAlign: -1, marginRight: 4 }}><circle cx="5" cy="5" r="3" fill="var(--ink)" /></svg>a journalist marked it a real gap</span>
-      </div>
-    </div>
-  )
-}
-
-// Need and coverage share one axis by indexing each to its own mean (=100): no dual axis.
-// Sources present at both ends of what is shown: the coverage line only counts these, so adding
-// a collector (or one ending, like the backfill) does not look like a change in coverage.
-function stableSources(allRows) {
-  const firsts = [], lasts = []
-  for (const rows of allRows) {
-    if (rows.length < 2) continue
-    firsts.push(new Set(Object.keys(rows[0].breakdown?.source || {})))
-    lasts.push(new Set(Object.keys(rows[rows.length - 1].breakdown?.source || {})))
-  }
-  const seen = new Set([...firsts.flatMap((x) => [...x])])
-  // the backfill follows what a monitoring review chose to cite, so its volume is not a trend
-  return [...seen].filter((k) => k !== 'backfill' && firsts.some((f) => f.has(k)) && lasts.some((l) => l.has(k)))
-}
-
-export function TrendMultiples({ themes, series, basis, onSelect, onPickWeek, lang = 'en', unit }) {
-  const wrap = useRef(null)
-  const W = useSize(wrap, 900)
-  const cols = W < 560 ? 1 : W < 900 ? 2 : 3
-  const cw = Math.floor(W / cols) - 12
-  const ch = 132
-  const tip = useTooltip()
-  const shown = (t) => (series[t.id] || []).filter((r) => !r.breakdown?.partial_window).slice(-52)
-  const keep = stableSources(themes.map(shown))
-  // server-side: only source+outlet pairs collecting across the whole span shown (falls back to whole sources)
-  const stableCov = (r) => (r.trend_coverage != null ? r.trend_coverage
-    : keep.length ? keep.reduce((n, k) => n + (r.breakdown?.source?.[k] || 0), 0) : r.coverage)
-  return (
-    <div ref={wrap} className="viz" onMouseLeave={tip.hide}>
-      <div style={{ display: 'grid', gridTemplateColumns: `repeat(${cols}, minmax(0,1fr))`, gap: 12 }}>
-        {themes.map((t) => {
-          const rows = shown(t)
-          const idx = (get) => { const m = d3.mean(rows, get) || 0; return rows.map((r) => (m ? (get(r) / m) * 100 : 0)) }
-          const need = idx((r) => r.need), cov = idx(stableCov)
-          const x = d3.scalePoint().domain(rows.map((r) => r.week)).range([30, cw - 8])
-          const ymax = Math.max(160, d3.max([...need, ...cov]) || 0)
-          const y = d3.scaleLinear().domain([0, ymax]).range([ch - 22, 8]).nice()
-          const line = (vals) => d3.line().x((_, i) => x(rows[i].week)).y((v) => y(v)).curve(d3.curveMonotoneX)(vals)
-          const last = rows[rows.length - 1]
-          return (
-            <div key={t.id} className="card" style={{ padding: 10, cursor: 'pointer' }} onClick={() => onSelect?.(t.id)}>
-              <div className="row" style={{ justifyContent: 'space-between' }}>
-                <b style={{ fontSize: 13, textDecoration: onSelect ? 'underline dotted' : 'none' }}>{lang === 'ar' ? t.name_ar : t.name_en}</b>
-                <span className="small muted">{last ? (last.insufficient ? 'insufficient' : last.gap >= 0.4 ? <span className="pill flag">gap</span> : 'ok') : ''}</span>
-              </div>
-              {rows.length < 2 ? <div className="empty small">Not enough weeks yet</div> : (
-                <svg viewBox={`0 0 ${cw} ${ch}`} style={{ width: '100%' }}
-                  onClick={(e) => {
-                    if (!onPickWeek) return
-                    e.stopPropagation()
-                    const box = e.currentTarget.getBoundingClientRect()
-                    const px = ((e.clientX - box.left) / box.width) * cw
-                    onPickWeek(t.id, rows[d3.minIndex(rows, (r) => Math.abs(x(r.week) - px))].week)
-                  }}
-                  onMouseMove={(e) => {
-                    const box = e.currentTarget.getBoundingClientRect()
-                    const px = ((e.clientX - box.left) / box.width) * cw
-                    const i = d3.minIndex(rows, (r) => Math.abs(x(r.week) - px))
-                    const r = rows[i]
-                    tip.show(e, <div><b>Week of {r.week}</b><div>{fmt(r.coverage)} articles{stableCov(r) !== r.coverage ? ` (${fmt(stableCov(r))} from the sources on the line)` : ''} · {fmt(r.need)} {unit}</div>
-                      <div className="small muted">4-week window{onPickWeek ? ' · click for the articles' : ''}</div></div>, wrap.current)
-                  }}>
-                  {y.ticks(3).map((v) => <g key={v}><line x1={30} x2={cw - 8} y1={y(v)} y2={y(v)} stroke="var(--grid)" />
-                    <text x={26} y={y(v) + 3} textAnchor="end" style={{ fontSize: 9 }}>{v}</text></g>)}
-                  <path d={line(need)} fill="none" stroke="var(--ink-2)" strokeWidth={2} strokeDasharray="0" />
-                  <path d={line(cov)} fill="none" stroke="var(--accent)" strokeWidth={2} />
-                  <circle cx={x(last.week)} cy={y(cov[cov.length - 1])} r={4} fill="var(--accent)" stroke="var(--surface)" strokeWidth={2} />
-                  <circle cx={x(last.week)} cy={y(need[need.length - 1])} r={4} fill="var(--ink-2)" stroke="var(--surface)" strokeWidth={2} />
-                  <text x={30} y={ch - 6} style={{ fontSize: 9 }}>{rows[0].week}</text>
-                  <text x={cw - 8} y={ch - 6} textAnchor="end" style={{ fontSize: 9 }}>{last.week}</text>
-                </svg>)}
-            </div>)
-        })}
-      </div>
-      {tip.node}
-      <div className="legend" style={{ marginTop: 10 }}>
-        <span><span className="sw" style={{ background: 'var(--ink-2)', height: 3 }} />Need ({unit})</span>
-        <span><span className="sw" style={{ background: 'var(--accent)', height: 3 }} />Monitored coverage</span>
-        <span className="muted">Last 52 weeks. Both indexed to their own average = 100, so they share one axis.{basis ? ` Coverage counts only the ${fmt(basis.outlets)} outlets we collected from all through ${basis.from} to ${basis.to} (${basis.sources.map(sourceLabel).join(', ')}), never the backfill.`
-          : keep.length ? ` Coverage counts only sources we had all year: ${keep.map(sourceLabel).join(', ')}.` : ''}{onPickWeek ? ' Click a week to see the articles and need signals behind it; click a panel title for its long-run history.' : ''}</span>
       </div>
     </div>
   )

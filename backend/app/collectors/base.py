@@ -33,8 +33,9 @@ def http_client(timeout: float = 30) -> httpx.Client:
 
 
 def polite_get(client: httpx.Client, url: str, *, params=None, min_interval: float = 1.0,
-               retries: int = 2, state: dict = {}) -> httpx.Response:
-    """GET with a per-host minimum interval and simple backoff on 429/5xx."""
+               retries: int = 2, backoff: float | None = None, state: dict = {}) -> httpx.Response:
+    """GET with a per-host minimum interval and exponential backoff on 429/5xx: waits
+    backoff (default min_interval) x 2, x 4, ... or longer if the server's Retry-After asks (max 120 s)."""
     host = httpx.URL(url).host
     for attempt in range(retries + 1):
         wait = state.get(host, 0) + min_interval - time.monotonic()
@@ -43,10 +44,22 @@ def polite_get(client: httpx.Client, url: str, *, params=None, min_interval: flo
         r = client.get(url, params=params)
         state[host] = time.monotonic()
         if r.status_code == 429 or r.status_code >= 500 or "Please limit requests" in r.text[:200]:
-            time.sleep(min_interval * (2 ** (attempt + 1)))
+            if attempt < retries:
+                asked = r.headers.get("retry-after", "")
+                time.sleep(max(min(float(asked), 120.0) if asked.isdigit() else 0.0,
+                               (backoff or min_interval) * (2 ** (attempt + 1))))
             continue
         return r
     return r
+
+
+STOP_AFTER = 3  # refused requests in a row (after their retries) end a collector run
+
+
+def refused(r: httpx.Response) -> bool:
+    """The server said no (rate limit or overload) instead of answering. A run that keeps asking only
+    holds the job lock longer, so collectors stop after STOP_AFTER of these in a row."""
+    return r.status_code == 429 or r.status_code >= 500 or "Please limit requests" in r.text[:200]
 
 
 def to_naive_utc(dt: datetime) -> datetime:

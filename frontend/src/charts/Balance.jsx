@@ -1,8 +1,8 @@
 // Small charts: language balance (diverging Arabic | English bars per theme),
-// source mix (stacked bar), and a GDELT coverage-history line.
+// source mix (stacked bar), a GDELT coverage-history line and monthly collected articles by source.
 import * as d3 from 'd3'
 import { useRef } from 'react'
-import { fmt } from './scales'
+import { fmt, sourceLabel } from './scales'
 import { fitLabel, groupedRows, themeLabel, useSize, useTooltip } from './util'
 
 export function LanguageBalance({ themes, cells, lang = 'en', svgRef }) {
@@ -80,29 +80,35 @@ export function HistoryLine({ data, svgRef, markers = [], onPick }) {
   const W = useSize(wrap, 700)
   const H = 190
   const tip = useTooltip()
-  const all = (data.all || []).map((d) => ({ ...d, date: new Date(d.day) }))
-  if (all.length < 2) return <div ref={wrap} className="empty small">No GDELT history collected for this theme yet (GDELT was rate-limiting during collection).</div>
-  // 7-day rolling mean to tame daily noise
-  const roll = all.map((d, i) => ({ date: d.date, v: d3.mean(all.slice(Math.max(0, i - 6), i + 1), (x) => x.value) }))
+  const byDay = new Map((data.all || []).map((d) => [d.day, d.value]))
+  if (byDay.size < 2) return <div ref={wrap} className="empty small">No GDELT history collected for this theme yet (GDELT was rate-limiting during collection).</div>
+  // 7-day mean over calendar days (the days we have among the 7 ending this one). A day GDELT did
+  // not give us breaks the line, so a hole is never drawn as a slope.
+  const iso = (d) => d.toISOString().slice(0, 10)
+  const keys = [...byDay.keys()].sort()
+  const roll = d3.utcDay.range(new Date(keys[0]), d3.utcDay.offset(new Date(keys[keys.length - 1]), 1)).map((date) => {
+    if (!byDay.has(iso(date))) return { date, v: null }
+    const vals = d3.range(7).map((k) => byDay.get(iso(d3.utcDay.offset(date, -k)))).filter((v) => v != null)
+    return { date, v: d3.mean(vals), n: vals.length }
+  })
+  const shown = roll.filter((d) => d.v != null)
+  const has = (d) => d.v != null
   const x = d3.scaleUtc().domain(d3.extent(roll, (d) => d.date)).range([36, W - 10])
-  const y = d3.scaleLinear().domain([0, d3.max(roll, (d) => d.v)]).nice().range([H - 22, 8])
-  const line = d3.line().x((d) => x(d.date)).y((d) => y(d.v)).curve(d3.curveMonotoneX)
-  const area = d3.area().x((d) => x(d.date)).y0(y(0)).y1((d) => y(d.v)).curve(d3.curveMonotoneX)
+  const y = d3.scaleLinear().domain([0, d3.max(shown, (d) => d.v)]).nice().range([H - 22, 8])
+  const line = d3.line().defined(has).x((d) => x(d.date)).y((d) => y(d.v)).curve(d3.curveMonotoneX)
+  const area = d3.area().defined(has).x((d) => x(d.date)).y0(y(0)).y1((d) => y(d.v)).curve(d3.curveMonotoneX)
+  const near = (e) => {
+    const box = e.currentTarget.getBoundingClientRect()
+    return shown[d3.bisector((d) => d.date).center(shown, x.invert(((e.clientX - box.left) / box.width) * W))]
+  }
   return (
     <div ref={wrap} className="viz" onMouseLeave={tip.hide}>
       <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Daily article volume, 7-day average"
         style={{ cursor: onPick ? 'pointer' : undefined }}
-        onClick={(e) => {
-          if (!onPick) return
-          const box = e.currentTarget.getBoundingClientRect()
-          const dt = x.invert(((e.clientX - box.left) / box.width) * W)
-          onPick(roll[d3.bisector((d) => d.date).center(roll, dt)].date.toISOString().slice(0, 10))
-        }}
+        onClick={(e) => { if (onPick) onPick(iso(near(e).date)) }}
         onMouseMove={(e) => {
-          const box = e.currentTarget.getBoundingClientRect()
-          const dt = x.invert(((e.clientX - box.left) / box.width) * W)
-          const i = d3.bisector((d) => d.date).center(roll, dt)
-          tip.show(e, <div><b>{roll[i].date.toISOString().slice(0, 10)}</b><div>{fmt(roll[i].v)} articles/day (7-day avg)</div>{onPick && <div className="small muted">click for our articles that week</div>}</div>, wrap.current)
+          const d = near(e)
+          tip.show(e, <div><b>{iso(d.date)}</b><div>{fmt(d.v)} articles a day ({d.n === 7 ? '7-day average' : `average of the ${d.n} days we have in the last 7`})</div>{onPick && <div className="small muted">click for our articles that week</div>}</div>, wrap.current)
         }}>
         {y.ticks(4).map((v) => <g key={v}><line x1={36} x2={W - 10} y1={y(v)} y2={y(v)} stroke="var(--grid)" /><text x={32} y={y(v) + 3} textAnchor="end">{fmt(v)}</text></g>)}
         {x.ticks(W < 500 ? 4 : 8).map((t) => <text key={+t} x={x(t)} y={H - 6} textAnchor="middle">{d3.utcFormat('%b %y')(t)}</text>)}
@@ -116,29 +122,53 @@ export function HistoryLine({ data, svgRef, markers = [], onPick }) {
   )
 }
 
-// Monthly collected articles (stacked Arabic | English), with dated event markers.
+// Monthly collected articles stacked by how they reached us, with dated event markers. The month
+// still running is hatched.
+const MONTH_SOURCES = ['gnews', 'rss', 'backfill', 'galerts', 'other']
+const MONTH_COLORS = { gnews: 'var(--al-1)', rss: 'var(--al-2)', backfill: 'var(--al-3)', galerts: 'var(--al-4)', other: 'var(--cat-unknown)' }
+const monthSourceLabel = (k) => (k === 'other' ? 'Other' : sourceLabel(k))
+
 export function MonthlyCoverage({ rows, markers = [], svgRef, onPick }) {
   const wrap = useRef(null)
   const W = useSize(wrap, 800)
   const H = 220
   const tip = useTooltip()
   if (!rows || rows.length < 2) return <div ref={wrap} className="empty small">Not enough history for this theme yet.</div>
-  const data = rows.map((r) => ({ ...r, date: new Date(r.month + '-01T00:00:00Z') }))
+  const data = rows.map((r) => ({ ...r, sources: r.sources || { other: r.total } }))
+  const present = MONTH_SOURCES.filter((k) => data.some((d) => d.sources[k] > 0))
   const x = d3.scaleBand().domain(data.map((d) => d.month)).range([36, W - 8]).paddingInner(0.15)
   const y = d3.scaleLinear().domain([0, d3.max(data, (d) => d.total) || 1]).nice().range([H - 24, 14])
   const step = Math.max(1, Math.ceil(data.length / (W < 600 ? 6 : 12)))
   return (
     <div ref={wrap} className="viz" onMouseLeave={tip.hide}>
-      <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Monthly collected articles, Arabic and English">
+      <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Monthly collected articles by source">
+        <defs>
+          <pattern id="mc-partial" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+            <line x1="0" y1="0" x2="0" y2="5" stroke="var(--surface)" strokeWidth="2" />
+          </pattern>
+        </defs>
         {y.ticks(4).map((v) => <g key={v}><line x1={36} x2={W - 8} y1={y(v)} y2={y(v)} stroke="var(--grid)" /><text x={32} y={y(v) + 3} textAnchor="end">{fmt(v)}</text></g>)}
-        {data.map((d, i) => (
-          <g key={d.month} style={{ cursor: onPick ? 'pointer' : undefined }} onClick={() => onPick?.(d.month)}
-            onMouseMove={(e) => tip.show(e, <div><b>{d.month}</b><div>{fmt(d.total)} articles · {fmt(d.ar)} Arabic · {fmt(d.en)} English</div>{onPick && <div className="small muted">click to list them</div>}</div>, wrap.current)}>
-            <rect x={x(d.month)} y={14} width={x.bandwidth()} height={H - 38} fill="transparent" />
-            <rect x={x(d.month)} y={y(d.ar)} width={x.bandwidth()} height={Math.max(0, y(0) - y(d.ar))} fill="var(--scope-libyan)" />
-            <rect x={x(d.month)} y={y(d.ar + d.en + d.other)} width={x.bandwidth()} height={Math.max(0, y(d.ar) - y(d.ar + d.en + d.other) - (d.en + d.other ? 1 : 0))} rx={2} fill="var(--scope-international)" />
-            {i % step === 0 && <text x={x(d.month) + x.bandwidth() / 2} y={H - 8} textAnchor="middle">{d.month}</text>}
-          </g>))}
+        {data.map((d, i) => {
+          let acc = 0
+          return (
+            <g key={d.month} style={{ cursor: onPick ? 'pointer' : undefined }} onClick={() => onPick?.(d.month)}
+              onMouseMove={(e) => tip.show(e, <div><b>{d.month}{d.partial ? ' (so far)' : ''}</b>
+                <div>{fmt(d.total)} articles: {fmt(d.ar)} Arabic, {fmt(d.en)} English, {fmt(d.other)} in other languages</div>
+                <div>{present.filter((k) => d.sources[k] > 0).map((k) => `${monthSourceLabel(k)} ${fmt(d.sources[k])}`).join(' · ')}</div>
+                {d.partial && <div className="small muted">This month is not over yet.</div>}
+                {onPick && <div className="small muted">click to list them</div>}</div>, wrap.current)}>
+              <rect x={x(d.month)} y={14} width={x.bandwidth()} height={H - 38} fill="transparent" />
+              {present.map((k) => {
+                const v = d.sources[k] || 0
+                if (!v) return null
+                const el = <rect key={k} x={x(d.month)} y={y(acc + v)} width={x.bandwidth()} height={Math.max(0, y(acc) - y(acc + v))} fill={MONTH_COLORS[k]} />
+                acc += v
+                return el
+              })}
+              {d.partial && d.total > 0 && <rect x={x(d.month)} y={y(d.total)} width={x.bandwidth()} height={Math.max(0, y(0) - y(d.total))} fill="url(#mc-partial)" />}
+              {i % step === 0 && <text x={x(d.month) + x.bandwidth() / 2} y={H - 8} textAnchor="middle">{d.month}</text>}
+            </g>)
+        })}
         {markers.map((m) => {
           const k = m.date.slice(0, 7)
           if (x(k) == null) return null
@@ -150,10 +180,11 @@ export function MonthlyCoverage({ rows, markers = [], svgRef, onPick }) {
       </svg>
       {tip.node}
       <div className="legend">
-        <span><span className="sw" style={{ background: 'var(--scope-libyan)' }} />Arabic</span>
-        <span><span className="sw" style={{ background: 'var(--scope-international)' }} />English</span>
+        {present.map((k) => <span key={k}><span className="sw" style={{ background: MONTH_COLORS[k] }} />{monthSourceLabel(k)}</span>)}
+        {data.some((d) => d.partial) && <span><svg width="14" height="12" style={{ verticalAlign: -2, marginRight: 5 }}>
+          <rect width="14" height="12" rx="2" fill="var(--al-1)" /><rect width="14" height="12" rx="2" fill="url(#mc-partial)" /></svg>This month so far</span>}
         <span><svg width="10" height="10"><circle cx="5" cy="5" r="3.5" fill="none" stroke="var(--ink)" strokeWidth="1.5" /></svg> dated event (hover)</span>
-        <span className="muted">Older months come from backfilled search, which returns fewer items: compare shapes, not levels, across years.</span>
+        <span className="muted">Older months come from searching Google News back by date, which finds fewer articles. Compare the ups and downs within a year. The totals across years don’t compare.</span>
       </div>
     </div>
   )

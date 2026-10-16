@@ -125,8 +125,8 @@ export default function Overview() {
               <div>
                 <h2>Who covers where · {themeName}</h2>
                 <p className="sub">{mode === 'gap'
-                  ? `Districts shaded by under-coverage (${lensInfo.label} lens${themeId ? '' : ', worst theme per district'}).`
-                  : `${lensInfo.label} need data is national-only, so districts show how many monitored articles name them. Pale districts with no lines are the deserts.`}
+                  ? `Districts shaded by under-coverage on the ${lensInfo.label} lens${themeId ? '' : ', worst theme per district'}.`
+                  : `The ${lensInfo.label} lens only has national figures, so districts show how many monitored articles name them. Pale districts with no lines are the deserts.`}
                   {unplacedShare != null && ` ${Math.round(unplacedShare * 100)}% of articles name no district.`}</p>
               </div>
               <div className="row">
@@ -192,7 +192,7 @@ export default function Overview() {
         <section className="card" style={{ marginTop: 16 }}>
           <div className="card-head">
             <div><h2>Gap by theme and region</h2>
-              <p className="sub">{lensInfo.label} lens · {meta.window_weeks}-week window ending {filters.week}. Hatched = not enough need data to score{nationalOnly ? ` (this lens is national-only; regional columns show coverage counts until regional need data arrives)` : ''}.</p></div>
+              <p className="sub">{lensInfo.label} lens · {meta.window_weeks}-week window ending {filters.week}. Hatched cells are not judged, because the week is still coming in or there is too little data{nationalOnly ? ` (this lens is national only, so regional columns show coverage counts until regional need data arrives)` : ''}.</p></div>
             <ExportMenu svgRef={heatSvg} title={`Coverage gaps by theme and region — ${meta.country.name_en}`} caption={caption} filename="gap-heatmap" />
           </div>
           <Heatmap themes={meta.themes.filter((t) => inScope(t.id))} regions={heatRegions} cells={[...cells, ...regionalContext]} svgRef={heatSvg} unit={lensInfo.unit} lang={lang}

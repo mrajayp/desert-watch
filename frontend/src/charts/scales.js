@@ -68,15 +68,16 @@ export const FLAG_TEXT = {
   little_arabic: 'Little Arabic coverage',
   outside_only: 'Only covered from outside Libya',
   mostly_unplaced: 'Most coverage names no place',
+  need_incomplete: 'Need data stops before the week ends',
 }
-export const INFO_FLAGS = new Set(['mostly_unplaced'])
+export const INFO_FLAGS = new Set(['mostly_unplaced', 'need_incomplete'])
 export function flagText(f) {
   if (f.startsWith('partisan_only:')) return `Only ${DIMENSIONS.alignment.values[f.split(':')[1]] || 'one side'} outlets`
   return FLAG_TEXT[f] || f
 }
 
 export const LENS_TEXT = {
-  audience: { label: 'Audience', unit: 'pageviews', blurb: 'Wikipedia interest vs coverage, against the theme’s own recent history (national only)' },
+  audience: { label: 'International readers (Wikipedia)', unit: 'pageviews', blurb: 'Worldwide page views of the Wikipedia articles we picked for each theme, against the theme’s own recent record. Most views are of English pages, and the readers can be anywhere' },
   events: { label: 'Events', unit: 'events', blurb: 'Conflict & protest events (ACLED/UCDP) vs coverage' },
   humanitarian: { label: 'Humanitarian', unit: 'reports', blurb: 'ReliefWeb reports vs coverage' },
   journalist: { label: 'Journalists', unit: 'flags', blurb: 'Gaps flagged by your team vs coverage' },

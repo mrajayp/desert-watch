@@ -10,24 +10,24 @@ from tests.conftest import ids
 
 
 def test_score_cell_known_gap_and_covered():
-    # reference: 1 article per 100 need units
-    gap = score_cell(coverage=2, need=1000, ref_ratio=0.01, min_need=10, shrink=10)
-    ok = score_cell(coverage=10, need=1000, ref_ratio=0.01, min_need=10, shrink=10)
-    over = score_cell(coverage=40, need=1000, ref_ratio=0.01, min_need=10, shrink=10)
-    assert gap.gap > 1.0
+    # reference: 1 article per 100 need units, so 1000 units expect 10 articles
+    gap = score_cell(coverage=2, need=1000, ref_ratio=0.01)
+    ok = score_cell(coverage=10, need=1000, ref_ratio=0.01)
+    over = score_cell(coverage=40, need=1000, ref_ratio=0.01)
+    assert gap.gap > 0.7 and gap.expected == 10
     assert abs(ok.gap) < 0.05
     assert over.gap < 0
-    assert not gap.insufficient
+    assert not gap.insufficient and gap.reason is None
 
 
 def test_small_counts_insufficient():
-    s = score_cell(coverage=0, need=2, ref_ratio=0.01, min_need=3, shrink=10)
-    assert s.insufficient and s.gap is None
+    s = score_cell(coverage=0, need=2, ref_ratio=0.01)
+    assert s.insufficient and s.gap is None and s.reason == "too_few_expected"
 
 
 def test_shrinkage_pulls_small_cells_to_reference():
-    small = score_cell(coverage=0, need=5, ref_ratio=0.5, min_need=3, shrink=10)
-    big = score_cell(coverage=0, need=500, ref_ratio=0.5, min_need=3, shrink=10)
+    small = score_cell(coverage=0, need=10, ref_ratio=0.5)
+    big = score_cell(coverage=0, need=500, ref_ratio=0.5)
     assert 0 < small.gap < big.gap
 
 
@@ -41,13 +41,16 @@ def test_flags():
     assert not any(x.startswith("partisan_only") for x in coverage_flags(cur, 0, 0, 0))
 
 
-def _pageviews(db, country_id, theme_id, day, views):
-    it = Item(country_id=country_id, kind="pageview", source_key="wikipedia",
-              dedupe_key=f"wiki:test:{theme_id}:{day}", title="t", published_at=datetime.combine(day, datetime.min.time()),
-              value=views)
-    db.add(it)
-    db.flush()
-    db.add(ItemTheme(item_id=it.id, theme_id=theme_id, method="query"))
+def _pageviews(db, country_id, theme_id, day, views, days=7):
+    """`views` spread over `days` daily readings from `day` (a week by default, like the collector)."""
+    for i in range(days):
+        d = day + timedelta(days=i)
+        it = Item(country_id=country_id, kind="pageview", source_key="wikipedia", lang="en",
+                  dedupe_key=f"wiki:test:{theme_id}:{d}", title="t", published_at=datetime.combine(d, datetime.min.time()),
+                  value=views / days)
+        db.add(it)
+        db.flush()
+        db.add(ItemTheme(item_id=it.id, theme_id=theme_id, method="query"))
 
 
 def test_compute_end_to_end_audience_and_partisan(db):
@@ -67,7 +70,7 @@ def test_compute_end_to_end_audience_and_partisan(db):
     db.add(OutletCategory(outlet_id=out.id, dimension="alignment", value="east_lna_aligned", confidence="reported",
                           evidence_url="https://example.org/study"))
     db.commit()
-    n = compute(db, country_id, weeks=12, today=today)
+    n = compute(db, country_id, weeks=13, today=today + timedelta(days=7))   # the week of `today` is complete
     assert n > 0
     nat = regions["national"]
     last = db.scalar(select(CellWeek).where(CellWeek.theme_id == themes["health"], CellWeek.region_id == nat,

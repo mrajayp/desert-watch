@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 from . import settings
 from .models import (CellWeek, Comment, Country, Digest, GapClaim, GapVote, Item, ItemRegion, ItemTheme, Region,
                      Theme, utcnow)
-from .scoring import LENSES, week_start
+from .scoring import LENSES, latest_complete_week, week_start
 
 log = logging.getLogger("desert_watch.digest")
 
@@ -156,8 +156,24 @@ def build_facts(s: Session, country: Country, week: date) -> dict:
     }
 
 
-def generate(s: Session, country: Country, week: date | None = None, force: bool = False) -> Digest:
-    week = week or week_start(date.today() - timedelta(days=7))  # last complete week
+LAST_TRY = 3  # Thursday: from then on the digest covers last week even if its reader data is still short
+
+
+def digest_week(s: Session, country_id: int, today: date | None = None) -> date:
+    """The week the digest covers: the one that ended last Sunday, once its scores are complete.
+    Wikipedia gives us page views a day or two late, so early in the week that week's audience cells
+    can still be coming in. Until Thursday the digest then falls back to the latest complete week (whose
+    digest usually exists already, so nothing new is written) and the next morning's run tries again."""
+    today = today or date.today()
+    last = week_start(today) - timedelta(weeks=1)
+    if today.weekday() >= LAST_TRY:
+        return last
+    return latest_complete_week(s, country_id, upto=last) or last
+
+
+def generate(s: Session, country: Country, week: date | None = None, force: bool = False,
+             today: date | None = None) -> Digest:
+    week = week or digest_week(s, country.id, today)
     existing = s.scalar(select(Digest).where(Digest.country_id == country.id, Digest.week_start == week))
     if existing and existing.status == "ok" and not force:
         return existing
