@@ -27,7 +27,8 @@ const times = (g) => { const x = Math.exp(g); return x >= 10 ? String(Math.round
 export const shortfall = (g, red) => (g >= red ? `About ${times(g)} times fewer articles than usual`
   : g <= -red ? `About ${times(-g)} times more articles than usual` : 'About as usual')
 export const articles = (n) => `${fmt(n)} article${n === 1 ? '' : 's'}`
-export const about = (v) => (v >= 1 ? `about ${fmt(v)}` : 'less than 1')
+// one decimal under 10, so a usual level of 2.7 does not read as the 3-article minimum
+export const about = (v) => (v >= 10 ? `about ${fmt(v)}` : v >= 1 ? `about ${+v.toFixed(1)}` : 'less than 1')
 export const judged = (r) => !r.in_progress && !r.insufficient && r.gap != null
 
 // the 4-week verdict for the week ending a row, as one or two sentences

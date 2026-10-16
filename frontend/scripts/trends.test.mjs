@@ -37,7 +37,7 @@ test('verdict sentences carry the drawn numbers or the reason', () => {
     'Last 4 weeks: 700 articles against about 401 usual. About 1.7 times more articles than usual.')
   // too few expected is about the usual level, and quotes it
   assert.equal(verdict(row({ gap: null, insufficient: true, reason: 'too_few_expected', articles_4w: 6, expected_4w: 1.8 }), 0.4, need),
-    'Last 4 weeks: 6 articles against about 2 usual. The usual level is too low to judge.')
+    'Last 4 weeks: 6 articles against about 1.8 usual. The usual level is too low to judge.')
   assert.equal(reasonText('too_few_expected', need, false), 'Usual level too low to judge')
   assert.equal(verdict(row({ gap: null, insufficient: true, reason: 'no_need_data' }), 0.4, need),
     'Last 4 weeks: not judged. No reader data linked to this theme.')
