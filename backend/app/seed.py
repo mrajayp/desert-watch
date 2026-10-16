@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from . import settings
 from .geo import centroids_by_name
-from .models import Country, Outlet, OutletCategory, PlaceAlias, Region, Theme
+from .models import Country, Outlet, OutletCategory, PlaceAlias, Region, Theme, utcnow
 from .textnorm import normalise
 
 SEED_EVIDENCE = "config/countries/{file}"
@@ -29,10 +29,34 @@ def seed_themes(s: Session) -> int:
                     en_terms=t.get("en_terms", []), ar_terms=t.get("ar_terms", []),
                     exclude=t.get("exclude", []), cooc=t.get("cooc", []), strict=bool(t.get("strict", False)),
                     require_country=bool(t.get("require_country", False)),
+                    veto=t.get("veto", []), mask=t.get("mask", []),
                     acled_event_types=t.get("acled_event_types", []),
                     reliefweb_themes=t.get("reliefweb_themes", []), active=bool(t.get("active", True))))
         n += 1
     return n
+
+
+TERM_FIELDS = ("en_terms", "ar_terms", "exclude", "cooc", "veto", "mask")
+
+
+def apply_theme_terms(s: Session, slugs: list[str]) -> dict[str, list[str]]:
+    """Copy only the term fields of the named themes from themes.yaml into the database. Every
+    other field, and every other theme, stays as edited in Admin. A changed theme gets a new
+    version. Returns the changed fields per theme (re-tag afterwards with retag-all)."""
+    data = {t["slug"]: t for t in _load(settings.CONFIG_DIR / "themes.yaml")["themes"]}
+    out = {}
+    for slug in slugs:
+        th = s.scalar(select(Theme).where(Theme.slug == slug))
+        if slug not in data or not th:
+            raise ValueError(f"{slug}: not in {'themes.yaml' if slug not in data else 'the database'}")
+        changed = [k for k in TERM_FIELDS if (getattr(th, k) or []) != data[slug].get(k, [])]
+        for k in changed:
+            setattr(th, k, data[slug].get(k, []))
+        if changed:
+            th.version += 1
+            th.updated_at = utcnow()
+        out[slug] = changed
+    return out
 
 
 def seed_country(s: Session, file: str) -> Country:

@@ -64,6 +64,10 @@ class Theme(Base):
     # require_country: count only items whose own text names the country or one of its places
     # (even from local outlets, which also publish world news on the topic)
     require_country: Mapped[bool | None] = mapped_column(Boolean, default=False)
+    # veto: [{"terms": [weak terms], "context": [words]}]: the weak terms do not count when a context word is present
+    # ("killed" next to "crash"). mask: phrases blanked out before matching ("territorial waters" for "water").
+    veto: Mapped[list | None] = mapped_column(JSON, default=list)
+    mask: Mapped[list | None] = mapped_column(JSON, default=list)
     acled_event_types: Mapped[list] = mapped_column(JSON, default=list)
     reliefweb_themes: Mapped[list] = mapped_column(JSON, default=list)
     version: Mapped[int] = mapped_column(Integer, default=1)

@@ -14,8 +14,7 @@ from datetime import datetime
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .classify import classify_themes
-from .ingest import load_rules
+from .ingest import item_hits, load_rules
 from .models import Country, Item, ItemRegion, ItemTheme, Outlet, Theme
 from .network import jaccard, title_tokens
 
@@ -67,7 +66,7 @@ def summarise(s: Session, country: Country) -> dict:
         tagged = [i for i in relevant if tid in links.get(i.id, [])]
         if not tagged:
             continue
-        confirmed = sum(1 for i in tagged if tid in classify_themes(f"{i.title or ''} {i.snippet or ''}", rules.themes))
+        confirmed = sum(1 for i in tagged if tid in item_hits(rules, i))
         per_theme[t.slug] = {"articles": len(tagged), "rule_confirmed": round(confirmed / len(tagged), 3),
                              "arabic_share": round(sum(1 for i in tagged if i.lang == "ar") / len(tagged), 3),
                              "with_region": round(sum(1 for i in tagged if regions.get(i.id)) / len(tagged), 3)}

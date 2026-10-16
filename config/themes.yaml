@@ -6,6 +6,10 @@
 # ar_terms  : Arabic terms. RSS / Google News matching only. Write them
 #             un-normalised; the classifier normalises alef/ya/ta-marbuta/diacritics.
 # exclude   : terms that veto a match (both languages).
+# veto      : weak terms that do not count when a context word is present
+#             (e.g. "killed" next to "crash"). Other terms still count.
+# mask      : phrases removed from the text before matching, so a term inside them
+#             does not fire (e.g. "المياه الإقليمية" for "المياه").
 # acled_event_types / reliefweb_themes : need-lens mappings, used once keys arrive.
 
 themes:
@@ -13,15 +17,18 @@ themes:
     name_en: "Security & armed groups"
     name_ar: "الأمن والجماعات المسلحة"
     en_terms: [militia, militias, "armed group", "armed groups", clashes, fighting, ceasefire, airstrike, "drone strike", gunmen, kidnapping, abducted, assassination, killed, killing, "prison break", jailbreak, "armed clashes", assassinated, explosion, bomb]
-    ar_terms: ["ميليشيا", "ميليشيات", "مليشيات", "مجموعات مسلحة", "جماعات مسلحة", "اشتباكات", "اشتباك", "وقف إطلاق النار", "غارة", "مسيرة", "مسلحين", "اختطاف", "اغتيال", "مقتل", "قتلى", "قتيل", "سجن", "فرار", "خطف", "انفجار", "عبوة ناسفة", "مسلح", "قوة عسكرية", "الاستخبارات العسكرية"]
+    ar_terms: ["ميليشيا", "ميليشيات", "مليشيات", "مجموعات مسلحة", "جماعات مسلحة", "اشتباكات", "اشتباك", "وقف إطلاق النار", "غارة", "طائرة مسيرة", "المسيرات", "بمسيرة", "مسيرات", "مسلحين", "اختطاف", "اغتيال", "مقتل", "قتلى", "قتيل", "السجون", "اقتحام سجن", "سجن معيتيقة", "فرار", "خطف", "انفجار", "عبوة ناسفة", "مسلح", "قوة عسكرية", "الاستخبارات العسكرية"]
     exclude: [football, "كرة القدم"]
+    veto:
+      - terms: [killed, killing, "مقتل", "قتلى", "قتيل", explosion, "انفجار"]
+        context: [accident, crash, collision, traffic, flood, floods, rain, rains, storm, drown, drowned, "gas cylinder", "حادث سير", "حادث مروري", "تصادم", "انقلاب", "غرق", "أمطار", "سيول", "عاصفة", "اسطوانة غاز"]
     acled_event_types: [Battles, "Explosions/Remote violence", "Violence against civilians"]
     reliefweb_themes: ["Protection and Human Rights", "Mine Action"]
   - slug: migration
     name_en: "Migration & detention"
     name_ar: "الهجرة والاحتجاز"
-    en_terms: [migrant, migrants, refugee, refugees, asylum, "detention centre", "detention center", trafficking, smuggling, "coast guard", shipwreck, deportation, boat, boats, departures, rescued, "missing at sea"]
-    ar_terms: ["مهاجر", "مهاجرين", "المهاجرين", "لاجئ", "لاجئين", "اللجوء", "مركز احتجاز", "مراكز الاحتجاز", "الاتجار بالبشر", "تهريب البشر", "خفر السواحل", "غرق قارب", "ترحيل", "قوارب", "قارب", "الهجرة غير الشرعية", "غير النظامية", "إنقاذ", "مفقودين"]
+    en_terms: [migrant, migrants, migration, IOM, refugee, refugees, asylum, "detention centre", "detention center", "people smuggling", "human smuggling", "migrant smuggling", "human trafficking", "coast guard", shipwreck, deportation, boat, boats, departures, rescued, "missing at sea"]
+    ar_terms: ["مهاجر", "مهاجرا", "مهاجرون", "مهاجرين", "المهاجرين", "لاجئ", "لاجئين", "اللجوء", "مركز احتجاز", "مراكز الاحتجاز", "الاتجار بالبشر", "تهريب البشر", "خفر السواحل", "غرق قارب", "ترحيل", "قوارب", "قارب", "الهجرة غير الشرعية", "الهجرة غير النظامية", "غير النظامية", "إنقاذ"]
     exclude: []
     acled_event_types: []
     reliefweb_themes: ["Protection and Human Rights"]
@@ -39,20 +46,24 @@ themes:
     en_terms: ["power cut", "power cuts", blackout, electricity, GECOL, "water supply", "Great Man-Made River", "Man-Made River", sewage, desalination, "load shedding", "water shortage", "fuel shortage", diesel, gasoline, queues]
     ar_terms: ["انقطاع الكهرباء", "الكهرباء", "طرح الأحمال", "الشركة العامة للكهرباء", "إمدادات المياه", "المياه", "النهر الصناعي", "الصرف الصحي", "تحلية المياه", "نقص الوقود", "الديزل", "البنزين", "طوابير", "شح المياه", "انقطاع المياه"]
     exclude: []
+    mask: ["المياه الإقليمية", "مياه الأمطار", "تجمعات المياه", "المياه المفتوحة"]
     acled_event_types: [Protests]
     reliefweb_themes: ["Water Sanitation Hygiene", "Shelter and Non-Food Items"]
   - slug: health
     name_en: "Health"
     name_ar: "الصحة"
-    en_terms: [hospital, hospitals, "health ministry", medicines, "medical supplies", outbreak, cholera, vaccination, "doctors strike", "cancer patients", medical, doctors, nurses, vaccine, vaccines, disease, epidemic, pharmaceutical, "medical staff"]
-    ar_terms: ["مستشفى", "المستشفيات", "وزارة الصحة", "الأدوية", "المستلزمات الطبية", "تفشي", "الكوليرا", "التطعيم", "إضراب الأطباء", "مرضى الأورام", "طبي", "طبية", "الأطباء", "أطباء", "لقاح", "لقاحات", "اللقاحات", "مرض", "وباء", "الإمداد الطبي", "الصيدلة"]
+    en_terms: [hospital, hospitals, "health ministry", medicines, "medical supplies", "disease outbreak", "cholera outbreak", cholera, vaccination, "doctors strike", "cancer patients", medical, doctors, nurses, vaccine, vaccines, disease, epidemic, pharmaceutical, "medical staff"]
+    ar_terms: ["مستشفى", "المستشفيات", "وزارة الصحة", "الأدوية", "أدوية", "المستلزمات الطبية", "تفشي", "الكوليرا", "التطعيم", "إضراب الأطباء", "مرضى الأورام", "طبي", "طبية", "الأطباء", "أطباء", "لقاح", "لقاحات", "اللقاحات", "مرض", "وباء", "الإمداد الطبي", "الصيدلة"]
     exclude: []
     acled_event_types: []
+    veto:
+      - terms: ["مرض", disease, medical, "طبي", "طبية"]
+        context: [veterinary, livestock, animal, animals, "بيطري", "بيطرية", "الماشية", "الثروة الحيوانية", "حيوانات"]
     reliefweb_themes: [Health]
   - slug: governance
     name_en: "Governance & elections"
     name_ar: "الحكم والانتخابات"
-    en_terms: [election, elections, HNEC, "House of Representatives", "High Council of State", "Government of National Unity", GNU, "Presidential Council", "municipal council", corruption, "Audit Bureau", constitution, parliament, minister, strike, protest, protests, "municipal elections"]
+    en_terms: [election, elections, HNEC, "House of Representatives", "High Council of State", "Government of National Unity", GNU, "Presidential Council", "municipal council", corruption, "Audit Bureau", constitution, parliament, minister, "general strike", "teachers strike", "workers strike", protest, protests, "municipal elections"]
     ar_terms: ["الانتخابات", "انتخابات", "المفوضية الوطنية العليا للانتخابات", "مجلس النواب", "المجلس الأعلى للدولة", "حكومة الوحدة الوطنية", "المجلس الرئاسي", "المجلس البلدي", "الفساد", "ديوان المحاسبة", "الدستور", "البرلمان", "الحكومة", "وزير", "إضراب", "احتجاج", "احتجاجات", "الانتخابات البلدية", "المبعوثة الأممية", "البعثة الأممية"]
     exclude: []
     acled_event_types: [Protests, Riots]
@@ -92,7 +103,7 @@ themes:
     acled_event_types: ["Strategic developments"]
     reliefweb_themes: [Gender, "Protection and Human Rights"]
     strict: true
-    cooc: [["المرأة", "امرأة", "النساء", "نساء", "سيدة", "سيدات", "فتاة", "فتيات", "طفلة", "الليبيات", "ليبيات", "ناشطة", "ناشطات", "النائبة", "طبيبة", "طبيبات", "صحفية", "صحفيات", "محامية", "مدونة", "معلمات", "زوجته", "زوجة", "ابنته", "ابنتيه", "ابنتها", "أمها", "شقيقته", "النسوية", "نسوية", "نسائية", "النسائية", "الإناث", woman, women, girl, girls, female, wife, daughter, daughters, mother, activist, feminist, "Libyan women", "MP Siham", "lawyer Hanan"], ["قانون", "القانون", "تشريع", "تشريعات", "حقوق", "الجنسية", "جنسية", "الزواج", "زواج", "الطلاق", "طلاق", "الحضانة", "النفقة", "الميراث", "الولاية", "المحكمة", "قرار", "القاصرات", "التمييز", law, legal, rights, nationality, citizenship, marriage, divorce, custody, inheritance, court, discrimination, decree]]
+    cooc: [["المرأة", "امرأة", "النساء", "نساء", "سيدة", "سيدات", "فتاة", "فتيات", "طفلة", "الليبيات", "ليبيات", "ناشطة", "ناشطات", "النائبة", "طبيبة", "طبيبات", "صحفية", "صحفيات", "محامية", "مدونة", "معلمات", "زوجته", "زوجة", "ابنته", "ابنتيه", "ابنتها", "أمها", "شقيقته", "النسوية", "نسوية", "نسائية", "النسائية", "الإناث", woman, women, girl, girls, female, wife, daughter, daughters, mother, activist, feminist, "Libyan women", "MP Siham", "lawyer Hanan"], ["قانون", "القانون", "تشريع", "تشريعات", "حقوق", "الجنسية", "جنسية", "الزواج", "زواج", "الطلاق", "طلاق", "الحضانة", "النفقة", "الميراث", "الولاية", "المحكمة", "القاصرات", "التمييز", law, legal, rights, nationality, citizenship, marriage, divorce, custody, inheritance, court, discrimination, decree]]
   - slug: gender_mobility_morality
     group: gender
     name_en: "Gender: mobility, dress & 'morality' policing"
@@ -114,7 +125,7 @@ themes:
     acled_event_types: ["Violence against civilians"]
     reliefweb_themes: [Gender, "Protection and Human Rights"]
     strict: true
-    cooc: [["المرأة", "امرأة", "النساء", "نساء", "سيدة", "سيدات", "فتاة", "فتيات", "طفلة", "الليبيات", "ليبيات", "ناشطة", "ناشطات", "النائبة", "طبيبة", "طبيبات", "صحفية", "صحفيات", "محامية", "مدونة", "معلمات", "زوجته", "زوجة", "ابنته", "ابنتيه", "ابنتها", "أمها", "شقيقته", "النسوية", "نسوية", "نسائية", "النسائية", "الإناث", woman, women, girl, girls, female, wife, daughter, daughters, mother, activist, feminist, "Libyan women", "MP Siham", "lawyer Hanan"], ["اغتصاب", "الاغتصاب", "اغتصبت", "جنسي", "الجنسي", "جنسية", "دعارة", "الدعارة", "حوامل", "حامل", "الولادة", "الاستعباد", rape, raped, sexual, sex, prostitution, pregnant, brothel, slavery, sexually]]
+    cooc: [["المرأة", "امرأة", "النساء", "نساء", "سيدة", "سيدات", "فتاة", "فتيات", "طفلة", "الليبيات", "ليبيات", "ناشطة", "ناشطات", "النائبة", "طبيبة", "طبيبات", "صحفية", "صحفيات", "محامية", "مدونة", "معلمات", "زوجته", "زوجة", "ابنته", "ابنتيه", "ابنتها", "أمها", "شقيقته", "النسوية", "نسوية", "نسائية", "النسائية", "الإناث", woman, women, girl, girls, female, wife, daughter, daughters, mother, activist, feminist, "Libyan women", "MP Siham", "lawyer Hanan"], ["اغتصاب", "الاغتصاب", "اغتصبت", "جنسي", "الجنسي", "دعارة", "الدعارة", "حوامل", "حامل", "الاستعباد", rape, raped, sexual, sex, prostitution, pregnant, brothel, slavery, sexually]]
   - slug: gender_economic_health
     group: gender
     name_en: "Gender: women's economic & health rights"

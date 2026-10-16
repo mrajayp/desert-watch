@@ -17,6 +17,8 @@
   reassign-social           move posts filed under a whole platform (facebook.com ...) to their page
   import-social-scrape PATH load the converted social-media scrape JSON (outlets, Facebook register, labels)
   sync-themes               overwrite DB theme terms from config/themes.yaml (bumps versions, re-tags)
+  apply-theme-terms SLUG... copy only the term fields (terms, exclude, cooc, veto, mask) of these themes from themes.yaml
+  retag-all [--dry-run]     re-run the theme + place rules over every article, then the relevance guard
 """
 import getpass
 import os
@@ -136,7 +138,8 @@ def main(argv: list[str]):
                     s.flush()
                     changed.append(th.id)
                 th.group, th.name_en, th.name_ar = t.get("group"), t["name_en"], t["name_ar"]
-                new = {k: t.get(k, []) for k in ("en_terms", "ar_terms", "exclude", "cooc", "acled_event_types", "reliefweb_themes")}
+                new = {k: t.get(k, []) for k in ("en_terms", "ar_terms", "exclude", "cooc", "veto", "mask",
+                                                 "acled_event_types", "reliefweb_themes")}
                 new["strict"] = bool(t.get("strict", False))
                 new["require_country"] = bool(t.get("require_country", False))
                 if th.id in changed or any(getattr(th, k) != v for k, v in new.items()):
@@ -150,6 +153,18 @@ def main(argv: list[str]):
         for tid in changed:
             _retag_theme(tid, recompute=False)
         print(f"updated {len(changed)} themes")
+    elif cmd == "apply-theme-terms":
+        from .seed import apply_theme_terms
+        with SessionLocal() as s:
+            changed = apply_theme_terms(s, args)
+            s.commit()
+        for slug, fields in changed.items():
+            print(slug, ", ".join(fields) or "unchanged")
+        print("now run: retag-all")
+    elif cmd == "retag-all":
+        from .retag import retag_all
+        with SessionLocal() as s:
+            retag_all(s, dry_run="--dry-run" in args)
     elif cmd == "import-alignment-sources":
         from .imports.alignment_sources import run as run_align
         with SessionLocal() as s:
