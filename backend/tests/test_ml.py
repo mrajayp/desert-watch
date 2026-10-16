@@ -181,7 +181,7 @@ def test_decision_rule(db):
     slugs = ["security", "migration", "gender_violence"]
     run = lambda probs, veto: classify_items(db, FakeModel(slugs, probs, [0.3, 0.3, 0.5], veto))  # noqa: E731
 
-    res = run({A: [0.1, 0.9, 0.0], B: [0.9, 0.8, 0.3], D: [0.0, 0.0, 0.1]}, [False, False, False])
+    res = run({A: [0.1, 0.9, 0.0], B: [0.9, 0.8, 0.3], D: [0.0, 0.2, 0.1]}, [False, False, False])
     db.expire_all()
     assert db.get(ItemTheme, (a.id, themes["security"])).active             # rule links stay for non-gender
     assert db.get(ItemTheme, (a.id, themes["security"])).score == 0.1
@@ -193,7 +193,7 @@ def test_decision_rule(db):
     assert u.method == "user" and not u.active and u.score == 0.9           # people's decisions are never changed
     g = db.get(ItemTheme, (d.id, themes["gender_violence"]))
     assert g.active and g.score == 0.1                                      # before the gate: scores only
-    assert db.get(Item, b.id).extra["model"]["near"] == {"gender_violence": 0.3}
+    assert db.get(Item, b.id).extra["model"]["near"] == {} and db.get(Item, d.id).extra["model"]["near"] == {"migration": 0.2}
     assert res["themes"]["migration"]["added"] == 2
 
     res = run({A: [0.1, 0.1, 0.0], B: [0.9, 0.1, 0.0], D: [0.0, 0.0, 0.1]}, [False, False, True])

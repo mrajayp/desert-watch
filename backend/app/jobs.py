@@ -63,6 +63,7 @@ def model_job(source_key: str, *args: str) -> dict | None:
     """Run a theme-model command (app/ml) in a child process, so the memory scikit-learn takes goes
     back to the system when it ends. Skipped quietly while no model is live. Logged in source_run."""
     import json
+    import os
     import subprocess
     import sys
     from pathlib import Path
@@ -76,8 +77,10 @@ def model_job(source_key: str, *args: str) -> dict | None:
         s.commit()
         out = {}
         try:
+            # one BLAS thread: multi-threaded OpenBLAS reserves several hundred MB the job does not need
+            env = {**os.environ, "OPENBLAS_NUM_THREADS": "1", "OMP_NUM_THREADS": "1", "MKL_NUM_THREADS": "1"}
             p = subprocess.run([sys.executable, "-m", "app.cli", *args], cwd=Path(__file__).resolve().parents[1],
-                               capture_output=True, text=True, encoding="utf-8", timeout=3600)
+                               capture_output=True, text=True, encoding="utf-8", timeout=3600, env=env)
             try:
                 out = json.loads((p.stdout.strip().splitlines() or ["{}"])[-1])
             except ValueError:

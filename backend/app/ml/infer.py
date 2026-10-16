@@ -19,7 +19,7 @@ from ..models import Item, ItemTheme, Theme
 from .features import Features, item_text
 
 BATCH = 1000
-NEAR = 0.5  # p at or above NEAR * t (and below t) is kept on the item as a near miss, for the review queue
+NEAR = 0.5  # non-gender p at or above NEAR * t (and below t) is kept on the item as a near miss, for the review queue
 
 
 def _sigmoid(z):
@@ -80,12 +80,14 @@ class ThemeModel:
         return self.proba_x(self.vectorise(texts))
 
 
-def uncertainty(p: np.ndarray, t: np.ndarray) -> np.ndarray:
-    """Summed binary entropy per row after rescaling so each theme's threshold sits at 0.5."""
+def uncertainty(p: np.ndarray, t: np.ndarray, mask: np.ndarray | None = None) -> np.ndarray:
+    """Summed binary entropy per row after rescaling so each theme's threshold sits at 0.5.
+    mask: which cells count (where the model's answer can change a link)."""
     t = np.clip(t, 1e-3, 1 - 1e-3)
     q = np.where(p < t, p / (2 * t), 0.5 + (p - t) / (2 * (1 - t)))
     q = np.clip(q, 1e-6, 1 - 1e-6)
-    return (-(q * np.log2(q) + (1 - q) * np.log2(1 - q))).sum(axis=1)
+    h = -(q * np.log2(q) + (1 - q) * np.log2(1 - q))
+    return (h if mask is None else h * mask).sum(axis=1)
 
 
 def apply_link(s: Session, item_id: int, theme_id: int, theme_version: int, lk: ItemTheme | None, p: float, t: float,
@@ -157,7 +159,11 @@ def classify_items(s: Session, model: ThemeModel, *, since: datetime | None = No
         P = model.proba([item_text(it.title, it.snippet, it.source_key) for it in items])
         links = {(lk.item_id, lk.theme_id): lk for lk in s.scalars(
             select(ItemTheme).where(ItemTheme.item_id.in_(chunk), ItemTheme.theme_id.in_(tids)))}
-        u = uncertainty(P[:, [k for k, _ in cols]], model.th[[k for k, _ in cols]]) if cols else np.zeros(len(items))
+        # the model's answer matters for non-gender themes, and for gender themes only where a rule link exists
+        ks = [k for k, _ in cols]
+        mask = np.array([[model.policy[k] == "or" or getattr(links.get((it.id, th.id)), "method", None) == "rule"
+                          for k, th in cols] for it in items], dtype=bool).reshape(len(items), len(cols))
+        u = uncertainty(P[:, ks], model.th[ks], mask)
         for i, it in enumerate(items):
             near = {}
             for k, th in cols:
@@ -166,7 +172,7 @@ def classify_items(s: Session, model: ThemeModel, *, since: datetime | None = No
                 what = apply_link(s, it.id, th.id, th.version, lk, p, t, model.policy[k], bool(model.veto[k]), model.version)
                 counts[th.slug][what] += 1
                 counts[th.slug]["above"] += p >= t
-                if lk is None and NEAR * t <= p < t:
+                if lk is None and model.policy[k] == "or" and NEAR * t <= p < t:
                     near[th.slug] = round(p, 3)
             mark = {"v": model.version, "u": round(float(u[i]), 3), "near": near}
             if (it.extra or {}).get("model") != mark:
