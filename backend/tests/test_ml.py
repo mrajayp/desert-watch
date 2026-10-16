@@ -358,7 +358,10 @@ def test_review_queue(client, users, db, tmp_path):
     assert d["model"] == "theme-x" and d["labelled"] >= 1
 
 
-def test_admin_models(client, users, db, tmp_path):
+def test_admin_models(client, users, db, tmp_path, monkeypatch):
+    from app import jobs
+    queued = []
+    monkeypatch.setitem(jobs.JOBS, "classify_all", lambda: queued.append("classify_all"))
     for v in ("theme-1", "theme-2"):
         registry.register(db, *_fake_bundle_file(tmp_path, v))
     registry.activate(db, "theme-1")
@@ -371,6 +374,7 @@ def test_admin_models(client, users, db, tmp_path):
     assert d["active"] == "theme-1" and [m["version"] for m in d["models"]] == ["theme-2", "theme-1"]
     assert {t["slug"] for t in d["themes"]} >= {"security", "gender_violence"}
     assert client.post("/api/admin/models/theme-2/activate").json()["active"] is True
+    assert queued == ["classify_all"]  # a newly live version re-scores everything
     assert client.get("/api/admin/models").json()["active"] == "theme-2"
     assert client.post("/api/admin/models/nope/activate").status_code == 404
     learning = client.get("/api/admin/learning").json()

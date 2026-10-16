@@ -4,7 +4,7 @@ item_theme and from item.extra['model'], which classify-items writes."""
 import re
 from datetime import timedelta
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import exists, func, not_, select
 from sqlalchemy.orm import Session
@@ -161,10 +161,14 @@ def models(s: Session = Depends(get_db), _: User = Depends(auth.require_admin)):
 
 
 @router.post("/admin/models/{version}/activate")
-def activate_model(version: str, s: Session = Depends(get_db), _: User = Depends(auth.require_admin)):
+def activate_model(version: str, bg: BackgroundTasks, s: Session = Depends(get_db),
+                   _: User = Depends(auth.require_admin)):
+    """Make a version live (also how to roll back), then re-score every article with it."""
+    from ..jobs import JOBS
     try:
         row = registry.activate(s, version)
     except ValueError:
         raise HTTPException(404, "Unknown model version")
     s.commit()
+    bg.add_task(JOBS["classify_all"])
     return registry.row_json(row)

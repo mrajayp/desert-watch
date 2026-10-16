@@ -169,13 +169,13 @@ def model_status(s: Session, args: list[str]) -> dict:
 def activate_model(s: Session, args: list[str]) -> dict:
     row = registry.activate(s, args[0])
     s.commit()
-    return {"active": row.version, "changed": 1}
+    return {"active": row.version, "changed": 1, "next": "classify-items --all"}
 
 
 def rollback_model(s: Session, args: list[str]) -> dict:
     row = registry.rollback(s)
     s.commit()
-    return {"active": row.version if row else None, "changed": int(row is not None)}
+    return {"active": row.version if row else None, "changed": int(row is not None), "next": "classify-items --all"}
 
 
 HANDLERS = {"train-theme-model": train_theme_model, "register-model": register_model,

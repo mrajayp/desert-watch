@@ -165,6 +165,7 @@ JOBS = {
     "digest": lambda: weekly_digest(force=True),
     "backfill": backfill,
     "classify": lambda: _locked(model_job)("theme_model", "classify-items", "--days", "3"),
+    "classify_all": lambda: _locked(model_job)("theme_model", "classify-items", "--all"),
 }
 
 
