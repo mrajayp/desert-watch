@@ -314,3 +314,18 @@ def test_admin_theme_edit_keeps_fields_the_form_does_not_send(client, users, db)
     db.expire_all()
     assert gv.cooc == cooc and gv.strict and gv.group == "gender"
     assert sec.veto == veto and veto
+
+
+# ---------------------------------------------------------------- fix round (review of 2026-10-16)
+def test_rss_storage_gate_stays_permissive(db):
+    """One theme word in the cleaned summary is still enough to store an outlet feed item. The
+    item gets no active link until the rules (or the model) confirm a theme."""
+    cid = db.scalar(select(Country.id))
+    rules = load_rules(db, cid)
+    kw = dict(published_at=DAY, source_key="rss", require_theme=True)
+    it, created = store_article(db, cid, rules, url="https://feed.example/1", title="Book fair opens in the old city",
+                                snippet="Fans celebrated late. Gunmen were seen nearby.", **kw)
+    assert created and not active(db, it.id)
+    skipped, created = store_article(db, cid, rules, url="https://feed.example/2", title="Book fair opens in the old city",
+                                     snippet="Fans celebrated late.", **kw)
+    assert skipped is None and not created

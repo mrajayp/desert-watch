@@ -7,7 +7,7 @@ from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from .classify import PlaceRule, ThemeRule, classify_item, clean_snippet, tag_places
+from .classify import PlaceRule, ThemeRule, classify_item, classify_themes, clean_snippet, tag_places
 from .models import Country, Item, ItemRegion, ItemTheme, Outlet, OutletCategory, PlaceAlias, Region, Theme
 from .textnorm import detect_lang, normalise, term_variants
 
@@ -251,7 +251,7 @@ def store_article(s: Session, country_id: int, rules: Rules, *, url: str, title:
                   forced_theme_ids: tuple[int, ...] = (), outlet_cache: dict | None = None,
                   require_theme: bool = False, kind: str = "article",
                   assume_relevant: bool = False, query: str | None = None) -> tuple[Item | None, bool]:
-    """Returns (item, created). With require_theme, items matching no theme are skipped
+    """Returns (item, created). With require_theme, items with no theme word at all are skipped
     (outlet RSS feeds are mostly off-topic). `query` names the search or alert behind
     forced_theme_ids (kept as evidence)."""
     key = url_key(url)
@@ -262,7 +262,9 @@ def store_article(s: Session, country_id: int, rules: Rules, *, url: str, title:
         return existing, False
     lang = lang or detect_lang(" ".join(x for x in (title, snippet) if x))
     if require_theme and not forced_theme_ids:
-        if not classify_item(title, clean_snippet(source_key, title, snippet), rules.themes):
+        # storing stays permissive (one theme word anywhere is enough). The links that count still
+        # follow the title-first rules, and the learned model can score the rest
+        if not classify_themes(" ".join(x for x in (title, clean_snippet(source_key, title, snippet)) if x), rules.themes):
             return None, False
     social = social_outlet(url)
     # a social post belongs to its page even when a search result names the platform as the source
