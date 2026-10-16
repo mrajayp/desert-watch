@@ -1,7 +1,7 @@
 from datetime import date
 
 from fastapi import HTTPException
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from ..models import Country, Item, ItemRegion, ItemTheme, Outlet, OutletCategory, Region, Theme
@@ -48,14 +48,23 @@ def outlet_categories(s: Session, outlet_ids: list[int] | None = None) -> dict[i
     return out
 
 
-def item_json(it: Item, outlet: Outlet | None, themes: list[int], regions: list[int], cats: dict | None = None) -> dict:
+def item_json(it: Item, outlet: Outlet | None, themes: list[int], regions: list[int], cats: dict | None = None,
+              theme_detail: list[dict] | None = None) -> dict:
     return {
         "id": it.id, "kind": it.kind, "url": it.url, "title": it.title, "snippet": it.snippet, "lang": it.lang,
         "published_at": it.published_at.isoformat(), "source": it.source_key, "value": it.value,
         "outlet": {"id": outlet.id, "name": outlet.name, "domain": outlet.domain,
                    "categories": {k: v["value"] for k, v in (cats or {}).items()}} if outlet else None,
         "theme_ids": themes, "region_ids": regions, "user_added": it.added_by is not None,
+        # every theme link, counted or not: how it was made (rule | query | user | model), model score, evidence
+        "theme_detail": theme_detail or [],
     }
+
+
+def duplicate_cluster(s: Session, it: Item) -> list[Item]:
+    """The item and every other copy of the same story (duplicate_of points at the counted copy)."""
+    root = it.duplicate_of or it.id
+    return s.scalars(select(Item).where(or_(Item.id == root, Item.duplicate_of == root)).order_by(Item.id)).all() or [it]
 
 
 def window_bounds(week: date, weeks: int):
@@ -106,13 +115,16 @@ def hydrate_items(s: Session, rows: list[Item]) -> list[dict]:
     ids = [r.id for r in rows]
     if not ids:
         return []
-    th, rg = {}, {}
-    for it in s.scalars(select(ItemTheme).where(ItemTheme.item_id.in_(ids), ItemTheme.active.is_(True))):
-        th.setdefault(it.item_id, []).append(it.theme_id)
+    th, rg, detail = {}, {}, {}
+    for it in s.scalars(select(ItemTheme).where(ItemTheme.item_id.in_(ids)).order_by(ItemTheme.theme_id)):
+        if it.active:
+            th.setdefault(it.item_id, []).append(it.theme_id)
+        detail.setdefault(it.item_id, []).append({"theme_id": it.theme_id, "method": it.method, "active": it.active,
+                                                  "score": it.score, "evidence": it.evidence})
     for ir in s.scalars(select(ItemRegion).where(ItemRegion.item_id.in_(ids), ItemRegion.active.is_(True))):
         rg.setdefault(ir.item_id, []).append(ir.region_id)
     outlet_ids = list({r.outlet_id for r in rows if r.outlet_id})
     outlets = {o.id: o for o in s.scalars(select(Outlet).where(Outlet.id.in_(outlet_ids)))}
     cats = outlet_categories(s, outlet_ids)
-    return [item_json(r, outlets.get(r.outlet_id), th.get(r.id, []), rg.get(r.id, []), cats.get(r.outlet_id))
-            for r in rows]
+    return [item_json(r, outlets.get(r.outlet_id), th.get(r.id, []), rg.get(r.id, []), cats.get(r.outlet_id),
+                      detail.get(r.id, [])) for r in rows]

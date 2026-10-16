@@ -1,0 +1,173 @@
+"""Labelling for the theme model: full theme-set labels on an article, the review queue that picks
+what to label next, and the model registry for admins. No scikit-learn here: scores come from
+item_theme and from item.extra['model'], which classify-items writes."""
+from datetime import timedelta
+
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field
+from sqlalchemy import and_, exists, func, not_, or_, select
+from sqlalchemy.orm import Session
+
+from .. import auth
+from ..classify import classify_themes
+from ..db import get_db
+from ..ml import labels as L
+from ..ml import registry
+from ..models import Event, Item, ItemTheme, Label, ModelRegistry, Theme, User, utcnow
+from ..textnorm import term_variants
+from .common import country_or_404, duplicate_cluster, hydrate_items
+
+router = APIRouter(prefix="/api")
+
+QUEUE_DAYS = 120
+WOMEN_WORDS = ["women", "woman", "girl", "نساء", "امرأة", "فتاة", "سيدة", "المرأة"]
+GENERIC_TERMS = ["minister", "وزير", "killed", "مقتل", "المياه"]
+GENERIC = {v for t in GENERIC_TERMS for v in term_variants(t)}
+
+
+# ---------------------------------------------------------------- full theme-set labels
+class LabelsIn(BaseModel):
+    themes: list[int] = Field(default_factory=list)  # every theme the article is about; the rest are "no"
+    libya: bool                                      # is it about Libya at all
+
+
+def _set_link(s: Session, item_id: int, theme: Theme, on: bool) -> None:
+    lk = s.get(ItemTheme, (item_id, theme.id))
+    if lk is None:
+        s.add(ItemTheme(item_id=item_id, theme_id=theme.id, method="user", active=on, theme_version=theme.version))
+        return
+    if lk.method != "user":
+        lk.evidence = {**(lk.evidence or {}), "was": lk.method}
+    lk.method, lk.active = "user", on
+
+
+@router.post("/items/{item_id}/labels")
+def label_item(item_id: int, body: LabelsIn, s: Session = Depends(get_db), u: User = Depends(auth.require_contributor)):
+    it = s.get(Item, item_id)
+    if not it:
+        raise HTTPException(404, "Unknown item")
+    active = s.scalars(select(Theme).where(Theme.active.is_(True)).order_by(Theme.id)).all()
+    by_id = {t.id: t for t in active}
+    if any(t not in by_id for t in body.themes):
+        raise HTTPException(400, "Unknown or switched-off theme")
+    chosen = set(body.themes)
+    cluster = duplicate_cluster(s, it)
+    for x in cluster:
+        for t in active:
+            _set_link(s, x.id, t, t.id in chosen)
+        x.relevant = body.libya
+        x.extra = {**(x.extra or {}), "user_relevance": body.libya}
+    s.add(Event(pseudo_id=u.pseudo_id, type="correction", object_type="item", object_key=str(item_id),
+                context={"label_type": "theme_set", "themes": [by_id[t].slug for t in sorted(chosen)],
+                         "libya": body.libya, "of": [t.slug for t in active], "title": (it.title or "")[:300],
+                         "lang": it.lang, "copies": len(cluster)}))
+    s.commit()
+    return hydrate_items(s, [it])[0]
+
+
+# ---------------------------------------------------------------- review queue
+def _generic_only(text: str, rules) -> str | None:
+    """The generic term when every rule hit on this text is that one generic word, else None."""
+    hits = classify_themes(text, rules)
+    terms = {h for hs in hits.values() for h in hs}
+    if hits and all(len(hs) == 1 for hs in hits.values()) and len(terms) == 1 and terms <= GENERIC:
+        return next(iter(terms))
+    return None
+
+
+@router.get("/review-queue")
+def review_queue(n: int = 10, country: str = "LY", s: Session = Depends(get_db),
+                 u: User = Depends(auth.require_contributor)):
+    """Unlabelled recent articles worth a person's look: where the model is least sure, possible
+    gender stories the rules missed, and links that rest on one generic word."""
+    from ..ingest import load_rules
+    n = max(1, min(n, 50))
+    c = country_or_404(s, country)
+    live = registry.active(s)
+    done = L.labelled_item_ids(s)
+    base = and_(Item.country_id == c.id, Item.kind == "article", Item.relevant.is_(True), Item.duplicate_of.is_(None),
+                Item.published_at >= utcnow() - timedelta(days=QUEUE_DAYS),
+                not_(exists().where(ItemTheme.item_id == Item.id, ItemTheme.method == "user")))
+    themes = s.scalars(select(Theme).where(Theme.active.is_(True))).all()
+
+    def fresh(stmt, limit):
+        out = []
+        for iid in s.scalars(stmt.limit(limit * 4 + 40)):
+            if iid not in done:
+                out.append(iid)
+            if len(out) >= limit:
+                break
+        return out
+
+    queues: list[tuple[str, list[int]]] = []
+    if live:
+        unsure = func.json_extract(Item.extra, "$.model.u")
+        queues.append(("uncertain", fresh(select(Item.id).where(base, unsure.is_not(None)).order_by(unsure.desc()), n)))
+    gender_ids = [t.id for t in themes if t.group == "gender"]
+    women = or_(*[col.ilike(f"%{w}%") for w in WOMEN_WORDS for col in (Item.title, Item.snippet)])
+    no_gender = not_(exists().where(ItemTheme.item_id == Item.id, ItemTheme.theme_id.in_(gender_ids),
+                                    ItemTheme.active.is_(True)))
+    queues.append(("gender_candidate", fresh(select(Item.id).where(base, women, no_gender)
+                                             .order_by(Item.published_at.desc()), n)))
+    has_rule = exists().where(ItemTheme.item_id == Item.id, ItemTheme.method == "rule", ItemTheme.active.is_(True))
+    generic = or_(*[col.ilike(f"%{w}%") for w in GENERIC_TERMS for col in (Item.title, Item.snippet)])
+    rules = load_rules(s, c.id).themes
+    generic_terms: dict[int, str] = {}
+    cand = s.execute(select(Item.id, Item.title, Item.snippet).where(base, has_rule, generic)
+                     .order_by(Item.published_at.desc()).limit(300)).all()
+    for iid, title, snip in cand:
+        term = None if iid in done else _generic_only(" ".join(x for x in (title, snip) if x), rules)
+        if term:
+            generic_terms[iid] = term
+        if len(generic_terms) >= n:
+            break
+    queues.append(("generic_term", list(generic_terms)))
+
+    picks: dict[int, str] = {}
+    for i in range(n):  # take turns between the queues
+        for reason, ids in queues:
+            if i < len(ids) and ids[i] not in picks and len(picks) < n:
+                picks[ids[i]] = reason
+    rows = {r.id: r for r in s.scalars(select(Item).where(Item.id.in_(list(picks))))}
+    out = hydrate_items(s, [rows[i] for i in picks if i in rows])
+    slug2id = {t.slug: t.id for t in themes}
+    for d in out:
+        mark = (rows[d["id"]].extra or {}).get("model") or {}
+        scores = {str(x["theme_id"]): x["score"] for x in d["theme_detail"] if x["score"] is not None}
+        scores |= {str(slug2id[sl]): p for sl, p in (mark.get("near") or {}).items() if sl in slug2id}
+        d.update(reason=picks[d["id"]], scores=scores, uncertainty=mark.get("u"), generic_term=generic_terms.get(d["id"]))
+    return {"items": out, "model": live.version if live else None, "labelled": len(done)}
+
+
+# ---------------------------------------------------------------- model registry (admin)
+@router.get("/admin/models")
+def models(s: Session = Depends(get_db), _: User = Depends(auth.require_admin)):
+    themes = s.scalars(select(Theme).where(Theme.active.is_(True)).order_by(Theme.id)).all()
+    stats = L.theme_stats(L.item_vectors(s, themes), themes)
+    live = registry.active(s)
+    m = (live.metrics or {}).get("themes", {}) if live else {}
+    rows = s.scalars(select(ModelRegistry).order_by(ModelRegistry.id.desc())).all()
+    by = s.execute(select(Label.origin, Label.label_type, func.count()).group_by(Label.origin, Label.label_type)).all()
+    return {
+        "active": live.version if live else None,
+        "models": [registry.row_json(r) for r in rows],
+        "labels": {"by_origin": {o: sum(n for oo, _, n in by if oo == o) for o in {o for o, _, _ in by}},
+                   "by_type": {t: sum(n for _, tt, n in by if tt == t) for t in {t for _, t, _ in by}},
+                   "by_origin_and_type": [{"origin": o, "label_type": t, "n": n} for o, t, n in by]},
+        "themes": [{"id": t.id, "slug": t.slug, "group": t.group, **stats[t.slug],
+                    "threshold": (live.thresholds or {}).get(t.slug) if live else None,
+                    "gate": m.get(t.slug, {}).get("gate")} for t in themes],
+        "links": {"model": s.scalar(select(func.count()).where(ItemTheme.method == "model", ItemTheme.active.is_(True))),
+                  "vetoed": s.scalar(select(func.count()).where(ItemTheme.method == "rule", ItemTheme.active.is_(False),
+                                                                func.json_extract(ItemTheme.evidence, "$.veto").is_not(None)))},
+    }
+
+
+@router.post("/admin/models/{version}/activate")
+def activate_model(version: str, s: Session = Depends(get_db), _: User = Depends(auth.require_admin)):
+    try:
+        row = registry.activate(s, version)
+    except ValueError:
+        raise HTTPException(404, "Unknown model version")
+    s.commit()
+    return registry.row_json(row)

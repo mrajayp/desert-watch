@@ -17,6 +17,15 @@
   reassign-social           move posts filed under a whole platform (facebook.com ...) to their page
   import-social-scrape PATH load the converted social-media scrape JSON (outlets, Facebook register, labels)
   sync-themes               overwrite DB theme terms from config/themes.yaml (bumps versions, re-tags)
+
+theme model (app/ml):
+  train-theme-model [--gold PATH] [--out PATH]  train base + small model and evaluate (LOCAL ONLY, ~1 GB RAM)
+  register-model PATH [--activate] [--note TEXT]  copy a bundle to DATA_DIR/models and add it to the registry
+  classify-items [--days N | --all] [--dry-run]  score articles with the live model and apply it (--reset undoes it)
+  import-gold-labels PATH   blind review labels (jsonl) as silver theme_set labels (idempotent)
+  train-small-model         refit the label-trained part of the live model; promote it if it does no worse
+  model-status              live model, registry, labels per theme
+  activate-model VERSION | rollback-model
 """
 import getpass
 import os
@@ -162,6 +171,9 @@ def main(argv: list[str]):
         from .jobs import recompute
         print(recompute(weeks=int(args[args.index("--weeks") + 1]) if "--weeks" in args else None), "cells")
     else:
+        from .ml.commands import COMMANDS as ML_COMMANDS, run as run_ml
+        if cmd in ML_COMMANDS:
+            return run_ml(cmd, args)
         print(__doc__)
         return 1
     return 0

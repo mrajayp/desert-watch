@@ -59,18 +59,58 @@ def recompute(weeks: int | None = None):
         return n
 
 
+def model_job(source_key: str, *args: str) -> dict | None:
+    """Run a theme-model command (app/ml) in a child process, so the memory scikit-learn takes goes
+    back to the system when it ends. Skipped quietly while no model is live. Logged in source_run."""
+    import json
+    import subprocess
+    import sys
+    from pathlib import Path
+    from .ml.registry import active
+    from .models import SourceRun, utcnow
+    with SessionLocal() as s:
+        if active(s) is None:
+            return None
+        run = SourceRun(source_key=source_key, started_at=utcnow(), status="running")
+        s.add(run)
+        s.commit()
+        out = {}
+        try:
+            p = subprocess.run([sys.executable, "-m", "app.cli", *args], cwd=Path(__file__).resolve().parents[1],
+                               capture_output=True, text=True, encoding="utf-8", timeout=3600)
+            try:
+                out = json.loads((p.stdout.strip().splitlines() or ["{}"])[-1])
+            except ValueError:
+                out = {}
+            run.status = "ok" if p.returncode == 0 else "error"
+            run.rows = int(out.get("changed") or 0)
+            run.error = (p.stderr or p.stdout)[-1500:] if p.returncode else out.get("skipped") or out.get("reason")
+        except subprocess.TimeoutExpired:
+            run.status, run.error = "error", "timed out after an hour"
+        run.ok = run.status == "ok"
+        run.finished_at = utcnow()
+        s.commit()
+        log.info("%s %s -> %s (%s changes)", source_key, " ".join(args), run.status, run.rows)
+        return out
+
+
 @_locked
 def nightly():
     with SessionLocal() as s:
         learning.purge_old_events(s)
     for key in ("wikipedia", "acled", "ucdp", "reliefweb"):
         collect(key)
+    # retrain the label-trained part of the theme model; a promoted version re-scores everything
+    res = model_job("theme_model_train", "train-small-model")
+    if res and res.get("promoted"):
+        model_job("theme_model", "classify-items", "--all")
 
 
 @_locked
 def hourly():
     collect("rss")
     collect("galerts")
+    model_job("theme_model", "classify-items", "--days", "3")  # before the recompute at :45
 
 
 @_locked
@@ -121,6 +161,7 @@ JOBS = {
     "recompute": recompute,
     "digest": lambda: weekly_digest(force=True),
     "backfill": backfill,
+    "classify": lambda: _locked(model_job)("theme_model", "classify-items", "--days", "3"),
 }
 
 
