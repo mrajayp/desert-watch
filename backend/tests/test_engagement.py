@@ -130,3 +130,19 @@ def test_pickup_counts_articles_without_a_theme_and_drops_stale_readings(db):
     db.expire_all()
     got = {r.item_id: r.total for r in db.scalars(select(ItemEngagement).where(ItemEngagement.source == "pickup"))}
     assert b.id not in got and got[a.id] == 1
+
+
+def test_empty_7d_reading_does_not_hide_a_48h_value_and_ties_have_a_fixed_order(db):
+    from app.engagement import attach_engagement, by_pickup
+    from app.models import Item
+    cid = db.scalar(select(Outlet.country_id).limit(1))
+    rules = load_rules(db, cid)
+    same = [_store(db, cid, rules, f"https://{k}.ly/7", f"Libya: story {k} about water in Sabha", T0) for k in "abc"]
+    a = same[0]
+    db.add_all([ItemEngagement(item_id=a.id, source="fb_url", age_bucket="7d", total=None, raw={"missing": True}),
+                ItemEngagement(item_id=a.id, source="fb_url", age_bucket="48h", reactions=5, comments=1, shares=0, total=6)])
+    db.commit()
+    fb = attach_engagement(db, [{"id": a.id}])[0]["engagement"]["fb"]
+    assert fb["total"] == 6 and fb["age_bucket"] == "48h"
+    order = db.scalars(by_pickup(select(Item.id).where(Item.id.in_([i.id for i in same])))).all()
+    assert order == sorted((i.id for i in same), reverse=True)        # same pickup, same time: newest id first

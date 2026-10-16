@@ -71,26 +71,31 @@ def upsert_readings(s: Session, source: str, age_bucket: str, values: dict[int, 
 
 
 def by_pickup(stmt):
-    """Orders an item query by story pickup (most outlets first), then newest. 'Most picked up' sort."""
+    """Orders an item query by story pickup (most outlets first), then newest, then id (Google News items
+    often share a timestamp, and paging needs a fixed order). 'Most picked up' sort."""
     from sqlalchemy import and_, func
     pk = and_(ItemEngagement.item_id == Item.id, ItemEngagement.source == "pickup", ItemEngagement.age_bucket == "now")
     return stmt.outerjoin(ItemEngagement, pk).order_by(func.coalesce(ItemEngagement.total, 0).desc(),
-                                                      Item.published_at.desc())
+                                                      Item.published_at.desc(), Item.id.desc())
 
 
 def attach_engagement(s: Session, items: list[dict]) -> list[dict]:
     """Adds 'engagement': {pickup, fb} to hydrated item dicts (see api/common.hydrate_items)."""
     ids = [it["id"] for it in items]
-    pickup, fb = {}, {}
+    pickup, best = {}, {}
+
+    def rank(r):   # a reading with a value first, then the 7-day one, the reading we trust most
+        return (r.total is not None, r.age_bucket == "7d")
+
     for i in range(0, len(ids), 900):
         for r in s.scalars(select(ItemEngagement).where(ItemEngagement.item_id.in_(ids[i:i + 900]),
                                                         ItemEngagement.source.in_(("pickup", "fb_url")))):
             if r.source == "pickup":
                 pickup[r.item_id] = int(r.total) if r.total is not None else None
-            elif r.item_id not in fb or r.age_bucket == "7d":  # 7 days is the reading we trust most
-                fb[r.item_id] = {"total": r.total, "reactions": r.reactions, "comments": r.comments,
-                                 "shares": r.shares, "age_bucket": r.age_bucket,
-                                 "measured_at": r.measured_at.isoformat()}
+            elif r.item_id not in best or rank(r) > rank(best[r.item_id]):
+                best[r.item_id] = r
+    fb = {i: {"total": r.total, "reactions": r.reactions, "comments": r.comments, "shares": r.shares,
+              "age_bucket": r.age_bucket, "measured_at": r.measured_at.isoformat()} for i, r in best.items()}
     for it in items:
         it["engagement"] = {"pickup": pickup.get(it["id"]), "fb": fb.get(it["id"])}
     return items
