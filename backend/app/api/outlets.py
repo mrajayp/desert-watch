@@ -348,3 +348,15 @@ def blind_spots(country: str = "LY", s: Session = Depends(get_db), _: User = Dep
                     "labels": {k: v["value"] for k, v in cats.get(r.id, {}).items() if k.startswith("scrape_")}})
     out.sort(key=lambda x: -(x["interactions"] or 0))
     return out
+
+
+# ---------------------------------------------------------------- reach (engagement.py)
+@router.get("/outlets/{oid}/reach")
+def outlet_reach_api(oid: int, s: Session = Depends(get_db), _: User = Depends(auth.current_user)):
+    """Dated reach figures for one outlet: Tranco web rank, the 2023-24 scrape's Facebook figures
+    (historical) and our own Facebook median once there are enough readings."""
+    from ..engagement import outlet_reach
+    o = s.get(Outlet, oid)
+    if not o:
+        raise HTTPException(404, "Unknown outlet")
+    return outlet_reach(s, o)

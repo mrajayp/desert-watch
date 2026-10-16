@@ -56,6 +56,14 @@ def upsert_readings(s: Session, source: str, age_bucket: str, values: dict[int, 
     return n
 
 
+def by_pickup(stmt):
+    """Orders an item query by story pickup (most outlets first), then newest. 'Most picked up' sort."""
+    from sqlalchemy import and_, func
+    pk = and_(ItemEngagement.item_id == Item.id, ItemEngagement.source == "pickup", ItemEngagement.age_bucket == "now")
+    return stmt.outerjoin(ItemEngagement, pk).order_by(func.coalesce(ItemEngagement.total, 0).desc(),
+                                                      Item.published_at.desc())
+
+
 def attach_engagement(s: Session, items: list[dict]) -> list[dict]:
     """Adds 'engagement': {pickup, fb} to hydrated item dicts (see api/common.hydrate_items)."""
     ids = [it["id"] for it in items]

@@ -4,6 +4,7 @@ from fastapi import HTTPException
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from ..engagement import attach_engagement, by_pickup
 from ..models import Country, Item, ItemRegion, ItemTheme, Outlet, OutletCategory, Region, Theme
 
 
@@ -67,7 +68,8 @@ def window_bounds(week: date, weeks: int):
 
 def items_query(s: Session, *, country_id: int, theme_id: int | None, region: Region | None, start, end,
                 kinds=("article",), limit=200, offset=0, outlet_id: int | None = None, q: str | None = None,
-                source: str | None = None, lang: str | None = None, with_sources: bool = False):
+                source: str | None = None, lang: str | None = None, with_sources: bool = False,
+                sort: str | None = None):
     """(total, rows) or, with_sources, (total, rows, {source_key: count}) where the source counts
     ignore the `source` filter so a UI can show every option with its count."""
     stmt = _items_stmt(s, country_id=country_id, theme_id=theme_id, region=region, start=start, end=end,
@@ -79,7 +81,8 @@ def items_query(s: Session, *, country_id: int, theme_id: int | None, region: Re
     if source:
         stmt = stmt.where(Item.source_key == source)
     total = s.scalar(select(func.count()).select_from(stmt.subquery()))
-    rows = s.scalars(stmt.order_by(Item.published_at.desc()).limit(limit).offset(offset)).all()
+    stmt = by_pickup(stmt) if sort == "pickup" else stmt.order_by(Item.published_at.desc())  # engagement.py
+    rows = s.scalars(stmt.limit(limit).offset(offset)).all()
     return (total, rows, by_source) if with_sources else (total, rows)
 
 
@@ -114,5 +117,6 @@ def hydrate_items(s: Session, rows: list[Item]) -> list[dict]:
     outlet_ids = list({r.outlet_id for r in rows if r.outlet_id})
     outlets = {o.id: o for o in s.scalars(select(Outlet).where(Outlet.id.in_(outlet_ids)))}
     cats = outlet_categories(s, outlet_ids)
-    return [item_json(r, outlets.get(r.outlet_id), th.get(r.id, []), rg.get(r.id, []), cats.get(r.outlet_id))
-            for r in rows]
+    return attach_engagement(s, [  # adds 'engagement' (engagement.py)
+        item_json(r, outlets.get(r.outlet_id), th.get(r.id, []), rg.get(r.id, []), cats.get(r.outlet_id))
+        for r in rows])
