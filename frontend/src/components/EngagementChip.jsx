@@ -4,7 +4,7 @@
 
 export const compact = (n) => {
   if (n < 1000) return String(Math.round(n))
-  const [d, unit] = n < 1e6 ? [1e3, 'k'] : [1e6, 'M']
+  const [d, unit] = n < 999500 ? [1e3, 'k'] : [1e6, 'M']
   return `${(n / d).toFixed(n / d < 10 ? 1 : 0).replace(/\.0$/, '')}${unit}`
 }
 
@@ -14,8 +14,8 @@ export default function EngagementChip({ e }) {
   const pickup = e?.pickup >= 2 ? e.pickup : null
   const fb = e?.fb?.total != null ? e.fb : null
   if (!pickup && !fb) return null
-  const fbTitle = fb && `Reactions, comments and shares on Facebook for this link: ${fb.reactions ?? 0} reactions, `
-    + `${fb.comments ?? 0} comments, ${fb.shares ?? 0} shares. Facebook gives approximate counts. `
+  const fbTitle = fb && `On Facebook: ${fb.reactions ?? 0} reactions, ${fb.comments ?? 0} comments, ${fb.shares ?? 0} shares `
+    + `for this link. Facebook gives approximate counts. `
     + `Read ${AGE[fb.age_bucket] || fb.age_bucket} after it was published, on ${fb.measured_at?.slice(0, 10)}.`
   return (
     <>
