@@ -105,3 +105,28 @@ def test_items_api_engagement_sort_and_outlet_reach(client, users, db):
     assert h["historical"] is True and h["per_article"] == 8.3 and h["period"]["to"] == "2024-08-10"
     assert r["facebook_recent"] is None                                  # fewer than 20 readings
     assert client.get("/api/outlets/999999/reach").status_code == 404
+
+
+def test_pickup_counts_articles_without_a_theme_and_drops_stale_readings(db):
+    from app.models import Item, ItemTheme
+    cid = db.scalar(select(Outlet.country_id).limit(1))
+    rules = load_rules(db, cid)
+    title = "Libya: " + STORY
+    a = _store(db, cid, rules, "https://a.ly/9", title, T0)
+    b = _store(db, cid, rules, "https://b.ly/9", title, T0 + timedelta(hours=2))
+    for link in db.scalars(select(ItemTheme).where(ItemTheme.item_id == b.id)):
+        link.active = False                                           # b is counted but has no theme
+    db.commit()
+    assert db.get(Item, b.id).relevant and not db.scalars(
+        select(ItemTheme).where(ItemTheme.item_id == b.id, ItemTheme.active.is_(True))).all()
+    compute(db, cid, weeks=2, today=date(2026, 10, 12))
+    got = {r.item_id: r.total for r in db.scalars(select(ItemEngagement).where(ItemEngagement.source == "pickup"))}
+    assert got[a.id] == 2 and got[b.id] == 2
+
+    # b turns out to be a duplicate of a: its reading goes and a's story is back to one outlet
+    db.get(Item, b.id).duplicate_of = a.id
+    db.commit()
+    compute(db, cid, weeks=2, today=date(2026, 10, 12))
+    db.expire_all()
+    got = {r.item_id: r.total for r in db.scalars(select(ItemEngagement).where(ItemEngagement.source == "pickup"))}
+    assert b.id not in got and got[a.id] == 1
