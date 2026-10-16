@@ -11,7 +11,7 @@ from ..db import get_db
 from ..ingest import load_rules, store_article
 from ..models import (CellWeek, Comment, CoverageSeries, GapClaim, GapVote, Item, ItemRegion, ItemTheme, Region,
                       SourceRun, Suggestion, Theme, User, utcnow)
-from ..scoring import LENSES, week_start
+from ..scoring import LENSES, TREND_WEEKS, trend_basis, week_start
 from .common import (country_or_404, descendants, hydrate_items, items_query, region_or_404, theme_or_404,
                      window_bounds)
 
@@ -32,9 +32,7 @@ def meta(country: str = "LY", s: Session = Depends(get_db), _: User = Depends(au
     latest = s.scalar(select(func.max(CellWeek.week_start)).where(CellWeek.country_id == c.id))
     weeks = s.scalars(select(CellWeek.week_start).where(CellWeek.country_id == c.id).distinct()
                       .order_by(CellWeek.week_start)).all()
-    # a lens is "available" only when it has at least one scored (sufficient) cell
-    available = {l for (l,) in s.execute(select(CellWeek.lens).where(
-        CellWeek.country_id == c.id, CellWeek.insufficient.is_(False)).distinct())}
+    available, with_need = _lens_status(s, c.id, latest, themes)
     return {
         "country": {"id": c.id, "iso2": c.iso2, "name_en": c.name_en, "name_ar": c.name_ar,
                     "boundaries": c.config.get("boundaries", {}), "district_geo": c.config.get("district_geo", {}),
@@ -44,12 +42,50 @@ def meta(country: str = "LY", s: Session = Depends(get_db), _: User = Depends(au
         "themes": [{"id": t.id, "slug": t.slug, "group": t.group, "name_en": t.name_en, "name_ar": t.name_ar, "version": t.version}
                    for t in themes],
         "lenses": [{"key": k, "levels": v["levels"], "reference": v["reference"],
-                    "min_need": settings.MIN_NEED_UNITS[k], "available": k in available} for k, v in LENSES.items()],
+                    "min_need": settings.MIN_NEED_UNITS[k], "min_expected": settings.MIN_EXPECTED_ARTICLES,
+                    "unit": v["unit"], "available": k in available, "themes_with_need": with_need.get(k, [])}
+                   for k, v in LENSES.items()],
+        "red_from": settings.GAP_RED_FROM,
         "weeks": [w.isoformat() for w in weeks],
         "latest_week": latest.isoformat() if latest else None,
         "window_weeks": settings.WINDOW_WEEKS,
         "events": c.config.get("events", []),
     }
+
+
+LENS_RECENT_WEEKS, LENS_MIN_WEEKS = 12, 4
+
+
+def _lens_status(s: Session, country_id: int, latest: date | None, themes: list[Theme]) -> tuple[set, dict]:
+    """(available lenses, lens -> theme ids with any need in the last 52 weeks). A lens is available
+    when at least a third of active themes have a judged national cell in 4 or more of its last 12
+    complete weeks, so a few old scored cells cannot keep a lens with no data on offer."""
+    if not latest:
+        return set(), {}
+    active = {t.id for t in themes}
+    national = s.scalar(select(Region.id).where(Region.country_id == country_id, Region.level == "national"))
+    rows = s.execute(select(CellWeek.lens, CellWeek.theme_id, CellWeek.week_start, CellWeek.insufficient,
+                            CellWeek.breakdown)
+                     .where(CellWeek.country_id == country_id, CellWeek.region_id == national,
+                            CellWeek.week_start > latest - timedelta(weeks=LENS_RECENT_WEEKS + 2))).all()
+    available = set()
+    for lens in LENSES:
+        mine = [r for r in rows if r.lens == lens and not (r.breakdown or {}).get("in_progress")]
+        recent = set(sorted({r.week_start for r in mine})[-LENS_RECENT_WEEKS:])
+        judged = Counter(r.theme_id for r in mine if r.week_start in recent and not r.insufficient)
+        if 3 * sum(1 for tid in active if judged[tid] >= LENS_MIN_WEEKS) >= len(active) > 0:
+            available.add(lens)
+    kinds = {k: lens for lens, cfg in LENSES.items() for k in cfg["kinds"]}
+    with_need = defaultdict(set)
+    for kind, tid in s.execute(select(Item.kind, ItemTheme.theme_id).distinct()
+                               .join(ItemTheme, and_(ItemTheme.item_id == Item.id, ItemTheme.active.is_(True)))
+                               .where(Item.country_id == country_id, Item.kind.in_(list(kinds)),
+                                      Item.relevant.is_(True), Item.duplicate_of.is_(None), Item.value > 0,
+                                      Item.published_at >= datetime.combine(
+                                          latest - timedelta(weeks=TREND_WEEKS - 1), datetime.min.time()))):
+        if tid in active:
+            with_need[kinds[kind]].add(tid)
+    return available, {k: sorted(v) for k, v in with_need.items()}
 
 
 @router.get("/sources/health")
@@ -70,9 +106,11 @@ def sources_health(s: Session = Depends(get_db), _: User = Depends(auth.current_
 
 
 def _cell_json(c: CellWeek) -> dict:
+    b = c.breakdown or {}
     return {"theme_id": c.theme_id, "region_id": c.region_id, "week": c.week_start.isoformat(), "lens": c.lens,
             "need": c.need, "coverage": c.coverage, "ratio": c.ratio, "ref_ratio": c.ref_ratio, "gap": c.gap,
-            "insufficient": c.insufficient, "flags": c.flags, "breakdown": c.breakdown}
+            "insufficient": c.insufficient, "flags": c.flags, "breakdown": c.breakdown,
+            "reason": b.get("reason"), "in_progress": bool(b.get("in_progress"))}
 
 
 def _feedback_summary(s: Session, theme_ids=None):
@@ -121,61 +159,70 @@ def cell_series(theme_id: int, region_id: int, lens: str = "audience", s: Sessio
 @router.get("/cells/trends")
 def all_series(country: str = "LY", lens: str = "audience", region_id: int | None = None,
                s: Session = Depends(get_db), _: User = Depends(auth.current_user)):
-    """All themes' weekly series for one region (default national) — feeds small multiples."""
+    """Articles per week for every theme in one region (default national): 52 complete weeks plus the
+    week still coming in. Bars count comparable source|outlet pairs only (the set the scores use, see
+    scoring.trend_basis). The usual level and the 4-week verdicts come from the scored cells."""
     c = country_or_404(s, country)
-    if region_id is None:
-        region_id = s.scalar(select(Region.id).where(Region.country_id == c.id, Region.level == "national"))
-    rows = s.scalars(select(CellWeek).where(CellWeek.country_id == c.id, CellWeek.region_id == region_id,
-                                            CellWeek.lens == lens).order_by(CellWeek.week_start)).all()
-    out = defaultdict(list)
-    for r in rows:
-        out[r.theme_id].append(_cell_json(r))
-    basis = _trend_coverage(s, c.id, region_id, out)
-    return {"region_id": region_id, "series": out, "trend_basis": basis}
-
-
-TREND_WEEKS = 52
-
-
-def _trend_coverage(s: Session, country_id: int, region_id: int, series: dict) -> dict | None:
-    """Adds `trend_coverage` to the last TREND_WEEKS rows of each theme: the 4-week coverage counted
-    only from source|outlet pairs collecting across the whole span shown (never the backfill), so
-    the small multiples show change in reporting, not change in what we collect."""
-    from ..scoring import NOT_FOR_TRENDS
-    weeks = sorted({r["week"] for rows in series.values() for r in rows
-                    if not (r.get("breakdown") or {}).get("partial_window")})[-TREND_WEEKS:]
-    if len(weeks) < 2:
-        return None
-    first, last = date.fromisoformat(weeks[0]), date.fromisoformat(weeks[-1])
-    span_start = first - timedelta(weeks=settings.WINDOW_WEEKS - 1)
-    spans = s.execute(select(Item.source_key, Item.outlet_id, func.min(Item.published_at), func.max(Item.published_at))
-                      .where(Item.country_id == country_id, Item.kind == "article", Item.relevant.is_(True),
-                             Item.duplicate_of.is_(None), Item.source_key.not_in(NOT_FOR_TRENDS))
-                      .group_by(Item.source_key, Item.outlet_id)).all()
-    keep = {(src, oid) for src, oid, lo, hi in spans if lo.date() <= span_start and hi.date() >= last}
-    region = s.get(Region, region_id)
-    q = (select(Item.source_key, Item.outlet_id, Item.published_at, ItemTheme.theme_id)
+    if lens not in LENSES:
+        raise HTTPException(400, "Unknown lens")
+    region = region_or_404(s, region_id) if region_id else s.scalar(
+        select(Region).where(Region.country_id == c.id, Region.level == "national"))
+    themes = s.scalars(select(Theme).where(Theme.active.is_(True)).order_by(Theme.id)).all()
+    out = {"region_id": region.id, "lens": lens, "unit": LENSES[lens]["unit"], "red_from": settings.GAP_RED_FROM,
+           "weeks": [], "basis": None, "themes": {}, "series": {}, "trend_basis": None}
+    current = s.scalar(select(func.max(CellWeek.week_start)).where(CellWeek.country_id == c.id))
+    if not current:
+        return out
+    (first, end, span_start), pairs = trend_basis(s, c.id, current)
+    weeks = [first + timedelta(weeks=i) for i in range((current - first).days // 7 + 1)]
+    # weekly article counts per theme in one query: every source, and the comparable pairs
+    wk = func.date(Item.published_at, "-6 days", "weekday 1")
+    q = (select(ItemTheme.theme_id, wk, Item.source_key, Item.outlet_id, func.count(Item.id))
          .join(ItemTheme, and_(ItemTheme.item_id == Item.id, ItemTheme.active.is_(True)))
-         .where(Item.country_id == country_id, Item.kind == "article", Item.relevant.is_(True),
-                Item.duplicate_of.is_(None), Item.source_key.not_in(NOT_FOR_TRENDS),
-                Item.published_at >= datetime.combine(span_start, datetime.min.time()),
-                Item.published_at < datetime.combine(last + timedelta(days=7), datetime.min.time())))
+         .where(Item.country_id == c.id, Item.kind == "article", Item.relevant.is_(True), Item.duplicate_of.is_(None),
+                Item.published_at >= datetime.combine(first - timedelta(weeks=settings.WINDOW_WEEKS - 1),
+                                                      datetime.min.time()),
+                Item.published_at < datetime.combine(current + timedelta(days=7), datetime.min.time()))
+         .group_by(ItemTheme.theme_id, wk, Item.source_key, Item.outlet_id))
     if region.level != "national":
         q = q.where(Item.id.in_(select(ItemRegion.item_id).where(
             ItemRegion.region_id.in_(descendants(s, region)), ItemRegion.active.is_(True))))
-    weekly = Counter()
-    for src, oid, pub, tid in s.execute(q):
-        if (src, oid) in keep:
-            weekly[(tid, week_start(pub.date()))] += 1
-    shown = set(weeks)
-    for tid, rows in series.items():
-        for r in rows:
-            if r["week"] in shown:
-                wk = date.fromisoformat(r["week"])
-                r["trend_coverage"] = sum(weekly.get((tid, wk - timedelta(weeks=i)), 0)
-                                          for i in range(settings.WINDOW_WEEKS))
-    return {"from": span_start.isoformat(), "to": last.isoformat(), "outlets": len({o for _, o in keep}),
-            "sources": sorted({src for src, _ in keep})}
+    comp, every = Counter(), Counter()
+    for tid, w, src, oid, n in s.execute(q):
+        key = (tid, date.fromisoformat(w))
+        every[key] += n
+        if not pairs or (src, oid) in pairs:
+            comp[key] += n
+    cells = s.scalars(select(CellWeek).where(CellWeek.country_id == c.id, CellWeek.region_id == region.id,
+                                             CellWeek.lens == lens, CellWeek.week_start >= span_start)).all()
+    by_cell = {(x.theme_id, x.week_start): x for x in cells}
+    daily = LENSES[lens].get("daily")
+    for t in themes:
+        rows = []
+        for w in weeks:
+            cw = by_cell.get((t.id, w))
+            b = (cw.breakdown or {}) if cw else {}
+            langs = b.get("need_lang_week") or {}
+            rows.append({"week": w.isoformat(), "articles": comp[(t.id, w)], "articles_all": every[(t.id, w)],
+                         "need_week": b.get("need_week"), "need_week_raw": b.get("need_week_raw"),
+                         "need_en": langs.get("en", 0) if daily and cw else None,
+                         "need_ar": langs.get("ar", 0) if daily and cw else None,
+                         "expected_week": b.get("expected_week"),
+                         "articles_4w": b.get("articles_4w"), "expected_4w": b.get("expected_4w"),
+                         "gap": cw.gap if cw else None, "insufficient": cw.insufficient if cw else True,
+                         "reason": b.get("reason") if cw else "not_scored",
+                         "in_progress": bool(b.get("in_progress")) if cw else w >= current,
+                         "flags": cw.flags if cw else []})
+        out["themes"][t.id] = {"has_need": any(x.need > 0 for x in cells if x.theme_id == t.id), "rows": rows}
+        # legacy shape for the old line chart, until the bar chart replaces it
+        out["series"][t.id] = [{**_cell_json(by_cell[(t.id, w)]), "trend_coverage": sum(
+            comp[(t.id, w - timedelta(weeks=i))] for i in range(settings.WINDOW_WEEKS))}
+            for w in weeks if (t.id, w) in by_cell]
+    out["weeks"] = [w.isoformat() for w in weeks]
+    out["basis"] = out["trend_basis"] = {
+        "from": span_start.isoformat(), "to": end.isoformat(), "first_week": first.isoformat(),
+        "outlets": len({o for _, o in pairs}), "sources": sorted({src for src, _ in pairs})}
+    return out
 
 
 @router.get("/coverage-history")
@@ -313,6 +360,9 @@ def suggest(body: SuggestIn, s: Session = Depends(get_db), u: User = Depends(aut
     return {"ok": True, "id": sug.id}
 
 
+MONTHLY_SOURCES = ("gnews", "rss", "backfill", "galerts", "other")
+
+
 @router.get("/coverage-monthly")
 def coverage_monthly(theme_id: int, country: str = "LY", s: Session = Depends(get_db), _: User = Depends(auth.current_user)):
     """Monthly count of relevant collected articles for a theme, by language. Historical months
@@ -320,16 +370,19 @@ def coverage_monthly(theme_id: int, country: str = "LY", s: Session = Depends(ge
     compare shapes, not absolute levels across years)."""
     c = country_or_404(s, country)
     rows = s.execute(
-        select(func.strftime("%Y-%m", Item.published_at), Item.lang, func.count(Item.id))
+        select(func.strftime("%Y-%m", Item.published_at), Item.lang, Item.source_key, func.count(Item.id))
         .join(ItemTheme, ItemTheme.item_id == Item.id)
         .where(Item.country_id == c.id, Item.kind == "article", Item.relevant.is_(True), Item.duplicate_of.is_(None),
                ItemTheme.theme_id == theme_id, ItemTheme.active.is_(True))
-        .group_by(func.strftime("%Y-%m", Item.published_at), Item.lang)).all()
+        .group_by(func.strftime("%Y-%m", Item.published_at), Item.lang, Item.source_key)).all()
     out = defaultdict(lambda: {"ar": 0, "en": 0, "other": 0})
-    for m, lang, n in rows:
+    by_source = defaultdict(lambda: dict.fromkeys(MONTHLY_SOURCES, 0))
+    for m, lang, src, n in rows:
         out[m]["ar" if lang == "ar" else "en" if lang == "en" else "other"] += n
+        by_source[m][src if src in MONTHLY_SOURCES else "other"] += n
     if not out:
         return []
+    this_month = utcnow().strftime("%Y-%m")
     # fill empty months so the time axis is continuous
     y, mo = map(int, min(out).split("-"))
     ly, lm = map(int, max(out).split("-"))
@@ -338,7 +391,11 @@ def coverage_monthly(theme_id: int, country: str = "LY", s: Session = Depends(ge
         months.append(f"{y:04d}-{mo:02d}")
         y, mo = (y + 1, 1) if mo == 12 else (y, mo + 1)
     empty = {"ar": 0, "en": 0, "other": 0}
-    return [{"month": m, **out.get(m, empty), "total": sum(out.get(m, empty).values())} for m in months]
+    # sources: how each bar was collected, so a new feed or the backfill shows as what it is.
+    # partial: the month is not over yet.
+    return [{"month": m, **out.get(m, empty), "total": sum(out.get(m, empty).values()),
+             "sources": by_source.get(m, dict.fromkeys(MONTHLY_SOURCES, 0)), "partial": m == this_month}
+            for m in months]
 
 
 @router.get("/digests")

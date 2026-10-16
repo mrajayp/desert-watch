@@ -13,16 +13,18 @@ from .base import RunResult, http_client, polite_get
 
 API = "https://api.gdeltproject.org/api/v2/doc/doc"
 INTERVAL = 6.0
+RETRIES = 4  # GDELT answers bursts with 429 or "Please limit requests": back off 12, 24, 48, 96 s
 LANG = {"Arabic": "ar", "English": "en", "French": "fr", "Italian": "it"}
 
 
 def theme_query(country_term: str, terms: list[str], extra: str = "") -> str:
-    quoted = [f'"{t}"' if " " in t else t for t in terms[:8]]
+    # phrases and hyphenated words go in quotes: GDELT rejects a bare "same-sex" (illegal character)
+    quoted = [f'"{t}"' if " " in t or "-" in t else t for t in terms[:8]]
     return f'{country_term} ({" OR ".join(quoted)}) {extra}'.strip()
 
 
 def _json(client, params):
-    r = polite_get(client, API, params={**params, "format": "json"}, min_interval=INTERVAL)
+    r = polite_get(client, API, params={**params, "format": "json"}, min_interval=INTERVAL, retries=RETRIES)
     r.raise_for_status()
     if not r.text.strip().startswith("{"):
         raise RuntimeError(r.text[:200])
@@ -63,16 +65,22 @@ def collect(s: Session, *, days: int = 1) -> RunResult:
     return res
 
 
-def collect_timeline(s: Session, *, timespan: str = "24m") -> RunResult:
-    """National coverage history per theme (raw article counts per day)."""
+def collect_timeline(s: Session, *, timespan: str = "24m", themes: list[str] | None = None) -> RunResult:
+    """National coverage history per theme (raw article counts per day). One theme per request, each
+    retried with backoff. Every theme's 'all' series comes first, so a run cut short by rate limits
+    still leaves each theme a line. `themes` (slugs) limits the run."""
     res = RunResult()
     with http_client(timeout=90) as client:
-        for country in s.scalars(select(Country)):
+        for country in s.scalars(select(Country)).all():
             g = country.config.get("gdelt")
             if not g:
                 continue
-            for th in s.scalars(select(Theme).where(Theme.active.is_(True))):
-                for series, extra in (("all", ""), ("sourcecountry", f"sourcecountry:{g['sourcecountry']}")):
+            q = select(Theme).where(Theme.active.is_(True)).order_by(Theme.id)
+            if themes:
+                q = q.where(Theme.slug.in_(themes))
+            todo = s.scalars(q).all()
+            for series, extra in (("all", ""), ("sourcecountry", f"sourcecountry:{g['sourcecountry']}")):
+                for th in todo:
                     try:
                         data = _json(client, {"query": theme_query(g["country_term"], th.en_terms, extra),
                                               "mode": "timelinevolraw", "timespan": timespan})

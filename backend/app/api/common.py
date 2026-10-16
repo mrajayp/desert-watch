@@ -1,7 +1,7 @@
 from datetime import date
 
 from fastapi import HTTPException
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
 from ..models import Country, Item, ItemRegion, ItemTheme, Outlet, OutletCategory, Region, Theme
@@ -67,11 +67,13 @@ def window_bounds(week: date, weeks: int):
 
 def items_query(s: Session, *, country_id: int, theme_id: int | None, region: Region | None, start, end,
                 kinds=("article",), limit=200, offset=0, outlet_id: int | None = None, q: str | None = None,
-                source: str | None = None, lang: str | None = None, with_sources: bool = False):
+                source: str | None = None, lang: str | None = None, with_sources: bool = False,
+                pairs: set | None = None):
     """(total, rows) or, with_sources, (total, rows, {source_key: count}) where the source counts
-    ignore the `source` filter so a UI can show every option with its count."""
+    ignore the `source` filter so a UI can show every option with its count. `pairs` keeps only
+    those (source_key, outlet_id) pairs (an empty set keeps everything)."""
     stmt = _items_stmt(s, country_id=country_id, theme_id=theme_id, region=region, start=start, end=end,
-                       kinds=kinds, outlet_id=outlet_id, q=q, lang=lang)
+                       kinds=kinds, outlet_id=outlet_id, q=q, lang=lang, pairs=pairs)
     by_source = None
     if with_sources:
         sub = stmt.subquery()
@@ -84,7 +86,7 @@ def items_query(s: Session, *, country_id: int, theme_id: int | None, region: Re
 
 
 def _items_stmt(s: Session, *, country_id: int, theme_id: int | None, region: Region | None, start, end,
-                kinds, outlet_id: int | None, q: str | None, lang: str | None):
+                kinds, outlet_id: int | None, q: str | None, lang: str | None, pairs: set | None = None):
     stmt = select(Item).where(Item.country_id == country_id, Item.kind.in_(kinds), Item.relevant.is_(True), Item.duplicate_of.is_(None),
                               Item.published_at >= start, Item.published_at < end)
     if lang:
@@ -99,6 +101,11 @@ def _items_stmt(s: Session, *, country_id: int, theme_id: int | None, region: Re
         stmt = stmt.where(Item.outlet_id == outlet_id)
     if q:
         stmt = stmt.where(Item.title.ilike(f"%{q}%"))
+    if pairs:
+        by_src: dict[str, list] = {}
+        for src, oid in pairs:
+            by_src.setdefault(src, []).append(oid)
+        stmt = stmt.where(or_(*(and_(Item.source_key == src, Item.outlet_id.in_(oids)) for src, oids in by_src.items())))
     return stmt
 
 

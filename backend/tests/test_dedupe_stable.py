@@ -52,7 +52,7 @@ def test_audience_gap_ignores_a_newly_added_source(db):
                 store_article(db, country_id, rules, url=f"https://new.com/n/{w}/{k}", title=f"Hospital medicines shortage Libya {k}",
                               published_at=day, source_key="galerts")
     db.commit()
-    compute(db, country_id, weeks=4, today=today)
+    compute(db, country_id, weeks=5, today=today + timedelta(days=7))   # the week of `today` is complete
     last = db.scalar(select(CellWeek).where(CellWeek.theme_id == themes["health"], CellWeek.region_id == regions["national"],
                                             CellWeek.lens == "audience", CellWeek.week_start == week_start(today)))
     assert last.coverage > last.breakdown["scored_coverage"]       # shown coverage includes the new source
@@ -78,7 +78,7 @@ def test_source_ending_is_not_a_coverage_drop(db):
                 store_article(db, country_id, rules, url=f"https://bf.com/b/{w}/{k}", title=f"Hospital medicines shortage Libya {k}",
                               published_at=day, source_key="backfill")
     db.commit()
-    compute(db, country_id, weeks=2, today=today)
+    compute(db, country_id, weeks=3, today=today + timedelta(days=7))
     last = db.scalar(select(CellWeek).where(CellWeek.theme_id == themes["health"], CellWeek.region_id == regions["national"],
                                             CellWeek.lens == "audience", CellWeek.week_start == week_start(today)))
     assert "coverage_drop" not in last.flags
@@ -102,7 +102,7 @@ def test_backfill_density_does_not_move_the_gap(db):
             store_article(db, country_id, rules, url=f"https://bf.com/d/{w}/{k}", title=f"Hospital medicines shortage Libya {k}",
                           published_at=day, source_key="backfill")
     db.commit()
-    compute(db, country_id, weeks=2, today=today)
+    compute(db, country_id, weeks=3, today=today + timedelta(days=7))
     last = db.scalar(select(CellWeek).where(CellWeek.theme_id == themes["health"], CellWeek.region_id == regions["national"],
                                             CellWeek.lens == "audience", CellWeek.week_start == week_start(today)))
     assert last.breakdown["scored_sources"] == ["rss"]
@@ -126,7 +126,7 @@ def test_new_outlets_inside_an_existing_source_do_not_move_the_gap(db):
                 store_article(db, country_id, rules, url=f"https://new{k}.ly/n/{w}", title=f"Hospital medicines shortage Libya {k}",
                               published_at=day, source_key="rss")
     db.commit()
-    compute(db, country_id, weeks=2, today=today)
+    compute(db, country_id, weeks=3, today=today + timedelta(days=7))
     last = db.scalar(select(CellWeek).where(CellWeek.theme_id == themes["health"], CellWeek.region_id == regions["national"],
                                             CellWeek.lens == "audience", CellWeek.week_start == week_start(today)))
     assert last.coverage > 3 * last.breakdown["scored_coverage"] and last.breakdown["scored_outlets"] == 1

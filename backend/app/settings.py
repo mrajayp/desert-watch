@@ -8,7 +8,9 @@ DATA_DIR = Path(os.environ.get("DW_DATA_DIR", REPO_ROOT / "data"))
 DATABASE_URL = os.environ.get("DW_DATABASE_URL", f"sqlite:///{(DATA_DIR / 'desert_watch.db').as_posix()}")
 FRONTEND_DIST = Path(os.environ.get("DW_FRONTEND_DIST", REPO_ROOT / "frontend" / "dist"))
 
-USER_AGENT = os.environ.get("DW_USER_AGENT", "desert-watch/0.1 (information-desert research tool)")
+# Wikimedia asks for a contact URL in the User-Agent (meta.wikimedia.org/wiki/User-Agent_policy)
+USER_AGENT = os.environ.get("DW_USER_AGENT",
+                            "desert-watch/0.2 (https://desert-watch.fly.dev; information-desert research tool)")
 COOKIE_SECURE = os.environ.get("DW_COOKIE_SECURE", "0") == "1"
 SCHEDULER_ENABLED = os.environ.get("DW_SCHEDULER", "0") == "1"
 
@@ -33,3 +35,8 @@ MIN_NEED_UNITS = {          # below this a cell is "insufficient evidence"
 }
 SHRINK_STRENGTH = {"audience": 2000, "events": 10, "humanitarian": 5, "journalist": 2}
 RAW_EVENT_RETENTION_DAYS = 365
+# Gap score: gap = ln((E + A) / (C + A)), E = expected articles (reference x need), C = articles counted.
+PRIOR_ARTICLES = 5          # A: the prior, in articles, for every lens (MIN_NEED_UNITS/SHRINK_STRENGTH no longer decide)
+MIN_EXPECTED_ARTICLES = 3   # a cell is judged only when E reaches this
+GAP_RED_FROM = 0.4          # about 1.5 times fewer articles than expected
+PAGEVIEW_SPIKE_CAP = 5      # a title's day counts at most this many times its trailing 28-day median
