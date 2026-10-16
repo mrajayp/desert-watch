@@ -82,6 +82,9 @@ def test_real_config_lists_use_only_their_themes_words():
     assert all(len(grp) <= 4 for grp in groups(g))  # plus the anchor: five items per request at most
     bad = {**g, "baskets": {"health": ["علاج"], "nope": ["x"]}}
     assert len(check_baskets(bad, words)) == 2
+    # the draft fuel theme shares «البنزين» with services: one search must not count for two themes
+    shared = {**g, "baskets": {**g["baskets"], "fuel_supply": ["البنزين"]}}
+    assert check_baskets(shared, words) == ["fuel_supply: already in another list: البنزين (services)"]
 
 
 def test_plan_daily_window_never_exceeds_269_days():

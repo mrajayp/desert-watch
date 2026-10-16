@@ -56,8 +56,9 @@ def config(country_config: dict) -> dict | None:
 
 
 def check_baskets(g: dict, themes: dict[str, list[str]]) -> list[str]:
-    """Problems with the config: every list word must be one of that theme's own ar_terms."""
-    out = []
+    """Problems with the config: every list word must be one of that theme's own ar_terms, and no
+    word may sit in two lists (the same searches would then drive two themes)."""
+    out, owner = [], {}
     for slug, terms in (g.get("baskets") or {}).items():
         if slug not in themes:
             out.append(f"{slug}: unknown theme")
@@ -65,6 +66,9 @@ def check_baskets(g: dict, themes: dict[str, list[str]]) -> list[str]:
         extra = [t for t in terms if t not in themes[slug]]
         if extra:
             out.append(f"{slug}: not in the theme's ar_terms: {', '.join(extra)}")
+        shared = [t for t in terms if owner.setdefault(t, slug) != slug]
+        if shared:
+            out.append(f"{slug}: already in another list: {', '.join(f'{t} ({owner[t]})' for t in shared)}")
     return out
 
 
