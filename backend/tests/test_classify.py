@@ -73,3 +73,16 @@ def test_ta_marbuta_does_not_match_possessive():
     assert set(classify_themes("تصريح النائبة حول القانون", [r])) == {1}
     assert set(classify_themes("وقالت والنائبة إن", [r])) == {1}
     assert classify_themes("لقاء عقيلة بالكبير ونائبه", [r]) == {}   # "and his deputy"
+
+
+def test_english_possessive_is_stripped():
+    assert normalise("Libya's NOC") == " libya noc "
+    assert normalise("NOC’s output") == " noc output "
+    assert normalise("migrants' rights") == " migrants rights "
+    assert normalise("Women's Representation") == normalise("women's representation") == " women representation "
+    assert normalise("O'Sullivan don't") == " osullivan dont "
+    assert normalise("مجلس النواب الليبي") == " مجلس النواب الليبي "   # Arabic untouched
+    r = [ThemeRule.build(1, "economy", 1, ["NOC"], [], [])]
+    assert set(classify_themes("Libya's NOC reports output", r)) == {1}
+    assert set(classify_themes("NOC's chairman visits Brega", r)) == {1}
+    assert term_variants("women's representation") == ["women representation"]

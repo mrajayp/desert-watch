@@ -11,6 +11,8 @@ _AR_MAP = str.maketrans({
     "ؤ": "و",
 })
 _NON_WORD = re.compile(r"[^\w\s]+", re.UNICODE)
+# English possessive: "Libya's" -> libya, "NOC’s" -> noc ("migrants'" loses only the apostrophe below)
+_POSSESSIVE = re.compile(r"(?<=\w)['’ʼ]s\b")
 _SPACES = re.compile(r"\s+")
 _AR_CHAR = re.compile("[؀-ۿ]")
 
@@ -23,7 +25,7 @@ def normalise(text: str | None) -> str:
         return ""
     t = unicodedata.normalize("NFKC", text)
     t = _AR_DIACRITICS.sub("", t).replace(_TATWEEL, "")
-    t = t.translate(_AR_MAP).lower()
+    t = _POSSESSIVE.sub("", t.translate(_AR_MAP).lower())
     t = t.replace("-", " ").replace("’", "'").replace("'", "")
     t = _NON_WORD.sub(" ", t)
     return " " + _SPACES.sub(" ", t).strip() + " "
