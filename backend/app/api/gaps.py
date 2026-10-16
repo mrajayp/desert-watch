@@ -60,14 +60,15 @@ def meta(country: str = "LY", s: Session = Depends(get_db), _: User = Depends(au
 
 
 LENS_RECENT_WEEKS, LENS_MIN_WEEKS = 12, 4
+LENS_MIN_THEMES = 2   # one theme alone (2 UN statements on migration) is not a lens
 
 
 def _lens_status(s: Session, country_id: int, latest: date | None, themes: list[Theme]) -> tuple[set, dict]:
     """(available lenses, lens -> theme ids with any need in the last 52 weeks). A lens is available
-    when at least a third of the themes it can measure (those with need data this year, else all
-    active themes) have a judged national cell in 4 or more of its last 12 complete weeks. So a few
-    old scored cells cannot keep a lens with no data on offer, and a lens that can only ever measure
-    a few themes (Google searches) is judged on those."""
+    when at least 2 themes, and at least a third of the themes it can measure (those with need data
+    this year, else all active themes), have a judged national cell in 4 or more of its last 12
+    complete weeks. So a few old scored cells, or one theme on its own, cannot keep a lens on offer,
+    and a lens that can only ever measure a few themes (Google searches) is judged on those."""
     if not latest:
         return set(), {}
     active = {t.id for t in themes}
@@ -92,8 +93,8 @@ def _lens_status(s: Session, country_id: int, latest: date | None, themes: list[
         recent = set(sorted({r.week_start for r in mine})[-LENS_RECENT_WEEKS:])
         judged = Counter(r.theme_id for r in mine if r.week_start in recent and not r.insufficient)
         measurable = with_need.get(lens) or active
-        ok = sum(1 for tid in measurable if judged[tid] >= LENS_MIN_WEEKS)
-        if ok and 3 * ok >= len(measurable):
+        ok = sum(1 for tid in active if judged[tid] >= LENS_MIN_WEEKS)
+        if ok >= max(LENS_MIN_THEMES, -(-len(measurable) // 3)):
             available.add(lens)
     return available, {k: sorted(v) for k, v in with_need.items()}
 

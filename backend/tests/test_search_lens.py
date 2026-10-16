@@ -197,6 +197,13 @@ def test_meta_opens_search_on_its_latest_scored_week_and_trends_skip_missing_wee
     themes, regions = ids(db)
     cid = _scored_health(db)
     flag_missing_weeks(db, cid)
+    # a lens needs 2 judged themes: mark 4 recent weeks of a second searched theme as judged
+    for cw in db.scalars(select(CellWeek).where(CellWeek.theme_id == themes["services"], CellWeek.lens == "search",
+                                                CellWeek.region_id == regions["national"],
+                                                CellWeek.week_start > LAST_FULL - timedelta(weeks=4),
+                                                CellWeek.week_start <= LAST_FULL)):
+        cw.insufficient, cw.gap, cw.breakdown = False, 0.0, {}
+    db.commit()
     login(client, "j@example.org", "journo-password-1")
     m = client.get("/api/meta").json()
     search = next(x for x in m["lenses"] if x["key"] == "search")
