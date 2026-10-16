@@ -14,8 +14,9 @@ export default function EngagementChip({ e }) {
   const pickup = e?.pickup >= 2 ? e.pickup : null
   const fb = e?.fb?.total != null ? e.fb : null
   if (!pickup && !fb) return null
-  const fbTitle = fb && `On Facebook: ${fb.reactions ?? 0} reactions, ${fb.comments ?? 0} comments, ${fb.shares ?? 0} shares `
-    + `for this link. Facebook gives approximate counts. `
+  const fbTitle = fb && `Facebook engagement for this link: ${Math.round(fb.total).toLocaleString()}`
+    + (fb.total > 0 ? `, including ${fb.shares ?? 0} shares and ${fb.comments ?? 0} comments` : '')
+    + `. Facebook gives approximate counts. `
     + `Read ${AGE[fb.age_bucket] || fb.age_bucket} after it was published, on ${fb.measured_at?.slice(0, 10)}.`
   return (
     <>

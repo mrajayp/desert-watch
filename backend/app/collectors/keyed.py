@@ -17,7 +17,7 @@ def acled(s: Session) -> RunResult:
 
 def ucdp(s: Session) -> RunResult:
     if not settings.UCDP_TOKEN:
-        raise AwaitingKey("Set UCDP_TOKEN (request by email; 3-5 working days).")
+        raise AwaitingKey("Set UCDP_TOKEN. Request it by email. It takes 3 to 5 working days.")
     raise NotImplementedError("UCDP collector: Phase 3")
 
 
