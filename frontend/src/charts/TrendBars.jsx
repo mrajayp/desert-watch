@@ -5,66 +5,8 @@
 import * as d3 from 'd3'
 import { memo, useRef, useState } from 'react'
 import { fmt, gapFill } from './scales'
+import { DAY, about, articles, judged, lensNeed, needLine, reasonText, shortfall, stepPath, utc, verdict, weekRange, yScale } from './trendText'
 import { HatchDefs, themeLabel, useSize, useTooltip } from './util'
-
-// per lens: the need in the tooltip, the usual-level phrase, and the words when a theme has none
-export const LENS_NEED = {
-  audience: { label: 'Wikipedia views', usual: 'this much reader interest', none: 'No reader data linked to this theme', short: 'No reader data' },
-  events: { label: 'Conflict and protest events', usual: 'this many events', none: 'No event data linked to this theme', short: 'No event data' },
-  humanitarian: { label: 'ReliefWeb reports', usual: 'this many ReliefWeb reports', none: 'No ReliefWeb reports linked to this theme', short: 'No ReliefWeb data' },
-  journalist: { label: 'Gaps flagged by the team', usual: 'this many team flags', none: 'No team flags on this theme', short: 'No team flags' },
-}
-export const lensNeed = (lens) => LENS_NEED[lens] || LENS_NEED.audience
-
-// why a week is not judged: [pill, sentence]
-const REASONS = {
-  too_few_expected: ['Too few articles to judge', 'Too few articles expected to judge'],
-  building_baseline: ['Still building a baseline', 'We are still building a baseline for this theme'],
-  in_progress: ['Still coming in', 'This week is still coming in'],
-}
-const reasonText = (reason, need, long) => (reason === 'no_need_data' ? (long ? need.none : need.short)
-  : (REASONS[reason] || ['Not scored yet', 'Not scored yet'])[long ? 1 : 0])
-
-const times = (g) => { const x = Math.exp(g); return x >= 10 ? String(Math.round(x)) : x.toFixed(1) }
-export const shortfall = (g, red) => (g >= red ? `About ${times(g)} times fewer articles than usual` : 'About as usual')
-const articles = (n) => `${fmt(n)} article${n === 1 ? '' : 's'}`
-const about = (v) => (v >= 1 ? `about ${fmt(v)}` : 'less than 1')
-const judged = (r) => !r.in_progress && !r.insufficient && r.gap != null
-
-export function verdict(r, red, need) {
-  if (r.in_progress) return 'This week is still coming in. Not judged yet.'
-  if (!judged(r)) return `Last 4 weeks: not judged. ${reasonText(r.reason, need, true)}.`
-  return `Last 4 weeks: ${articles(r.articles_4w)} against ${about(r.expected_4w)} usual. ${shortfall(r.gap, red)}.`
-}
-
-const DAY = 864e5
-const utc = (s) => new Date(s + 'T00:00:00Z')
-export const weekEnd = (w) => new Date(utc(w).getTime() + 6 * DAY).toISOString().slice(0, 10)
-export function weekRange(w) {
-  const a = utc(w), b = new Date(a.getTime() + 6 * DAY), f = d3.utcFormat
-  if (a.getUTCFullYear() !== b.getUTCFullYear()) return `${f('%-d %b %Y')(a)} to ${f('%-d %b %Y')(b)}`
-  if (a.getUTCMonth() !== b.getUTCMonth()) return `${f('%-d %b')(a)} to ${f('%-d %b %Y')(b)}`
-  return `${f('%-d')(a)} to ${f('%-d %b %Y')(b)}`
-}
-
-// linear from 0 with 3-4 labelled gridlines (0 included) ending on the top of the domain
-function yScale(top, range) {
-  for (const n of [3, 2, 4]) {
-    const hi = d3.nice(0, top, n)[1]
-    const ticks = d3.ticks(0, hi, n)
-    if (ticks.length >= 3 && ticks.length <= 4 && ticks[ticks.length - 1] === hi) return [d3.scaleLinear().domain([0, hi]).range(range), ticks]
-  }
-  const y = d3.scaleLinear().domain([0, top]).nice(3).range(range)
-  return [y, y.ticks(3)]
-}
-
-function needLine(r, need, lens) {
-  if (r.need_week == null) return null
-  const so = r.in_progress ? ' so far' : ''
-  const split = r.need_en != null ? ` (English ${fmt(r.need_en)}, Arabic ${fmt(r.need_ar)})` : ''
-  const trimmed = r.need_week_raw > r.need_week + 0.5 ? ` Before we trimmed one-day spikes: ${fmt(r.need_week_raw)}.` : ''
-  return `${need.label}${so}: ${fmt(r.need_week)}${lens === 'audience' ? split : ''}.${trimmed}`
-}
 
 const Panel = memo(function Panel({ t, rows, hasNeed, width, lens, red, lang, selected, onSelect, onPickWeek, onPickBar }) {
   const wrap = useRef(null)
@@ -79,14 +21,7 @@ const Panel = memo(function Panel({ t, rows, hasNeed, width, lens, red, lang, se
   const lined = (r) => hasNeed && !r.in_progress && r.expected_week != null
   const [y, ticks] = yScale(Math.max(4, d3.max(rows, (r) => r.articles) || 0,
     d3.max(rows, (r) => (lined(r) ? r.expected_week : 0)) || 0), [y0, T])
-  // usual level as a step line: one flat segment per week, broken where there is none
-  let path = '', open = false
-  for (const r of rows) {
-    if (!lined(r)) { open = false; continue }
-    const x0 = xs(r.week), yy = y(r.expected_week).toFixed(1)
-    path += `${open ? `V${yy}` : `M${x0.toFixed(1)},${yy}`}H${(x0 + step).toFixed(1)}`
-    open = true
-  }
+  const path = stepPath(rows, xs, step, y, (r) => (lined(r) ? r.expected_week : null))
   const done = rows.filter((r) => !r.in_progress)
   const last = done[done.length - 1]
   const cur = rows.find((r) => r.in_progress)

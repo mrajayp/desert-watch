@@ -7,7 +7,8 @@
     "dev": "vite --port 5190 --strictPort",
     "build": "node scripts/check-components.mjs && vite build",
     "preview": "vite preview",
-    "check": "node scripts/check-components.mjs"
+    "check": "node scripts/check-components.mjs",
+    "test": "node --test scripts/trends.test.mjs"
   },
   "dependencies": {
     "d3": "7.9.0",

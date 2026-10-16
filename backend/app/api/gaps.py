@@ -185,7 +185,7 @@ def all_series(country: str = "LY", lens: str = "audience", region_id: int | Non
         select(Region).where(Region.country_id == c.id, Region.level == "national"))
     themes = s.scalars(select(Theme).where(Theme.active.is_(True)).order_by(Theme.id)).all()
     out = {"region_id": region.id, "lens": lens, "unit": LENSES[lens]["unit"], "red_from": settings.GAP_RED_FROM,
-           "weeks": [], "basis": None, "themes": {}, "series": {}, "trend_basis": None}
+           "weeks": [], "basis": None, "themes": {}}
     current = s.scalar(select(func.max(CellWeek.week_start)).where(CellWeek.country_id == c.id))
     if not current:
         return out
@@ -230,12 +230,8 @@ def all_series(country: str = "LY", lens: str = "audience", region_id: int | Non
                          "in_progress": bool(b.get("in_progress")) if cw else w >= current,
                          "flags": cw.flags if cw else []})
         out["themes"][t.id] = {"has_need": any(x.need > 0 for x in cells if x.theme_id == t.id), "rows": rows}
-        # legacy shape for the old line chart, until the bar chart replaces it
-        out["series"][t.id] = [{**_cell_json(by_cell[(t.id, w)]), "trend_coverage": sum(
-            comp[(t.id, w - timedelta(weeks=i))] for i in range(settings.WINDOW_WEEKS))}
-            for w in weeks if (t.id, w) in by_cell]
     out["weeks"] = [w.isoformat() for w in weeks]
-    out["basis"] = out["trend_basis"] = {
+    out["basis"] = {
         "from": span_start.isoformat(), "to": end.isoformat(), "first_week": first.isoformat(),
         "outlets": len({o for _, o in pairs}), "sources": sorted({src for src, _ in pairs})}
     return out

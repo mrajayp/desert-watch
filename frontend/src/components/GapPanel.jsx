@@ -66,6 +66,8 @@ export default function GapPanel({ themeId, regionId, week: weekProp, lens: lens
         <div className="stat"><span className="v" style={{ fontSize: 16, maxWidth: 200 }}>{c ? gapLabel(c.insufficient ? null : c.gap) : 'not scored'}</span>
           <span className="l">{b.reference === 'own_history' ? 'vs this theme’s previous 12 weeks' : 'vs comparable cells'}</span></div>
       </div>
+      {b.articles_4w != null && b.expected_4w != null && (
+        <p className="small muted" style={{ marginTop: 0 }}>The score counts {fmt(b.articles_4w)} of these, from the outlets we followed through the whole comparison, against about {fmt(b.expected_4w)} usual.</p>)}
       {c?.flags?.length > 0 && <div className="row">{c.flags.map((f) => <span key={f} className={INFO_FLAGS.has(f) ? "pill" : "pill flag"}>{flagText(f)}</span>)}</div>}
       {c && (
         <>

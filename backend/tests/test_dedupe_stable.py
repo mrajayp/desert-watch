@@ -151,6 +151,7 @@ def test_trends_api_counts_only_outlets_present_all_year(client, users, db):
     compute(db, country_id, weeks=56, today=today)
     login(client, "admin@example.org", "admin-password-1")
     r = client.get("/api/cells/trends", params={"lens": "audience"}).json()
-    rows = [x for x in r["series"][str(themes["health"])] if "trend_coverage" in x]
-    assert r["trend_basis"]["outlets"] == 1
-    assert rows[-1]["coverage"] > rows[-1]["trend_coverage"] == 4    # 4 weeks x 1 steady article
+    rows = r["themes"][str(themes["health"])]["rows"]
+    assert r["basis"]["outlets"] == 1 and "series" not in r and "trend_basis" not in r
+    assert rows[-1]["in_progress"] and rows[-1]["articles_all"] == 11 and rows[-1]["articles"] == 1
+    assert rows[-2]["articles_all"] == 11 and rows[-2]["articles_4w"] == 4   # 4 weeks x 1 steady article
