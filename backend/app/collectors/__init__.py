@@ -19,7 +19,8 @@ COLLECTORS = {
 # Non-collector jobs shown in the source-health strip.
 EXTRA_HEALTH = {
     "digest": "Weekly AI digest",
-from . import fb_engagement, galerts, gdelt, gnews, gnews_social, keyed, official, rss, wikipedia
+    "gtrends": "Google searches (weekly import)",
+    "resolve": "Outlet links for Google News items",
 }
 # Hours before a source counts as stale (48 unless listed). Search data is imported by hand each week.
 STALE_HOURS = {"gtrends": 10 * 24}
