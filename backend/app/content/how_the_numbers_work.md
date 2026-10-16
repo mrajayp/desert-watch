@@ -91,9 +91,7 @@ Votes and corrections are saved as labels for training. So are article ratings. 
 
 ## Weekly digest
 
-Once a week we work out the facts here first. These are the biggest gaps with their flags, plus a few headlines. Only those facts go to the AI model, and it is told to use no number that is not in them. The facts are saved with the text so any claim can be checked. It needs the Anthropic key to run.
-
-The digest covers the week that ended on Sunday. Wikipedia gives us Sunday's page views a day or two late. If they are not in on Monday morning, that run covers the latest complete week instead, which usually has its digest already. The digest then tries again each morning up to Thursday, and on Thursday it goes ahead with what it has.
+Once a week we work out the facts here first. These are the biggest gaps with their flags, plus a few headlines. Only those facts go to the AI model, and it is told to use no number that is not in them. The facts are saved with the text so any claim can be checked. It needs the Anthropic key to run. The digest covers the week that ended on Sunday. Wikipedia gives us Sunday's page views a day or two late. If they are not in on Monday morning, that run covers the latest complete week instead, which usually has its digest already. The digest then tries again each morning up to Thursday, and on Thursday it goes ahead with what it has.
 
 ## When the numbers update
 
