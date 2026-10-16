@@ -121,8 +121,8 @@ def test_run_resolves_by_copy_and_wp_and_never_changes_url(db, no_sleep):
 
     with httpx.Client(transport=httpx.MockTransport(handler)) as c:
         stats = resolve.run(db, days=14, limit=10, client=c, now=now)
-    assert stats["copy"] == 1 and stats["wp_search"] == 1 and stats["unresolved"] == 1
-    assert stats["skipped_outlets"] == 1
+    assert (stats["copy"], stats["wp_search"], stats["searched"], stats["no_site_search"]) == (1, 1, 1, 1)
+    assert stats["skipped_outlets"] == 1 and stats["probed"] == 2
     for i in (a, b, miss, tco, old):
         db.refresh(i)
     assert a.extra["resolved_url"] == "https://feedsite.ly/news/1" and a.extra["resolved_via"] == "copy"
@@ -142,7 +142,7 @@ def test_run_resolves_by_copy_and_wp_and_never_changes_url(db, no_sleep):
         third = resolve.run(db, days=14, limit=10, client=c, now=now)
     assert sum("search=news" in u for u in calls) == n_probe
     db.refresh(miss)
-    assert miss.extra["resolve_tries"] == resolve.MAX_TRIES and third["items"] == 0
+    assert miss.extra["resolve_tries"] == resolve.MAX_TRIES and third["candidates"] == 0
 
 
 def test_private_addresses_are_refused():
@@ -165,9 +165,30 @@ def test_site_that_does_not_answer_is_left_for_the_next_run(db, no_sleep):
 
     with httpx.Client(transport=httpx.MockTransport(handler)) as c:
         stats = resolve.run(db, days=14, limit=10, client=c, now=now)
-    assert len(calls) == 1 and stats["site_down"] == 3 and stats["unresolved"] == 0
+    assert len(calls) == 1 and stats["site_down"] == 1 and stats["searched"] == 0
     o = db.scalar(select(Outlet).where(Outlet.domain == "slow.ly"))
     assert "wp_json" not in (o.external or {})                     # nothing cached: probe again next run
     for it in items:
         db.refresh(it)
         assert "resolve_tries" not in it.extra
+
+
+def test_busiest_sites_first_and_limits(db, no_sleep):
+    """Probes go to the sites with the most waiting links; searches are capped and shared round-robin."""
+    country_id = db.scalar(select(Outlet.country_id).limit(1))
+    rules = load_rules(db, country_id)
+    now = datetime(2026, 10, 16, 6)
+    for dom, n in (("big.ly", 5), ("mid.ly", 2), ("small.ly", 1)):
+        for k in range(n):
+            _gnews(db, country_id, rules, f"{dom}{k}", f"Libya: {dom} story {k} on the Sabha water supply cuts",
+                   PUB - timedelta(hours=k), dom)
+    db.commit()
+    calls = []
+    with httpx.Client(transport=httpx.MockTransport(wp_handler(calls, []))) as c:
+        stats = resolve.run(db, days=14, limit=4, probes=2, client=c, now=now)
+    probed = [urlsplit(u).hostname for u in calls if "search=news" in u]
+    assert probed == ["big.ly", "mid.ly"] and stats["probed"] == 2      # small.ly waits for a later run
+    searched = [urlsplit(u).hostname for u in calls if "search=news" not in u]
+    assert searched == ["big.ly", "mid.ly", "big.ly", "mid.ly"] and stats["searched"] == 4
+    small = db.scalar(select(Outlet).where(Outlet.domain == "small.ly"))
+    assert "wp_json" not in (small.external or {})

@@ -10,8 +10,8 @@ Two routes, in order:
   wp_search  the outlet's WordPress search API, GET /wp-json/wp/v2/search?search=<first 6 words>.
              Whether a site has it is probed once and cached in outlet.external['wp_json'].
              Same headline test; the date comes from the URL or, only if needed, the post's self link.
-We never use Google's undocumented batchexecute decoder. One request per second per site, and a
-per-run cap on items."""
+We never use Google's undocumented batchexecute decoder. One request per second per site, a cap on
+site searches and on new sites probed per run."""
 import logging
 import re
 from collections import defaultdict
@@ -39,7 +39,8 @@ COPY_SOURCES = ("rss", "backfill", "galerts")
 SEARCH_WORDS = 6
 WP_PROBE_DAYS = 30        # re-check whether a site answers /wp-json after this long
 MAX_TRIES = 2             # an item nobody could resolve is tried on two runs, then left alone
-DEFAULT_LIMIT = 400
+DEFAULT_LIMIT = 400       # site searches per run (copies are free and always checked)
+PROBES_PER_RUN = 60       # unknown sites asked about /wp-json per run, busiest first
 
 _HASHTAG_LABEL = re.compile(r"^\s*#\S+\s*[|:]\s*")    # "#ليبيا | headline" (libyaakhbar)
 _URL_DATE = re.compile(r"/(20\d\d)/(\d\d)/(\d\d)/")
@@ -120,12 +121,17 @@ def resolver_client() -> httpx.Client:
     return c
 
 
-def wp_available(client: httpx.Client, o: Outlet, today: date) -> bool:
-    """Cached probe of the outlet's WordPress search API (outlet.external['wp_json']). A site that
-    does not answer at all raises: nothing is cached, and run() leaves the site alone until next run."""
+def wp_cached(o: Outlet, today: date) -> bool | None:
+    """The outlet's cached /wp-json answer (outlet.external['wp_json']), or None when unknown or stale."""
     cached = (o.external or {}).get("wp_json") or {}
     if cached.get("checked") and (today - date.fromisoformat(cached["checked"])).days < WP_PROBE_DAYS:
         return bool(cached.get("ok"))
+    return None
+
+
+def probe_wp(client: httpx.Client, o: Outlet, today: date) -> bool:
+    """Asks the site once whether it answers the WordPress search API and caches the answer. A site
+    that does not answer at all raises: nothing is cached, and run() tries it again next run."""
     r = polite_get(client, f"https://{o.domain}/wp-json/wp/v2/search", params={"search": "news", "per_page": 1},
                    min_interval=1.0, retries=0)
     try:
@@ -208,62 +214,93 @@ def _interleave(items: list[Item]) -> list[Item]:
     return [it for group in zip_longest(*groups) for it in group if it is not None]
 
 
-def run(s: Session, *, days: int = 14, limit: int = DEFAULT_LIMIT, client: httpx.Client | None = None,
-        now: datetime | None = None) -> dict:
+def run(s: Session, *, days: int = 14, limit: int = DEFAULT_LIMIT, probes: int = PROBES_PER_RUN,
+        client: httpx.Client | None = None, now: datetime | None = None) -> dict:
+    """1. copies (free, every candidate). 2. probe up to `probes` unknown sites, busiest first.
+    3. site search for up to `limit` items of outlets whose site answers, round-robin across sites.
+    Items of sites without the API get one try per run (the copy check). Items of sites not probed
+    yet, sites that did not answer, or beyond the limit are left untouched for a later run."""
     now = now or utcnow()
+    today = now.date()
     cands = candidates(s, days=days, now=now)
     outlets = {o.id: o for o in s.scalars(select(Outlet).where(Outlet.id.in_({it.outlet_id for it in cands})))}
     usable = [it for it in cands if it.outlet_id in outlets and _resolvable(outlets[it.outlet_id])]
-    todo = _interleave(usable)[:limit]
-    stats = {"items": len(todo), "copy": 0, "wp_search": 0, "unresolved": 0, "site_down": 0,
-             "skipped_outlets": len(cands) - len(usable), "by_outlet": {}}
-    down: set[str] = set()   # sites that failed to answer this run: not asked again until the next run
+    stats = {"candidates": len(usable), "copy": 0, "searched": 0, "wp_search": 0, "not_found": 0,
+             "no_site_search": 0, "probed": 0, "site_down": 0, "skipped_outlets": len(cands) - len(usable),
+             "by_outlet": {}}
 
-    # route 1: a copy from the outlet's own feed, Google Alerts or the backfill
-    pools = defaultdict(list)
+    def done(it, url, via):
+        if url:
+            it.extra = {**(it.extra or {}), "resolved_url": url, "resolved_via": via,
+                        "resolved_at": now.isoformat(timespec="seconds")}
+            stats[via] += 1
+        else:
+            it.extra = {**(it.extra or {}), "resolve_tries": (it.extra or {}).get("resolve_tries", 0) + 1}
+        row = stats["by_outlet"].setdefault(outlets[it.outlet_id].domain, {"items": 0, "resolved": 0})
+        row["items"] += 1
+        row["resolved"] += bool(url)
+
+    # 1. a copy from the outlet's own feed, Google Alerts or the backfill
     by_outlet = defaultdict(list)
-    for it in todo:
+    for it in usable:
         by_outlet[it.outlet_id].append(it)
+    pending = defaultdict(list)
     for oid, its in by_outlet.items():
         lo = min(i.published_at for i in its) - timedelta(days=MATCH_DAYS)
         hi = max(i.published_at for i in its) + timedelta(days=MATCH_DAYS)
-        pools[oid] = s.execute(select(Item.id, Item.url, Item.title, Item.published_at).where(
+        pool = s.execute(select(Item.id, Item.url, Item.title, Item.published_at).where(
             Item.outlet_id == oid, Item.kind == "article", Item.source_key.in_(COPY_SOURCES),
             Item.published_at >= lo, Item.published_at <= hi, Item.url.not_like("%news.google.com/%"))).all()
+        for it in its:
+            hit = best_copy(it.title, it.published_at, pool)
+            if hit is not None:
+                done(it, hit.url, "copy")
+            else:
+                pending[oid].append(it)
+    s.commit()
 
     own = client is None
     client = client or resolver_client()
     try:
-        for it in todo:
+        # 2. which sites answer the WordPress search API (cached for WP_PROBE_DAYS)
+        down: set[int] = set()   # sites that failed to answer this run: not asked again until the next run
+        unknown = sorted((oid for oid in pending if wp_cached(outlets[oid], today) is None),
+                         key=lambda oid: -len(pending[oid]))
+        for oid in unknown[:probes]:
+            try:
+                probe_wp(client, outlets[oid], today)
+                stats["probed"] += 1
+            except Exception as e:  # noqa: BLE001 - one bad site never stops the run
+                log.info("wp probe %s: %s", outlets[oid].domain, e)
+                down.add(oid)
+                stats["site_down"] += 1
+            s.commit()
+        searchable = []
+        for oid, its in pending.items():
+            ok = wp_cached(outlets[oid], today)
+            if ok is False:
+                for it in its:       # no site search: the copy check above was this run's try
+                    done(it, None, None)
+                    stats["no_site_search"] += 1
+            elif ok and oid not in down:
+                searchable += its
+        s.commit()
+
+        # 3. site search, round-robin across sites
+        for it in _interleave(searchable)[:limit]:
             o = outlets[it.outlet_id]
-            tally = stats["by_outlet"].setdefault(o.domain, {"items": 0, "resolved": 0})
-            tally["items"] += 1
-            url, via = None, None
-            hit = best_copy(it.title, it.published_at, pools[o.id])
-            if hit is not None:
-                url, via = hit.url, "copy"
-            elif o.domain in down:
-                stats["site_down"] += 1     # not counted as a try: the site never answered
+            if o.id in down:
                 continue
-            else:
-                try:
-                    if wp_available(client, o, now.date()):
-                        url = wp_match(client, o, it.title, it.published_at)
-                        via = "wp_search" if url else None
-                except Exception as e:  # noqa: BLE001 - one bad site never stops the run
-                    log.info("resolve %s via %s: %s", it.id, o.domain, e)
-                    down.add(o.domain)
-                    stats["site_down"] += 1
-                    s.commit()
-                    continue
-            if url:
-                it.extra = {**(it.extra or {}), "resolved_url": url, "resolved_via": via,
-                            "resolved_at": now.isoformat(timespec="seconds")}
-                stats[via] += 1
-                tally["resolved"] += 1
-            else:
-                it.extra = {**(it.extra or {}), "resolve_tries": (it.extra or {}).get("resolve_tries", 0) + 1}
-                stats["unresolved"] += 1
+            try:
+                url = wp_match(client, o, it.title, it.published_at)
+            except Exception as e:  # noqa: BLE001
+                log.info("resolve %s via %s: %s", it.id, o.domain, e)
+                down.add(o.id)
+                stats["site_down"] += 1
+                continue
+            stats["searched"] += 1
+            stats["not_found"] += not url
+            done(it, url, "wp_search")
             s.commit()
     finally:
         if own:
@@ -276,5 +313,6 @@ def collect(s: Session, *, days: int = 14, limit: int = DEFAULT_LIMIT, **kw) -> 
     from .collectors.base import RunResult
     st = run(s, days=days, limit=limit, **kw)
     return RunResult(rows=st["copy"] + st["wp_search"],
-                     detail=f"{st['items']} tried: {st['copy']} from a copy, {st['wp_search']} by site search, "
-                            f"{st['unresolved']} not found")
+                     detail=f"{st['candidates']} Google News links: {st['copy']} found from a copy, "
+                            f"{st['wp_search']} of {st['searched']} by site search, {st['probed']} sites checked, "
+                            f"{st['site_down']} sites not answering")
