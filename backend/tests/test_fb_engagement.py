@@ -158,3 +158,22 @@ def test_url_key():
     assert k("https://www.libyaakhbar.com/breaking/9.html") == k("http://libyaakhbar.com/breaking/9.html/")
     assert k("https://ex.ly/%D9%84%D9%8A%D8%A8%D9%8A%D8%A7") == k("https://ex.ly/ليبيا")
     assert k("https://ex.ly/post.php?id=1") != k("https://ex.ly/post.php?id=2")
+
+
+def test_one_bad_url_spoils_a_batch_so_it_is_read_one_by_one(db, keys, articles):
+    calls = []
+
+    def handler(request):
+        calls.append(request)
+        ids = parse_qs(urlsplit(str(request.url)).query)["ids"][0].split(",")
+        if len(ids) > 1 or "almarsad" in ids[0]:          # Facebook refuses the batch, and the bad URL alone
+            return httpx.Response(400, json={"error": {"message": "bad id", "type": "OAuthException", "code": 100}})
+        return httpx.Response(200, json={ids[0]: {"engagement": {"reaction_count": 1, "comment_count": 1,
+                                                                 "share_count": 1}, "id": ids[0]}})
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as c:
+        res = fb_engagement.collect(db, client=c, now=NOW)
+    assert res.errors == 0 and res.rows == 2 and len(calls) == 3      # the batch, then each URL
+    rows = {r.item_id: r for r in db.scalars(select(ItemEngagement).where(ItemEngagement.source == "fb_url"))}
+    assert rows[articles["d7"].id].total == 3
+    assert rows[articles["h48"].id].total is None and rows[articles["h48"].id].raw["missing"]
