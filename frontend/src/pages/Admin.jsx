@@ -25,7 +25,8 @@ export default function Admin() {
   const startEdit = (t) => { setPreview(null); setEdit(t ? { ...t, en: t.en_terms.join('\n'), ar: t.ar_terms.join('\n'), ex: t.exclude.join('\n') } : { id: null, name_en: '', name_ar: '', en: '', ar: '', ex: '', active: true }) }
   const body = () => ({ name_en: edit.name_en, name_ar: edit.name_ar, en_terms: split(edit.en), ar_terms: split(edit.ar), exclude: split(edit.ex), active: edit.active,
     acled_event_types: edit.acled_event_types || [], reliefweb_themes: edit.reliefweb_themes || [] })
-  const runPreview = async () => setPreview(await api('/api/themes/preview', { method: 'POST', body: body() }))
+  // tid: the preview uses the saved theme's word pairs and exceptions, which this form does not edit
+  const runPreview = async () => setPreview(await api(`/api/themes/preview${edit.id ? `?tid=${edit.id}` : ''}`, { method: 'POST', body: body() }))
   const saveTheme = async () => {
     await api(edit.id ? `/api/themes/${edit.id}` : '/api/themes', { method: edit.id ? 'PUT' : 'POST', body: body() })
     setMsg('Saved. Articles are being re-tagged and scores recomputed in the background.'); setEdit(null); load(); setTimeout(refresh, 4000)

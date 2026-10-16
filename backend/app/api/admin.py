@@ -7,9 +7,9 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .. import auth
-from ..classify import ThemeRule, classify_themes
+from ..classify import ThemeRule, classify_item, clean_snippet
 from ..db import SessionLocal, get_db
-from ..models import (Event, GapVote, Invite, Item, ItemTheme, Label, Suggestion, Theme, User, utcnow)
+from ..models import (Event, GapVote, Invite, Item, Label, Suggestion, Theme, User, utcnow)
 from ..textnorm import normalise
 
 router = APIRouter(prefix="/api")
@@ -25,6 +25,8 @@ class ThemeIn(BaseModel):
     en_terms: list[str] = Field(default_factory=list)
     ar_terms: list[str] = Field(default_factory=list)
     exclude: list[str] = Field(default_factory=list)
+    veto: list[dict] | None = None   # None keeps the stored value (the Admin form does not edit these yet)
+    mask: list[str] | None = None
     acled_event_types: list[str] = Field(default_factory=list)
     reliefweb_themes: list[str] = Field(default_factory=list)
     active: bool = True
@@ -41,18 +43,27 @@ def list_themes(s: Session = Depends(get_db), _: User = Depends(auth.current_use
 
 
 @router.post("/themes/preview")
-def preview_theme(body: ThemeIn, days: int = 30, s: Session = Depends(get_db), _: User = Depends(auth.current_user)):
+def preview_theme(body: ThemeIn, days: int = 30, tid: int | None = None, s: Session = Depends(get_db),
+                  _: User = Depends(auth.current_user)):
     """What would these terms match over recent articles? Includes user labels so admins
-    can see precision against human judgement before saving."""
-    rule = ThemeRule.build(0, "preview", 0, body.en_terms, body.ar_terms, body.exclude, body.cooc, body.strict)
+    can see precision against human judgement before saving. Fields the form does not send
+    (pairs, vetoes, masks) come from the stored theme (`tid`, or the theme with this name)."""
+    stored = s.get(Theme, tid) if tid else s.scalar(select(Theme).where(Theme.name_en == body.name_en))
+
+    def pick(k):
+        v = getattr(body, k)
+        return getattr(stored, k) if stored and (k not in body.model_fields_set or v is None) else v
+
+    rule = ThemeRule.build(0, "preview", 0, body.en_terms, body.ar_terms, body.exclude, pick("cooc"), pick("strict"),
+                           veto=pick("veto"), mask=pick("mask"))
     since = utcnow() - timedelta(days=days)
     rows = s.scalars(select(Item).where(Item.kind == "article", Item.published_at >= since)
                      .order_by(Item.published_at.desc()).limit(5000)).all()
     matched = []
     for it in rows:
-        hits = rule.matches(normalise(f"{it.title or ''} {it.snippet or ''}"))
-        if hits:
-            matched.append((it, hits))
+        m = classify_item(it.title, clean_snippet(it.source_key, it.title, it.snippet), [rule]).get(0)
+        if m:
+            matched.append((it, m[1]))
     term_counts = Counter(h for _, hs in matched for h in hs)
     return {"scanned": len(rows), "matched": len(matched),
             "top_terms": term_counts.most_common(20),
@@ -61,29 +72,12 @@ def preview_theme(body: ThemeIn, days: int = 30, s: Session = Depends(get_db), _
 
 
 def _retag_theme(theme_id: int, recompute: bool = True):
-    """Re-run rule tagging for one theme over all articles; user decisions are kept."""
-    from ..ingest import ThemeRule as _TR  # noqa: F401
+    """Re-run rule tagging for one theme over all articles. Rule links follow the rules, query
+    links count only when the rules confirm them, user and model links are kept (retag.py)."""
+    from ..retag import retag_theme
     from ..scoring import compute_all
     with SessionLocal() as s:
-        t = s.get(Theme, theme_id)
-        rule = ThemeRule.build(t.id, t.slug, t.version, t.en_terms, t.ar_terms, t.exclude, t.cooc, t.strict, t.require_country)
-        from ..ingest import load_rules
-        crules = load_rules(s, s.scalar(select(Item.country_id).limit(1))) if t.require_country else None
-        links = {lk.item_id: lk for lk in s.scalars(select(ItemTheme).where(ItemTheme.theme_id == theme_id))}
-        for it in s.scalars(select(Item).where(Item.kind == "article")):
-            text = f"{it.title or ''} {it.snippet or ''}"
-            hit = bool(classify_themes(text, [rule])) and (crules is None or crules.mentions_country(text))
-            lk = links.get(it.id)
-            if lk and lk.method == "user":
-                continue
-            if lk and lk.method == "query":
-                lk.active, lk.theme_version = (hit or not t.strict), t.version
-                continue
-            if hit and not lk:
-                s.add(ItemTheme(item_id=it.id, theme_id=theme_id, method="rule", theme_version=t.version))
-            elif lk and lk.method == "rule":
-                lk.active, lk.theme_version = hit, t.version
-        s.commit()
+        retag_theme(s, theme_id)
         if recompute:
             compute_all(s)
 
@@ -93,7 +87,7 @@ def create_theme(body: ThemeIn, bg: BackgroundTasks, s: Session = Depends(get_db
     slug = normalise(body.name_en).strip().replace(" ", "_")[:60]
     if s.scalar(select(Theme).where(Theme.slug == slug)):
         raise HTTPException(400, "A theme with that name exists")
-    t = Theme(slug=slug, **body.model_dump())
+    t = Theme(slug=slug, **body.model_dump(exclude_none=True))
     s.add(t)
     s.commit()
     bg.add_task(_retag_theme, t.id)
@@ -106,8 +100,10 @@ def update_theme(tid: int, body: ThemeIn, bg: BackgroundTasks, s: Session = Depe
     t = s.get(Theme, tid)
     if not t:
         raise HTTPException(404, "Unknown theme")
-    for k, v in body.model_dump().items():
-        setattr(t, k, v)
+    # fields the form does not send (cooc, strict, group, veto, mask) keep their stored values
+    for k, v in body.model_dump(exclude_unset=True).items():
+        if v is not None or k not in ("veto", "mask"):
+            setattr(t, k, v)
     t.version += 1
     t.updated_at = utcnow()
     s.commit()
@@ -234,7 +230,7 @@ def learning(s: Session = Depends(get_db), _: User = Depends(auth.require_admin)
     weekly = s.execute(select(func.strftime("%Y-%W", Label.created_at), func.count(Label.id))
                        .group_by(func.strftime("%Y-%W", Label.created_at)).order_by(func.strftime("%Y-%W", Label.created_at))).all()
     # Precision proxy: share of search-sourced items whose query theme is confirmed by the rules.
-    from ..ingest import load_rules
+    from ..ingest import item_hits, load_rules
     from ..models import Country
     confirm = {}
     country = s.scalar(select(Country))
@@ -249,7 +245,7 @@ def learning(s: Session = Depends(get_db), _: User = Depends(auth.require_admin)
             if q in slug2id:
                 k = f"{q}/{it.lang}"
                 tot[k] += 1
-                hit[k] += slug2id[q] in classify_themes(f"{it.title or ''} {it.snippet or ''}", rules.themes)
+                hit[k] += slug2id[q] in item_hits(rules, it)
         confirm = {k: {"n": tot[k], "confirmed": round(hit[k] / tot[k], 2)} for k in sorted(tot)}
     from ..jobs import THRESHOLDS
     return {"labels": labels, "by_origin": by_origin, "events": events,

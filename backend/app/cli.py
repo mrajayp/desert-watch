@@ -7,6 +7,10 @@
   backfill [WEEKS]          gnews + wikipedia + gdelt history + rss
   recompute                 duplicates + scores + network + labels
   dedupe                    mark every duplicate copy of a story (full pass)
+  apply-theme-terms SLUG... copy only the term fields (terms, exclude, cooc, veto, mask) of these themes
+                            from themes.yaml. Admin edits to names and other fields stay (sync-themes overwrites them)
+  retag-all [--dry-run]     re-run the theme + place rules over every article, then the relevance guard
+                            (--dry-run writes nothing and reports the same numbers)
   import-alignment-sources  alignment labels for Libyan TV channels from published studies (idempotent)
   alerts-list [DIR]         write the Google Alerts list (Markdown + CSV) to DIR (default: docs/)
   backfill-history SINCE [--themes a,b] [--step DAYS] [--until DATE]
@@ -90,6 +94,22 @@ def main(argv: list[str]):
         out = Path(args[0]) if args and not args[0].startswith("--") else settings.REPO_ROOT / "docs" / "review"
         with SessionLocal() as s:
             print(run_review(s, out, theme_slugs=opt("--themes").split(",") if opt("--themes") else None))
+    elif cmd == "apply-theme-terms":
+        from .seed import apply_theme_terms
+        if not args:
+            print("usage: apply-theme-terms SLUG [SLUG ...]")
+            return 1
+        with SessionLocal() as s:
+            changed = apply_theme_terms(s, args)
+            s.commit()
+        for slug, fields in changed.items():
+            print(slug, ", ".join(fields) or "unchanged")
+        if any(changed.values()):
+            print("now run: retag-all")
+    elif cmd == "retag-all":
+        from .retag import retag_all
+        with SessionLocal() as s:
+            retag_all(s, dry_run="--dry-run" in args)
     elif cmd == "import-backfill":
         from pathlib import Path
         from .imports.backfill_links import run as run_backfill
@@ -126,6 +146,7 @@ def main(argv: list[str]):
         from .api.admin import _retag_theme
         from .models import Theme, utcnow
         data = yaml.safe_load(open(settings.CONFIG_DIR / "themes.yaml", encoding="utf-8"))
+        print("sync-themes overwrites names, groups and terms edited in Admin (apply-theme-terms copies terms only)")
         changed = []
         with SessionLocal() as s:
             for t in data["themes"]:
@@ -136,10 +157,13 @@ def main(argv: list[str]):
                     s.flush()
                     changed.append(th.id)
                 th.group, th.name_en, th.name_ar = t.get("group"), t["name_en"], t["name_ar"]
-                new = {k: t.get(k, []) for k in ("en_terms", "ar_terms", "exclude", "cooc", "acled_event_types", "reliefweb_themes")}
+                new = {k: t.get(k, []) for k in ("en_terms", "ar_terms", "exclude", "cooc", "veto", "mask",
+                                                 "acled_event_types", "reliefweb_themes")}
                 new["strict"] = bool(t.get("strict", False))
                 new["require_country"] = bool(t.get("require_country", False))
-                if th.id in changed or any(getattr(th, k) != v for k, v in new.items()):
+                # an empty list and NULL are the same (veto and mask are NULL on older rows)
+                if th.id in changed or any((getattr(th, k) or ([] if isinstance(v, list) else False)) != v
+                                           for k, v in new.items()):
                     for k, v in new.items():
                         setattr(th, k, v)
                     th.version += 1

@@ -11,7 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..ingest import load_rules, store_article
-from ..models import AlertFeed, ItemRegion, utcnow
+from ..models import AlertFeed, ItemRegion, Theme, utcnow
 from .base import AwaitingKey, RunResult, http_client, polite_get
 
 _TAGS = re.compile(r"<[^>]+>")
@@ -52,6 +52,7 @@ def collect(s: Session) -> RunResult:
                 errors.append(f"{f.key}: {e}")
                 continue
             n = 0
+            theme = s.get(Theme, f.theme_id) if f.theme_id else None
             for e in parsed.entries:
                 when = e.get("published_parsed") or e.get("updated_parsed")
                 if not e.get("link") or not when:
@@ -60,8 +61,8 @@ def collect(s: Session) -> RunResult:
                     s, f.country_id, rules, url=unwrap(e.link), title=clean(e.get("title")),
                     snippet=clean(e.get("summary") or e.get("content", [{}])[0].get("value")),
                     published_at=datetime.utcfromtimestamp(calendar.timegm(when)), source_key="galerts",
-                    lang=f.lang, extra={"alert": f.key},
-                    forced_theme_ids=(f.theme_id,) if f.theme_id else ())
+                    lang=f.lang, extra={"alert": f.key, **({"query_themes": [theme.slug]} if theme else {})},
+                    forced_theme_ids=(f.theme_id,) if f.theme_id else (), query=f.key)
                 if item is not None and f.region_id and not s.get(ItemRegion, (item.id, f.region_id)):
                     s.add(ItemRegion(item_id=item.id, region_id=f.region_id, method="query"))
                 n += created

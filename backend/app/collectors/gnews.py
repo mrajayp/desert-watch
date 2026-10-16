@@ -99,7 +99,8 @@ def collect(s: Session, *, weeks: int = 1, end: date | None = None, start: date 
                                     s, country.id, rules, url=e.link, title=title, published_at=pub,
                                     source_key="gnews", lang=lang, outlet_name=outlet_name,
                                     outlet_domain=domain_of(src_url) if src_url else None,
-                                    extra={"query_theme": th.slug}, forced_theme_ids=(th.id,), outlet_cache=cache)
+                                    extra={"query_theme": th.slug, "query_themes": [th.slug]}, forced_theme_ids=(th.id,),
+                                    outlet_cache=cache, query=f"gnews:{th.slug}")
                                 res.rows += created
                             s.commit()
     if stats["capped"]:

@@ -7,7 +7,7 @@ from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from .classify import PlaceRule, ThemeRule, classify_themes, tag_places
+from .classify import PlaceRule, ThemeRule, classify_item, classify_themes, clean_snippet, tag_places
 from .models import Country, Item, ItemRegion, ItemTheme, Outlet, OutletCategory, PlaceAlias, Region, Theme
 from .textnorm import detect_lang, normalise, term_variants
 
@@ -84,9 +84,13 @@ class Rules:
         return any(f" {t} " in n for t in self.country_terms) or bool(tag_places(text, self.places))
 
 
+def rule_for(t: Theme) -> ThemeRule:
+    return ThemeRule.build(t.id, t.slug, t.version, t.en_terms, t.ar_terms, t.exclude, t.cooc, t.strict, t.require_country,
+                           veto=t.veto, mask=t.mask)
+
+
 def load_rules(s: Session, country_id: int) -> Rules:
-    themes = [ThemeRule.build(t.id, t.slug, t.version, t.en_terms, t.ar_terms, t.exclude, t.cooc, t.strict, t.require_country)
-              for t in s.scalars(select(Theme).where(Theme.active.is_(True)))]
+    themes = [rule_for(t) for t in s.scalars(select(Theme).where(Theme.active.is_(True)))]
     regions = s.scalars(select(Region).where(Region.country_id == country_id)).all()
     aliases: dict[int, list[str]] = {}
     for a in s.scalars(select(PlaceAlias).where(PlaceAlias.approved.is_(True))):
@@ -170,27 +174,90 @@ def infer_scopes(s: Session) -> int:
     return n
 
 
-def tag_item(s: Session, item: Item, rules: Rules, forced_theme_ids: tuple[int, ...] = ()) -> None:
-    text = " ".join(x for x in (item.title, item.snippet) if x)
-    hits = classify_themes(text, rules.themes)
-    needs_country = {r.theme_id for r in rules.themes if r.require_country}
-    if needs_country & set(hits) and not rules.mentions_country(text):
+def evidence(field: str, terms: list[str], query: str | None = None) -> dict:
+    """Why a theme link exists (ItemTheme.evidence)."""
+    return {"field": field, "terms": list(terms), "query": query}
+
+
+def query_key(item: Item, slug: str, alert_themes: dict | None = None) -> str | None:
+    """The alert or search that returned this item for a theme. New items record it in
+    extra.queries ({slug: key}). Older ones only name their own alert (`alert_themes` maps an
+    alert key to its theme slug) or their Google News query."""
+    ex = item.extra or {}
+    if (ex.get("queries") or {}).get(slug):
+        return ex["queries"][slug]
+    alert = ex.get("alert") or ""
+    if alert.startswith(f"theme:{slug}:") or (alert and (alert_themes or {}).get(alert) == slug):
+        return alert
+    if item.source_key == "gnews" and ex.get("query_theme") == slug:
+        return f"gnews:{slug}"
+    return None
+
+
+def note_queries(item: Item, slugs: list[str], query: str | None) -> None:
+    """Record on the item which themes a search or alert asked for (extra.query_themes) and the
+    query itself (extra.queries, the first one per theme is kept)."""
+    ex = dict(item.extra or {})
+    seen = list(ex.get("query_themes") or ([ex["query_theme"]] if ex.get("query_theme") else []))
+    queries = dict(ex.get("queries") or {})
+    if query:
+        for slug in slugs:
+            queries.setdefault(slug, query)
+    new = {**ex, "query_themes": seen + [x for x in dict.fromkeys(slugs) if x not in seen],
+           **({"queries": queries} if queries else {})}
+    if new != ex:
+        item.extra = new
+
+
+def theme_hits(rules: Rules, title: str | None, snippet: str | None, themes: list[ThemeRule] | None = None) -> dict:
+    """theme_id -> (field, terms) for a title and an already cleaned snippet, with require_country applied."""
+    themes = rules.themes if themes is None else themes
+    hits = classify_item(title, snippet, themes)
+    needs_country = {r.theme_id for r in themes if r.require_country}
+    if needs_country & set(hits) and not rules.mentions_country(" ".join(x for x in (title, snippet) if x)):
         hits = {k: v for k, v in hits.items() if k not in needs_country}
+    return hits
+
+
+def item_hits(rules: Rules, item: Item, themes: list[ThemeRule] | None = None) -> dict:
+    """theme_hits for a stored item: its title and its cleaned snippet."""
+    return theme_hits(rules, item.title, clean_snippet(item.source_key, item.title, item.snippet), themes)
+
+
+def tag_item(s: Session, item: Item, rules: Rules, forced_theme_ids: tuple[int, ...] = (),
+             query: str | None = None) -> None:
+    snippet = clean_snippet(item.source_key, item.title, item.snippet)
+    text = " ".join(x for x in (item.title, snippet) if x)
+    hits = theme_hits(rules, item.title, snippet)
     versions = {r.theme_id: r.version for r in rules.themes}
     existing = {it.theme_id for it in s.scalars(select(ItemTheme).where(ItemTheme.item_id == item.id))}
-    strict = {r.theme_id for r in rules.themes if r.strict}
-    for tid in set(hits) | set(forced_theme_ids):
-        if tid in existing:
-            continue
-        # Strict themes: a search result the rules do not confirm is kept (for review and
-        # training) but does not count as coverage.
-        confirmed = tid in hits
-        s.add(ItemTheme(item_id=item.id, theme_id=tid, method="rule" if confirmed else "query",
-                        active=confirmed or tid not in strict, theme_version=versions.get(tid, 1)))
+    for tid, (fld, terms) in hits.items():
+        if tid not in existing:
+            s.add(ItemTheme(item_id=item.id, theme_id=tid, method="rule", active=True, theme_version=versions.get(tid, 1),
+                            evidence=evidence(fld, terms, query if tid in forced_theme_ids else None)))
+    # A search or alert result is a prior, not a label: the link is kept (for review and the
+    # learned model) but does not count as coverage until the rules or the model confirm it.
+    for tid in set(forced_theme_ids) - set(hits) - existing:
+        s.add(ItemTheme(item_id=item.id, theme_id=tid, method="query", active=False, theme_version=versions.get(tid, 1),
+                        evidence=evidence("query", [], query)))
     region_ids = set(tag_places(text, rules.places))
     existing_r = {ir.region_id for ir in s.scalars(select(ItemRegion).where(ItemRegion.item_id == item.id))}
     for rid in region_ids - existing_r:
         s.add(ItemRegion(item_id=item.id, region_id=rid))
+
+
+def add_query_prior(s: Session, item: Item, rules: Rules, theme_ids: tuple[int, ...], query: str | None = None,
+                    note: bool = True) -> None:
+    """Another search or alert returned an item we already have. Its theme is stored as an
+    inactive query link (never activated here) and the query is recorded on the item."""
+    have = set(s.scalars(select(ItemTheme.theme_id).where(ItemTheme.item_id == item.id)))
+    versions = {r.theme_id: r.version for r in rules.themes}
+    for tid in theme_ids:
+        if tid not in have:
+            s.add(ItemTheme(item_id=item.id, theme_id=tid, method="query", active=False,
+                            theme_version=versions.get(tid, 1), evidence=evidence("query", [], query)))
+    if note:
+        note_queries(item, [t.slug for tid in theme_ids if (t := s.get(Theme, tid))], query)
 
 
 def store_article(s: Session, country_id: int, rules: Rules, *, url: str, title: str | None,
@@ -199,18 +266,21 @@ def store_article(s: Session, country_id: int, rules: Rules, *, url: str, title:
                   extra: dict | None = None, added_by: int | None = None,
                   forced_theme_ids: tuple[int, ...] = (), outlet_cache: dict | None = None,
                   require_theme: bool = False, kind: str = "article",
-                  assume_relevant: bool = False) -> tuple[Item | None, bool]:
-    """Returns (item, created). With require_theme, items matching no theme are skipped
-    (outlet RSS feeds are mostly off-topic)."""
+                  assume_relevant: bool = False, query: str | None = None) -> tuple[Item | None, bool]:
+    """Returns (item, created). With require_theme, items with no theme word at all are skipped
+    (outlet RSS feeds are mostly off-topic). `query` names the search or alert behind
+    forced_theme_ids (kept as evidence)."""
     key = url_key(url)
     existing = s.scalar(select(Item).where(Item.dedupe_key == key))
     if existing:
         if forced_theme_ids:
-            tag_item(s, existing, rules, forced_theme_ids)
+            add_query_prior(s, existing, rules, forced_theme_ids, query, note=added_by is None)
         return existing, False
     lang = lang or detect_lang(" ".join(x for x in (title, snippet) if x))
     if require_theme and not forced_theme_ids:
-        if not classify_themes(" ".join(x for x in (title, snippet) if x), rules.themes):
+        # storing stays permissive (one theme word anywhere is enough). The links that count still
+        # follow the title-first rules, and the learned model can score the rest
+        if not classify_themes(" ".join(x for x in (title, clean_snippet(source_key, title, snippet)) if x), rules.themes):
             return None, False
     social = social_outlet(url)
     # a social post belongs to its page even when a search result names the platform as the source
@@ -224,25 +294,38 @@ def store_article(s: Session, country_id: int, rules: Rules, *, url: str, title:
     extra = dict(extra or {})
     if assume_relevant:
         extra["libya_specific_source"] = True
-    elif added_by is None and rules.country_terms and not passes_guard(rules, outlet.id, title, snippet):
+    elif added_by is None and rules.country_terms and not passes_guard(rules, outlet.id, title, snippet, source_key):
         relevant = False
         extra["filtered"] = "no_country_mention"
     item = Item(country_id=country_id, kind=kind, source_key=source_key, dedupe_key=key, url=url,
                 title=(title or "")[:1000], snippet=(snippet or "")[:600] or None, lang=lang,
                 published_at=published_at, outlet_id=outlet.id, extra=extra, added_by=added_by, relevant=relevant)
+    if forced_theme_ids and added_by is None:
+        note_queries(item, [r.slug for r in rules.themes if r.theme_id in forced_theme_ids], query)
     s.add(item)
     s.flush()
-    tag_item(s, item, rules, forced_theme_ids)
+    tag_item(s, item, rules, forced_theme_ids, query)
     return item, True
 
 
-def passes_guard(rules: Rules, outlet_id: int | None, title: str | None, snippet: str | None) -> bool:
+def passes_guard(rules: Rules, outlet_id: int | None, title: str | None, snippet: str | None,
+                 source_key: str | None = None) -> bool:
     """Names the country or one of its places; or comes from a local outlet AND matches a theme
-    rule (local outlets also publish world news)."""
-    text = " ".join(x for x in (title, snippet) if x)
-    if rules.mentions_country(text):
+    rule (local outlets also publish world news). Uses the cleaned snippet (clean_snippet)."""
+    snippet = clean_snippet(source_key, title, snippet)
+    if rules.mentions_country(" ".join(x for x in (title, snippet) if x)):
         return True
-    return outlet_id in rules.local_outlets and bool(classify_themes(text, rules.themes))
+    return outlet_id in rules.local_outlets and bool(classify_item(title, snippet, rules.themes))
+
+
+def guard_verdict(rules: Rules, it: Item) -> bool | None:
+    """What the relevance guard says about a stored article, or None when the guard leaves it
+    alone (added by a user, a user's relevance decision, a Libya-specific source). Used by
+    apply_relevance_guard and by the retag-all dry run, so both always agree."""
+    ex = it.extra or {}
+    if it.added_by is not None or ex.get("user_relevance") is not None or ex.get("libya_specific_source"):
+        return None
+    return passes_guard(rules, it.outlet_id, it.title, it.snippet, it.source_key)
 
 
 def apply_relevance_guard(s: Session, country_id: int) -> int:
@@ -250,11 +333,9 @@ def apply_relevance_guard(s: Session, country_id: int) -> int:
     rules = load_rules(s, country_id)
     n = 0
     for it in s.scalars(select(Item).where(Item.country_id == country_id, Item.kind == "article",
-                                           Item.added_by.is_(None))):
-        if (it.extra or {}).get("user_relevance") is not None or (it.extra or {}).get("libya_specific_source"):
-            continue
-        ok = passes_guard(rules, it.outlet_id, it.title, it.snippet)
-        if it.relevant != ok:
+                                           Item.added_by.is_(None)).execution_options(yield_per=2000)):
+        ok = guard_verdict(rules, it)
+        if ok is not None and it.relevant != ok:
             it.relevant = ok
             it.extra = {**(it.extra or {}), "filtered": None if ok else "no_country_mention"}
             n += 1
