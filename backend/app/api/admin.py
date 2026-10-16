@@ -250,11 +250,13 @@ def learning(s: Session = Depends(get_db), _: User = Depends(auth.require_admin)
                 hit[k] += slug2id[q] in item_hits(rules, it)
         confirm = {k: {"n": tot[k], "confirmed": round(hit[k] / tot[k], 2)} for k in sorted(tot)}
     from ..jobs import THRESHOLDS
+    from ..ml.registry import summary as model_summary
+    models = model_summary(s)
     return {"labels": labels, "by_origin": by_origin, "events": events,
             "vote_agreement": {"gaps_with_multiple_votes": len(multi), "unanimous": agree},
             "labels_per_week": [{"week": w, "n": n} for w, n in weekly],
             "thresholds": THRESHOLDS, "rule_confirmation": confirm,
-            "models": [], "note": "Learned models switch on once label thresholds are met (Phase 5)."}
+            "models": models, "note": None if any(m["active"] for m in models) else "No theme model is live yet."}
 
 
 # ---------------------------------------------------------------- Google Alerts

@@ -28,6 +28,15 @@
   resolve-links [--days N] [--limit N] [--minutes N]  find the outlet's own link for Google News items
                             (default 14 days, at most 400 site searches and 15 minutes. Probes and post dates come on top of the searches)
   reach-snapshot [--limit N]            Tranco web rank for Libyan outlets + the 100 busiest (outlet.external['reach'])
+
+theme model (app/ml):
+  train-theme-model [--gold PATH] [--out PATH]  train base + small model and evaluate (LOCAL ONLY, ~1 GB RAM)
+  register-model PATH [--activate] [--note TEXT]  copy a bundle to DATA_DIR/models and add it to the registry
+  classify-items [--days N | --all] [--dry-run]  score articles with the live model and apply it (--reset undoes it)
+  import-gold-labels PATH   blind review labels (jsonl) as silver theme_set labels (idempotent)
+  train-small-model         refit the label-trained part of the live model; promote it if it does no worse
+  model-status              live model, registry, labels per theme
+  activate-model VERSION [--let-nightly] | rollback-model  live by hand; nightly versions then stay inactive
 """
 import getpass
 import os
@@ -43,6 +52,9 @@ def main(argv: list[str]):
         return 1
     cmd, args = argv[0], argv[1:]
     init_db()
+    from .ml.commands import COMMANDS as ML_COMMANDS, run as run_ml
+    if cmd in ML_COMMANDS:  # no seed_all: the scheduler runs these hourly, and seeding brings back deleted key events
+        return run_ml(cmd, args)
     with SessionLocal() as s:
         seed_all(s)
         s.commit()

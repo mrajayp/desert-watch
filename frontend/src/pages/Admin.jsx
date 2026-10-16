@@ -103,6 +103,7 @@ export default function Admin() {
             </div>)}
         </section>
       </div>
+      <ModelsCard />
       <MethodsCard />
       <UsersCard />
       <FeedbackCard />
@@ -252,6 +253,113 @@ function FeedbackCard() {
   )
 }
 
+// The learned theme classifier: what is live, what it learned from, how well it does per theme,
+// and every version with a way back (activating one re-scores all articles in the background).
+const THEME_LABEL_TYPES = new Set(['theme_set', 'theme_relevance'])
+const f2 = (x) => (x == null ? '–' : x.toFixed(2))
+const fmtN = (x) => (x == null ? '–' : Math.round(x).toLocaleString())
+const prf = (m) => (m ? `${f2(m.p)} / ${f2(m.r)} / ${f2(m.f1)}` : '–')
+const ci = (m) => (m?.p_ci ? `precision ${m.p_ci.map(f2).join('–')}, recall ${m.r_ci.map(f2).join('–')} (95% interval)` : undefined)
+
+function ModelsCard() {
+  const { meta } = useApp()
+  const [d, setD] = useState(null)
+  const [msg, setMsg] = useState(null)
+  const load = () => api('/api/admin/models').then(setD).catch((e) => setMsg(e.message))
+  useEffect(() => { load() }, [])
+  const activate = async (v) => {
+    if (!window.confirm(`Make ${v} the live classifier? Every article is scored again with it in the background, which takes a few minutes. It stays live until you pick another version. New nightly versions stay switched off until then.`)) return
+    try {
+      await api(`/api/admin/models/${encodeURIComponent(v)}/activate`, { method: 'POST' })
+      setMsg(`${v} is live. Articles are being scored again in the background.`); load()
+    } catch (e) { setMsg(e.message) }
+  }
+  const letNightly = async (v) => {
+    try {
+      await api(`/api/admin/models/${encodeURIComponent(v)}/activate?pin=false`, { method: 'POST' })
+      setMsg('The nightly retrain can make a new version live again when it passes the check.'); load()
+    } catch (e) { setMsg(e.message) }
+  }
+  const head = (
+    <div><h2>Theme classifier</h2>
+      <p className="sub">A model that sorts articles into themes next to the word lists. It learns from the labels people give on Contribute and with Label this, and retrains each night.</p></div>)
+  if (!d) return <section className="card" style={{ marginTop: 16 }}>{head}{msg ? <p className="err">{msg}</p> : <div className="empty">Loading…</div>}</section>
+  const live = d.models.find((m) => m.active)
+  const n = (origin) => d.labels.by_origin_and_type.filter((x) => x.origin === origin && THEME_LABEL_TYPES.has(x.label_type)).reduce((a, x) => a + x.n, 0)
+  const lm = live?.metrics || {}
+  const names = new Map(meta.themes.map((t) => [t.slug, t.name_en]))
+  const use = (t) => (t.group !== 'gender' ? 'adds links'
+    : t.gate ? 'can switch off word-list links'
+      : `word lists only until people label 100 articles with 10 about it (now ${fmtN(t.people_labelled)} and ${fmtN(t.people_positives)})`)
+  return (
+    <section className="card" style={{ marginTop: 16 }}>
+      <div className="card-head">{head}</div>
+      {msg && <div className="banner info">{msg}</div>}
+      {!live ? <p>No model is live. Until one is, the classifier changes no themes.</p> : (
+        <p className="small">
+          Live: <b className="mono">{live.version}</b> · trained {live.trained_on?.date || live.created_at.slice(0, 10)} on {fmtN(live.trained_on?.labels?.items)} labelled
+          and {fmtN(live.trained_on?.base?.items)} rule-tagged articles · {fmtN(d.links.model)} theme links come from the model · {fmtN(d.links.vetoed)} word-list links it switched off
+        </p>)}
+      {live && d.pinned && (
+        <div className="row small" style={{ margin: '0 0 8px' }}>
+          <span>This version was made live by hand. The nightly retrain still checks new versions but leaves them switched off.</span>
+          <button className="btn small" onClick={() => letNightly(live.version)}>Let nightly updates take over</button>
+        </div>)}
+      <p className="small">Theme labels: <b>{fmtN(n('explicit'))}</b> from people and <b>{fmtN(n('silver'))}</b> from our October review, which an AI made.
+        Only people’s labels decide when the model may switch off gender matches.
+        <span className="muted"> People’s labels are counted here after the hourly update.</span></p>
+      {live && (
+        <>
+          <h3>How well it does, per theme</h3>
+          <p className="small muted">Precision / recall / F1 on {fmtN(lm.eval_items)} labelled articles, each scored by a version of the model that did not learn from it. Hover a figure for its range.
+            The threshold is the model score an article needs for the theme.</p>
+          <div className="scroll" style={{ maxHeight: 'none' }}>
+            <table className="data">
+              <thead><tr><th>Theme</th><th className="num">Labelled</th><th className="num" title="Labelled as about this theme">Yes</th><th className="num">Threshold</th><th title="What we count now: the word lists and the model together">Model</th>
+                <th title="The word lists on their own">Word lists alone</th><th title="The links we counted before this model: word lists and searches">Before the model</th>
+                <th>Model use</th></tr></thead>
+              <tbody>
+                {d.themes.map((t) => {
+                  const m = lm.themes?.[t.slug]
+                  return (
+                    <tr key={t.slug}>
+                      <td>{names.get(t.slug) || t.slug}</td><td className="num">{fmtN(t.labelled)}</td><td className="num">{fmtN(t.positives)}</td>
+                      <td className="num">{f2(t.threshold)}</td>
+                      <td className="num" title={ci(m?.model)}><b>{prf(m?.model)}</b></td>
+                      <td className="num" title={ci(m?.rules)}>{prf(m?.rules)}</td>
+                      <td className="num" title={ci(m?.links_today)}>{prf(m?.links_today)}</td>
+                      <td className="small">{use(t)}</td>
+                    </tr>)
+                })}
+                {['non_gender', 'gender'].map((g) => lm.macro?.[g] && (
+                  <tr key={g}><td><b>Average, {g === 'gender' ? 'gender themes' : 'other themes'}</b></td><td /><td /><td />
+                    <td className="num"><b>{prf(lm.macro[g].model)}</b></td><td className="num">{prf(lm.macro[g].rules)}</td>
+                    <td className="num">{prf(lm.macro[g].links_today)}</td><td /></tr>))}
+              </tbody>
+            </table>
+          </div>
+        </>)}
+      <h3>Versions</h3>
+      {d.models.length === 0 ? <p className="small muted">No versions yet. The first one is trained offline and registered with the command line.</p> : (
+        <div className="scroll" style={{ maxHeight: 320 }}>
+          <table className="data">
+            <thead><tr><th>Version</th><th>Trained</th><th className="num">Labelled</th><th>Average F1 (other / gender)</th><th>Note</th><th /></tr></thead>
+            <tbody>{d.models.map((m) => (
+              <tr key={m.version}>
+                <td className="mono">{m.version}</td>
+                <td className="small mono">{m.created_at.slice(0, 16).replace('T', ' ')}</td>
+                <td className="num">{fmtN(m.trained_on?.labels?.items)}</td>
+                <td className="num">{f2(m.metrics?.macro?.non_gender?.model?.f1)} / {f2(m.metrics?.macro?.gender?.model?.f1)}</td>
+                <td className="small muted" style={{ maxWidth: 360 }}>{m.note}</td>
+                <td>{m.active ? <span className="pill ok">{m.pinned ? 'live, by hand' : 'live'}</span>
+                  : m.file === false ? <span className="small muted" title="Old nightly versions lose their file to save space">no file</span>
+                    : <button className="btn small" onClick={() => activate(m.version)}>Activate</button>}</td>
+              </tr>))}</tbody>
+          </table>
+        </div>)}
+    </section>
+  )
+}
 
 // "How the numbers work": every calculation in plain words. Collapsed by default.
 function MethodsCard() {

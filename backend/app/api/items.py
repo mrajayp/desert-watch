@@ -10,7 +10,7 @@ from ..db import get_db
 from ..fetch_meta import FetchError, fetch_meta
 from ..ingest import domain_of, load_rules, store_article
 from ..models import ArticleAssessment, Comment, Event, Item, ItemRegion, ItemTheme, User, utcnow
-from .common import country_or_404, hydrate_items, items_query, region_or_404, theme_or_404
+from .common import country_or_404, duplicate_cluster, hydrate_items, items_query, region_or_404, theme_or_404
 
 router = APIRouter(prefix="/api")
 
@@ -157,25 +157,29 @@ def correct(item_id: int, body: CorrectionIn, s: Session = Depends(get_db), u: U
     if not it:
         raise HTTPException(404, "Unknown item")
     ctx = body.model_dump(exclude_none=True)
+    cluster = duplicate_cluster(s, it)  # one correction covers every copy of the story
     if body.theme_id is not None and body.theme_relevant is not None:
         theme_or_404(s, body.theme_id)
-        link = s.get(ItemTheme, (item_id, body.theme_id))
-        if link:
-            link.active, link.method = body.theme_relevant, "user"
-        elif body.theme_relevant:
-            s.add(ItemTheme(item_id=item_id, theme_id=body.theme_id, method="user"))
+        for x in cluster:
+            link = s.get(ItemTheme, (x.id, body.theme_id))
+            if link:
+                link.active, link.method = body.theme_relevant, "user"
+            elif body.theme_relevant:
+                s.add(ItemTheme(item_id=x.id, theme_id=body.theme_id, method="user"))
         ctx["label_type"] = "theme_relevance"
     if body.region_id is not None and body.region_relevant is not None:
         region_or_404(s, body.region_id)
-        link = s.get(ItemRegion, (item_id, body.region_id))
-        if link:
-            link.active, link.method = body.region_relevant, "user"
-        elif body.region_relevant:
-            s.add(ItemRegion(item_id=item_id, region_id=body.region_id, method="user"))
+        for x in cluster:
+            link = s.get(ItemRegion, (x.id, body.region_id))
+            if link:
+                link.active, link.method = body.region_relevant, "user"
+            elif body.region_relevant:
+                s.add(ItemRegion(item_id=x.id, region_id=body.region_id, method="user"))
         ctx.setdefault("label_type", "region")
     if body.item_relevant is not None:
-        it.relevant = body.item_relevant
-        it.extra = {**(it.extra or {}), "user_relevance": body.item_relevant}
+        for x in cluster:
+            x.relevant = body.item_relevant
+            x.extra = {**(x.extra or {}), "user_relevance": body.item_relevant}
         ctx.setdefault("label_type", "theme_relevance")
     ctx["title"] = (it.title or "")[:300]
     ctx["lang"] = it.lang

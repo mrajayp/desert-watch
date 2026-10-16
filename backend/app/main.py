@@ -7,7 +7,7 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy import func, select
 
 from . import settings
-from .api import account, admin, contribute, gaps, items, outlets, social
+from .api import account, admin, contribute, gaps, items, labelling, outlets, social
 from .db import SessionLocal, init_db
 from .models import SourceRun
 from .seed import seed_all
@@ -34,7 +34,8 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Desert Watch", lifespan=lifespan, docs_url=None, redoc_url=None)
-for r in (account.router, gaps.router, items.router, social.router, outlets.router, admin.router, contribute.router):
+for r in (account.router, gaps.router, items.router, social.router, outlets.router, admin.router, contribute.router,
+          labelling.router):
     app.include_router(r)
 
 
@@ -42,7 +43,7 @@ for r in (account.router, gaps.router, items.router, social.router, outlets.rout
 def health():
     sched = _state["scheduler"]
     with SessionLocal() as s:
-        last = s.scalar(select(func.max(SourceRun.started_at)))
+        last = s.scalar(select(func.max(SourceRun.started_at)).where(SourceRun.source_key.not_like("theme_model%")))
     return {"ok": True, "scheduler": bool(sched and sched.running),
             "next_runs": [str(j.next_run_time) for j in sched.get_jobs()] if sched else [],
             "last_collector_run": last.isoformat() if last else None}
