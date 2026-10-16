@@ -221,7 +221,16 @@ def gap_detail(theme_id: int, region_id: int, lens: str = "audience", week: date
         "claims": [{"user": names.get(c.user_id), "mine": c.user_id == u.id, "status": c.status,
                     "published_url": c.published_url, "at": c.updated_at.isoformat()} for c in claims],
         "object_key": k,
+        **_search_lens_terms(s, lens, region.country_id, theme),
     }
+
+
+def _search_lens_terms(s: Session, lens: str, country_id: int, theme: Theme) -> dict:
+    """Search lens only: the theme's search words with English glosses (they set the size)."""
+    if lens != "search":
+        return {}
+    from ..gtrends import search_terms
+    return {"search": search_terms(s, country_id, theme.slug, theme.group)}
 
 
 class VoteIn(BaseModel):

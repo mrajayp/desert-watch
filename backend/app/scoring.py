@@ -28,6 +28,7 @@ LENSES = {
     "events": {"kinds": ("event",), "reference": "pooled", "levels": ("national", "macro", "district")},
     "humanitarian": {"kinds": ("report",), "reference": "pooled", "levels": ("national", "macro", "district")},
     "journalist": {"kinds": ("suggestion",), "reference": "pooled", "levels": ("national", "macro", "district")},
+    "search": {"kinds": ("search",), "reference": "own_history", "levels": ("national",)},  # Google Trends, see gtrends.py
 }
 PARTISAN = {"tripoli_gnu_aligned", "east_lna_aligned", "islamist_leaning", "tribal_local"}
 # Sources whose weekly volume reflects someone else's selection, not how much was published:

@@ -72,11 +72,11 @@ def groups(g: dict) -> list[list[str]]:
     """Which lists share a request. Big lists go together and small lists together, so a big
     list never rounds a small one down to zero."""
     baskets = g["baskets"]
-    out = [[s for s in grp if s in baskets] for grp in (g.get("groups") or [])]
-    seen = {s for grp in out for s in grp}
-    rest = [s for s in baskets if s not in seen]
-    out += [rest[i:i + MAX_SLOTS - 1] for i in range(0, len(rest), MAX_SLOTS - 1)]
-    return [grp for grp in out if grp]
+    listed = [[s for s in grp if s in baskets] for grp in (g.get("groups") or [])]
+    seen = {s for grp in listed for s in grp}
+    listed.append([s for s in baskets if s not in seen])
+    n = MAX_SLOTS - 1  # the anchor takes the fifth place
+    return [grp[i:i + n] for grp in listed for i in range(0, len(grp), n)]
 
 
 def parse_points(timeline: list[dict]) -> list[dict]:

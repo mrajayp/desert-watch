@@ -17,6 +17,8 @@
   reassign-social           move posts filed under a whole platform (facebook.com ...) to their page
   import-social-scrape PATH load the converted social-media scrape JSON (outlets, Facebook register, labels)
   sync-themes               overwrite DB theme terms from config/themes.yaml (bumps versions, re-tags)
+  import-search PATH        load Google Trends search rows (JSONL from scripts/fetch_gtrends.py; idempotent)
+  collect-search [--provider serpapi|official] [--daily]  fetch search rows with a keyed provider and load them
 """
 import getpass
 import os
@@ -150,6 +152,16 @@ def main(argv: list[str]):
         for tid in changed:
             _retag_theme(tid, recompute=False)
         print(f"updated {len(changed)} themes")
+    elif cmd == "import-search":
+        from pathlib import Path
+        from .imports.search_trends import run as run_search
+        with SessionLocal() as s:
+            print(run_search(s, Path(args[0])))
+    elif cmd == "collect-search":
+        from .collectors.gtrends import collect_and_import
+        opt = lambda k, d=None: args[args.index(k) + 1] if k in args else d  # noqa: E731
+        with SessionLocal() as s:
+            print(collect_and_import(s, provider=opt("--provider", "serpapi"), daily="--daily" in args))
     elif cmd == "import-alignment-sources":
         from .imports.alignment_sources import run as run_align
         with SessionLocal() as s:
