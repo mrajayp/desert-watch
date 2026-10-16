@@ -75,9 +75,10 @@ def repair_themes(s: Session) -> int:
                 continue
             for proj, titles in langs.items():
                 for title in titles or []:
+                    prefix = f"wiki:{proj}:{title}:"   # a key range, so the unique index on dedupe_key serves it
                     days = select(Item.id).where(
                         Item.country_id == country.id, Item.kind == "pageview",
-                        Item.dedupe_key.startswith(f"wiki:{proj}:{title}:", autoescape=True))
+                        Item.dedupe_key >= prefix, Item.dedupe_key < prefix + "\U0010ffff")
                     have = set(s.scalars(select(ItemTheme.item_id).where(ItemTheme.theme_id == th.id,
                                                                          ItemTheme.item_id.in_(days))))
                     for iid in s.scalars(days).all():
