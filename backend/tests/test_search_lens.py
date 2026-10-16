@@ -200,14 +200,17 @@ def test_meta_opens_search_on_its_latest_scored_week_and_trends_skip_missing_wee
     login(client, "j@example.org", "journo-password-1")
     m = client.get("/api/meta").json()
     search = next(x for x in m["lenses"] if x["key"] == "search")
-    assert m["latest_week"] == week_start(TODAY).isoformat()
+    # pages open on the latest week that has ended; the search lens also says its own latest scored week
+    assert m["latest_week"] == LAST_FULL.isoformat() and m["current_week"] == week_start(TODAY).isoformat()
     assert search["available"] and search["latest_scored_week"] == LAST_FULL.isoformat()
     assert next(x for x in m["lenses"] if x["key"] == "audience")["latest_scored_week"] is None
-    rows = client.get("/api/cells/trends", params={"lens": "search"}).json()["series"][str(themes["health"])]
-    weeks = {r["week"] for r in rows}
-    assert week_start(TODAY).isoformat() not in weeks and LAST_FULL.isoformat() in weeks
-    assert (HOLE_WEEK + timedelta(weeks=2)).isoformat() not in weeks
-    assert not any(r["breakdown"].get("search_missing_weeks") for r in rows)
+    rows = {r["week"]: r for r in client.get("/api/cells/trends", params={"lens": "search"}).json()
+            ["themes"][str(themes["health"])]["rows"]}
+    assert rows[week_start(TODAY).isoformat()]["in_progress"] and rows[week_start(TODAY).isoformat()]["gap"] is None
+    assert rows[LAST_FULL.isoformat()]["gap"] is not None
+    # a window with a week Google held back is not judged
+    held = rows.get((HOLE_WEEK + timedelta(weeks=2)).isoformat())
+    assert held is None or (held["gap"] is None and held["insufficient"])
 
 
 def test_week_without_data_gets_the_median_of_the_weeks_around_it(db):

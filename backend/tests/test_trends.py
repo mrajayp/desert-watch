@@ -382,7 +382,7 @@ def test_lens_available_only_with_recent_judged_cells_across_themes(client, user
     assert lenses["audience"]["available"] and not lenses["humanitarian"]["available"]
     assert lenses["humanitarian"]["themes_with_need"] == [active[1]]
     assert not lenses["events"]["available"] and lenses["events"]["themes_with_need"] == []
-    # one theme fewer and the audience lens is no longer offered
+    # one theme fewer and the audience lens is no longer offered (no page views here: all themes count)
     db.query(CellWeek).filter(CellWeek.theme_id == active[need - 1], CellWeek.lens == "audience").delete()
     db.commit()
     assert not {x["key"]: x for x in client.get("/api/meta").json()["lenses"]}["audience"]["available"]

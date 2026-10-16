@@ -122,7 +122,10 @@ def test_run_resolves_by_copy_and_wp_and_never_changes_url(db, no_sleep):
     with httpx.Client(transport=httpx.MockTransport(handler)) as c:
         stats = resolve.run(db, days=14, limit=10, client=c, now=now)
     assert (stats["copy"], stats["wp_search"], stats["searched"], stats["no_site_search"]) == (1, 1, 1, 1)
-    assert stats["skipped_outlets"] == 1 and stats["probed"] == 2
+    # the t.co item is a shortener: the guard keeps it out of the counts, so it is never a candidate
+    assert stats["skipped_outlets"] == 0 and stats["probed"] == 2
+    db.refresh(tco)
+    assert tco.extra.get("filtered") == "shortener" and "resolved_url" not in tco.extra
     for i in (a, b, miss, tco, old):
         db.refresh(i)
     assert a.extra["resolved_url"] == "https://feedsite.ly/news/1" and a.extra["resolved_via"] == "copy"

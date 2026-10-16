@@ -427,7 +427,7 @@ def test_full_vector_labels_cover_duplicates(client, users, db):
         links = db.scalars(select(ItemTheme).where(ItemTheme.item_id == x.id)).all()
         assert len(links) == n_active and all(lk.method == "user" for lk in links)
         assert {lk.theme_id for lk in links if lk.active} == {themes["health"], themes["services"]}
-    assert db.get(ItemTheme, (a.id, themes["health"])).evidence == {"was": "rule"}
+    assert db.get(ItemTheme, (a.id, themes["health"])).evidence["was"] == "rule"   # rule evidence is kept too
     ev = db.scalar(select(Event).where(Event.type == "correction"))
     assert ev.context["label_type"] == "theme_set" and sorted(ev.context["themes"]) == ["health", "services"]
     assert build_labels(db) == 1

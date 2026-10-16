@@ -60,30 +60,17 @@ def meta(country: str = "LY", s: Session = Depends(get_db), _: User = Depends(au
 
 
 LENS_RECENT_WEEKS, LENS_MIN_WEEKS = 12, 4
-LENS_MIN_THEMES = 3   # the search lens can only ever measure a few themes
 
 
 def _lens_status(s: Session, country_id: int, latest: date | None, themes: list[Theme]) -> tuple[set, dict]:
     """(available lenses, lens -> theme ids with any need in the last 52 weeks). A lens is available
-    when 3 active themes (or a third of them, if that is fewer) have a judged national cell in 4 or
-    more of its last 12 complete weeks, so a few old scored cells cannot keep a lens with no data on
-    offer."""
+    when at least a third of the themes it can measure (those with need data this year, else all
+    active themes) have a judged national cell in 4 or more of its last 12 complete weeks. So a few
+    old scored cells cannot keep a lens with no data on offer, and a lens that can only ever measure
+    a few themes (Google searches) is judged on those."""
     if not latest:
         return set(), {}
     active = {t.id for t in themes}
-    national = s.scalar(select(Region.id).where(Region.country_id == country_id, Region.level == "national"))
-    rows = s.execute(select(CellWeek.lens, CellWeek.theme_id, CellWeek.week_start, CellWeek.insufficient,
-                            CellWeek.breakdown)
-                     .where(CellWeek.country_id == country_id, CellWeek.region_id == national,
-                            CellWeek.week_start > latest - timedelta(weeks=LENS_RECENT_WEEKS + 2))).all()
-    available = set()
-    for lens in LENSES:
-        mine = [r for r in rows if r.lens == lens and not (r.breakdown or {}).get("in_progress")]
-        recent = set(sorted({r.week_start for r in mine})[-LENS_RECENT_WEEKS:])
-        judged = Counter(r.theme_id for r in mine if r.week_start in recent and not r.insufficient)
-        ok = sum(1 for tid in active if judged[tid] >= LENS_MIN_WEEKS)
-        if active and ok >= min(LENS_MIN_THEMES, -(-len(active) // 3)):
-            available.add(lens)
     kinds = {k: lens for lens, cfg in LENSES.items() for k in cfg["kinds"]}
     with_need = defaultdict(set)
     for kind, tid in s.execute(select(Item.kind, ItemTheme.theme_id).distinct()
@@ -94,6 +81,20 @@ def _lens_status(s: Session, country_id: int, latest: date | None, themes: list[
                                           latest - timedelta(weeks=TREND_WEEKS - 1), datetime.min.time()))):
         if tid in active:
             with_need[kinds[kind]].add(tid)
+    national = s.scalar(select(Region.id).where(Region.country_id == country_id, Region.level == "national"))
+    rows = s.execute(select(CellWeek.lens, CellWeek.theme_id, CellWeek.week_start, CellWeek.insufficient,
+                            CellWeek.breakdown)
+                     .where(CellWeek.country_id == country_id, CellWeek.region_id == national,
+                            CellWeek.week_start > latest - timedelta(weeks=LENS_RECENT_WEEKS + 2))).all()
+    available = set()
+    for lens in LENSES:
+        mine = [r for r in rows if r.lens == lens and not (r.breakdown or {}).get("in_progress")]
+        recent = set(sorted({r.week_start for r in mine})[-LENS_RECENT_WEEKS:])
+        judged = Counter(r.theme_id for r in mine if r.week_start in recent and not r.insufficient)
+        measurable = with_need.get(lens) or active
+        ok = sum(1 for tid in measurable if judged[tid] >= LENS_MIN_WEEKS)
+        if ok and 3 * ok >= len(measurable):
+            available.add(lens)
     return available, {k: sorted(v) for k, v in with_need.items()}
 
 
