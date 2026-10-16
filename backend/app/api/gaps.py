@@ -11,7 +11,7 @@ from ..db import get_db
 from ..ingest import load_rules, store_article
 from ..models import (CellWeek, Comment, CoverageSeries, GapClaim, GapVote, Item, ItemRegion, ItemTheme, Region,
                       SourceRun, Suggestion, Theme, User, utcnow)
-from ..scoring import LENSES, TREND_WEEKS, trend_basis, week_start
+from ..scoring import LENSES, TREND_WEEKS, latest_complete_week, trend_basis, week_start
 from .common import (country_or_404, descendants, hydrate_items, items_query, region_or_404, theme_or_404,
                      window_bounds)
 
@@ -56,19 +56,6 @@ def meta(country: str = "LY", s: Session = Depends(get_db), _: User = Depends(au
 
 
 LENS_RECENT_WEEKS, LENS_MIN_WEEKS = 12, 4
-
-
-def latest_complete_week(s: Session, country_id: int) -> date | None:
-    """The latest week whose national cells are all complete (none still coming in)."""
-    weeks = s.scalars(select(CellWeek.week_start).where(CellWeek.country_id == country_id).distinct()
-                      .order_by(CellWeek.week_start.desc()).limit(4)).all()
-    national = s.scalar(select(Region.id).where(Region.country_id == country_id, Region.level == "national"))
-    for wk in weeks:
-        cells = s.scalars(select(CellWeek.breakdown).where(CellWeek.country_id == country_id, CellWeek.week_start == wk,
-                                                           CellWeek.region_id == national)).all()
-        if cells and not any((b or {}).get("in_progress") for b in cells):
-            return wk
-    return None
 
 
 def _lens_status(s: Session, country_id: int, latest: date | None, themes: list[Theme]) -> tuple[set, dict]:

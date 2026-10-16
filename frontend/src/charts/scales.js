@@ -68,8 +68,9 @@ export const FLAG_TEXT = {
   little_arabic: 'Little Arabic coverage',
   outside_only: 'Only covered from outside Libya',
   mostly_unplaced: 'Most coverage names no place',
+  need_incomplete: 'Need data stops before the week ends',
 }
-export const INFO_FLAGS = new Set(['mostly_unplaced'])
+export const INFO_FLAGS = new Set(['mostly_unplaced', 'need_incomplete'])
 export function flagText(f) {
   if (f.startsWith('partisan_only:')) return `Only ${DIMENSIONS.alignment.values[f.split(':')[1]] || 'one side'} outlets`
   return FLAG_TEXT[f] || f

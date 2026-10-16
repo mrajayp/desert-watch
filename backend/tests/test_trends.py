@@ -244,6 +244,68 @@ def test_too_few_expected_and_no_need_reasons(db):
     assert econ.insufficient and econ.breakdown["reason"] == "no_need_data" and econ.breakdown["expected_week"] is None
 
 
+def test_digest_waits_for_sundays_page_views(db, monkeypatch):
+    from app import digest
+    from app.models import Country
+    from tests.test_digest import FakeMessages
+    cid = _country(db)
+    rules = load_rules(db, cid)
+    monday = date(2026, 10, 12)
+    _steady_health(db, cid, rules, monday, 30, pageviews_until=date(2026, 10, 10))   # Sunday's views not in yet
+    compute(db, cid, weeks=3, today=monday, lenses=("audience",))
+    # last week is still coming in: the digest covers the week before, or on Thursday goes ahead anyway
+    assert digest.digest_week(db, cid, today=monday) == date(2026, 9, 28)
+    assert digest.digest_week(db, cid, today=date(2026, 10, 15)) == date(2026, 10, 5)
+    fake = FakeMessages()
+    monkeypatch.setattr(digest, "_client", lambda: SimpleNamespace(messages=fake))
+    country = db.get(Country, cid)
+    assert digest.generate(db, country, today=monday).week_start == date(2026, 9, 28)
+    # Sunday's views arrive overnight: Tuesday's run writes last week's digest with its audience gaps
+    _pageviews(db, cid, themes_id(db, "health"), date(2026, 10, 11), 100, days=1)
+    db.commit()
+    tuesday = monday + timedelta(days=1)
+    compute(db, cid, weeks=3, today=tuesday, lenses=("audience",))
+    assert digest.digest_week(db, cid, today=tuesday) == date(2026, 10, 5)
+    d = digest.generate(db, country, today=tuesday)
+    assert d.week_start == date(2026, 10, 5) and "audience" in d.facts["lenses_with_data"]
+
+
+def test_stalled_need_is_judged_after_a_week_on_the_days_we_have(db):
+    from app.scoring import latest_complete_week
+    themes, regions = ids(db)
+    cid = _country(db)
+    rules = load_rules(db, cid)
+    now = date(2026, 10, 14)                                # a Wednesday
+    _steady_health(db, cid, rules, now, 30, pageviews_until=date(2026, 9, 30))   # page views stopped on a Wednesday
+    compute(db, cid, weeks=4, today=now, lenses=("audience",))
+    cells = {c.week_start: c for c in db.scalars(select(CellWeek).where(
+        CellWeek.theme_id == themes["health"], CellWeek.region_id == regions["national"], CellWeek.lens == "audience"))}
+    stalled = cells[date(2026, 9, 28)]                      # ended 4 Oct, more than a week ago: judged
+    assert not stalled.breakdown["in_progress"] and stalled.gap is not None
+    assert "need_incomplete" in stalled.flags and stalled.breakdown["need_through"] == "2026-09-30"
+    assert abs(stalled.gap) < 0.2                           # both sides cut at the same day
+    assert cells[date(2026, 10, 5)].breakdown["in_progress"]    # ended 11 Oct: still waiting
+    assert "need_incomplete" not in cells[date(2026, 9, 21)].flags
+    assert latest_complete_week(db, cid) == date(2026, 9, 28)
+
+
+def test_need_ends_on_the_day_most_titles_reached(db):
+    from app.scoring import need_end_day
+    themes, _ = ids(db)
+    cid = _country(db)
+    for slug, until in (("health", date(2026, 10, 11)), ("security", date(2026, 10, 10)), ("economy", date(2026, 10, 10))):
+        for i in range(14):
+            d = until - timedelta(days=i)
+            _pageviews(db, cid, themes[slug], d, 50, days=1)
+    db.commit()
+    assert need_end_day(db, cid, date(2026, 10, 13)) == date(2026, 10, 10)   # one title of three has Sunday
+    _pageviews(db, cid, themes["security"], date(2026, 10, 11), 50, days=1)
+    db.commit()
+    assert need_end_day(db, cid, date(2026, 10, 13)) == date(2026, 10, 11)   # two of three
+    # after a long stall (no title read in 28 days) the last day we have still counts
+    assert need_end_day(db, cid, date(2026, 12, 1)) == date(2026, 10, 11)
+
+
 # ---------------------------------------------------------------- lens availability
 def _cell(db, cid, tid, rid, wk, lens, judged, **b):
     db.add(CellWeek(country_id=cid, theme_id=tid, region_id=rid, week_start=wk, lens=lens, need=1, coverage=1,

@@ -65,8 +65,9 @@ export default function DigestPage() {
         <section className="card">
           {!list ? <div className="empty">Loading…</div> : !cur ? (
             <div className="empty">
-              No digest yet. It is written every Monday at 06:00 UTC from the previous week’s data, once the
-              server has an Anthropic API key.{me.role === 'admin' && <><br /><br /><button className="btn" onClick={regenerate}>Generate now</button></>}
+              No digest yet. It is written about the week before, on Monday at 06:00 UTC. If Sunday’s Wikipedia
+              views are not in by then, it tries again each morning up to Thursday. It needs an Anthropic API key
+              on the server.{me.role === 'admin' && <><br /><br /><button className="btn" onClick={regenerate}>Generate now</button></>}
               {msg && <p className="small">{msg}</p>}
             </div>
           ) : (

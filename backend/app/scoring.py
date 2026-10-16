@@ -52,6 +52,11 @@ TREND_WEEKS = 52                                      # complete weeks on the Tr
 BASELINE_REACH = 4 * settings.WINDOW_WEEKS - 1        # weeks back to the start of a cell's own-history baseline
 PAIR_END_GRACE = timedelta(days=14)                   # a quiet fortnight at the end of a span is not a stop
 SPIKE_DAYS, SPIKE_MIN_DAYS = 28, 7                    # trailing window for the pageview spike cap
+# A week whose daily need data stops short of its last day waits this long past its end for the rest.
+# After that it is judged on the days we have (coverage cut at the same day) and flagged need_incomplete,
+# so a stalled collector cannot leave every later week 'still coming in'.
+NEED_WAIT = timedelta(days=7)
+NEED_TITLES_DAYS = 28                                 # titles read this recently decide where need data ends
 
 
 def week_start(d: date) -> date:
@@ -200,6 +205,42 @@ def capped_pageviews(s: Session, country_id: int, start: date, end: date) -> dic
     return out
 
 
+def need_end_day(s: Session, country_id: int, now: date) -> date | None:
+    """The last day most Wikipedia titles have page views for, among titles read in the last 28 days.
+    One title reaching a day does not end a week: on a night when only some titles came back, the rest
+    would be missing their Sunday. Falls back to the latest day of any title after a long stall."""
+    rows = s.execute(select(Item.dedupe_key, Item.published_at).where(
+        Item.country_id == country_id, Item.kind == "pageview",
+        Item.published_at >= _dt(now - timedelta(days=NEED_TITLES_DAYS)),
+        Item.published_at < _dt(now + timedelta(days=1)))).all()
+    last: dict[str, date] = {}
+    for key, pub in rows:
+        title = key.rsplit(":", 1)[0]
+        last[title] = max(last.get(title, pub.date()), pub.date())
+    if last:
+        days = sorted(last.values())
+        return days[(len(days) - 1) // 2]   # at least half the titles reach it
+    latest = s.scalar(select(func.max(Item.published_at)).where(
+        Item.country_id == country_id, Item.kind == "pageview", Item.published_at < _dt(now + timedelta(days=1))))
+    return latest.date() if latest else None
+
+
+def latest_complete_week(s: Session, country_id: int, upto: date | None = None, *, reach: int = 12) -> date | None:
+    """The latest scored week (on or before `upto`) whose national cells are all complete, none still
+    coming in. Pages open on it and the weekly digest covers it."""
+    q = select(CellWeek.week_start).where(CellWeek.country_id == country_id)
+    if upto:
+        q = q.where(CellWeek.week_start <= upto)
+    weeks = s.scalars(q.distinct().order_by(CellWeek.week_start.desc()).limit(reach)).all()
+    national = s.scalar(select(Region.id).where(Region.country_id == country_id, Region.level == "national"))
+    for wk in weeks:
+        cells = s.scalars(select(CellWeek.breakdown).where(CellWeek.country_id == country_id, CellWeek.week_start == wk,
+                                                           CellWeek.region_id == national)).all()
+        if cells and not any((b or {}).get("in_progress") for b in cells):
+            return wk
+    return None
+
+
 def _outlet_dims(s: Session, dims=("scope", "alignment")) -> dict[int, dict[str, str]]:
     out: dict[int, dict[str, str]] = defaultdict(dict)
     q = select(OutletCategory).where(OutletCategory.dimension.in_(dims), OutletCategory.status == "active",
@@ -226,7 +267,7 @@ def compute(s: Session, country_id: int, *, weeks: int = 12, today: date | None 
             lenses: tuple[str, ...] | None = None, now: date | None = None) -> int:
     """Score `weeks` weeks ending with the week of `today`. `now` (default today) is the real date:
     weeks from its week on, and weeks whose daily need data has not reached their last day, are in
-    progress and get no gap."""
+    progress and get no gap (the latter for at most NEED_WAIT past the week's end)."""
     today = today or date.today()
     now = now or today
     last = week_start(today)
@@ -241,12 +282,13 @@ def compute(s: Session, country_id: int, *, weeks: int = 12, today: date | None 
     current = week_start(now)
     # Daily need (pageviews) lags coverage by a day or two: a week counts as complete once its need
     # data reaches the week's last day. Until then coverage is also cut at that day.
-    last_need = s.scalar(select(func.max(Item.published_at)).where(
-        Item.country_id == country_id, Item.kind == "pageview", Item.published_at < _dt(now + timedelta(days=1))))
-    need_end = last_need.date() if last_need else None
+    need_end = need_end_day(s, country_id, now)
+
+    def need_short(wk: date, lens: str) -> bool:
+        return bool(LENSES[lens].get("daily") and need_end and wk + timedelta(days=6) > need_end)
 
     def in_progress(wk: date, lens: str) -> bool:
-        return wk >= current or bool(LENSES[lens].get("daily") and need_end and wk + timedelta(days=6) > need_end)
+        return wk >= current or (need_short(wk, lens) and now <= wk + timedelta(days=6) + NEED_WAIT)
 
     # Comparisons over time only count source|outlet pairs collecting across the whole compared span,
     # so adding Google Alerts or a feed (or Google News finding outlets only for recent weeks) does not
@@ -354,7 +396,7 @@ def compute(s: Session, country_id: int, *, weeks: int = 12, today: date | None 
         for lens in lenses:
             cfg = LENSES[lens]
             ip = in_progress(wk, lens)
-            cut = ip and cfg.get("daily") and need_end is not None
+            cut = need_short(wk, lens)  # still waiting, or judged on the days we have after NEED_WAIT
             # pooled reference for national cells: all themes nationally (each theme's articles
             # against each theme's need, so the gaps balance out across themes)
             nat_cov = sum(counted(cur[(t.id, national.id)][0].pairs, keep) for t in themes)
@@ -398,6 +440,8 @@ def compute(s: Session, country_id: int, *, weeks: int = 12, today: date | None 
                                            cur_comparable=scored_cov)
                     if ip:  # a week still coming in always looks like a drop
                         flags = [f for f in flags if f != "coverage_drop"]
+                    elif cut:  # judged although its need data never reached the week's end
+                        flags.append("need_incomplete")
                     k = (wk, t.id, rid)
                     need_week = weekly_need.get(k, {}).get(lens, 0.0)
                     wcov = weekly_cov.get(k)

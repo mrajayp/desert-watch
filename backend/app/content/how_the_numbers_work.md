@@ -42,7 +42,7 @@ Before comparing we add 5 articles to both sides. A theme expecting 8 articles t
 
 A cell is not judged, and shows as hatched, in four cases.
 
-- The week is still coming in. That is always true of the current week. Wikipedia also gives us page views a day or two late, so on the audience lens a week is only judged once its page views reach the Sunday. For such a week we stop counting articles on the last day we have page views for, so both sides cover the same days.
+- The week is still coming in. That is always true of the current week. Wikipedia also gives us page views a day or two late, so on the audience lens a week is only judged once most of its Wikipedia articles have page views for the Sunday. For such a week we stop counting articles on the last day we have page views for, so both sides cover the same days. If the page views are still short a week after that Sunday, we stop waiting. The week is then judged on the days we have, cut the same way, and the cell says its need data stops before the week ends.
 - We are still building its baseline. The window or the 12 weeks before it reach back to before we started collecting, which was January 2019.
 - There is no need data. On the audience lens that means no Wikipedia page views for the theme.
 - Fewer than 3 articles are expected. Then even no articles at all could be chance.
@@ -92,6 +92,8 @@ Votes and corrections are saved as labels for training. So are article ratings. 
 ## Weekly digest
 
 Once a week we work out the facts here first. These are the biggest gaps with their flags, plus a few headlines. Only those facts go to the AI model, and it is told to use no number that is not in them. The facts are saved with the text so any claim can be checked. It needs the Anthropic key to run.
+
+The digest covers the week that ended on Sunday. Wikipedia gives us Sunday's page views a day or two late. If they are not in on Monday morning, that run covers the latest complete week instead, which usually has its digest already. The digest then tries again each morning up to Thursday, and on Thursday it goes ahead with what it has.
 
 ## When the numbers update
 
