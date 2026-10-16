@@ -58,6 +58,7 @@ ADDED_COLUMNS = {
     "theme": {"group": "VARCHAR(40)", "cooc": "JSON", "strict": "BOOLEAN DEFAULT 0", "require_country": "BOOLEAN DEFAULT 0"},
     "outlet": {"monitored": "BOOLEAN DEFAULT 1", "external": "JSON"},
     "item": {"duplicate_of": "INTEGER"},
+    "item_theme": {"evidence": "JSON", "score": "FLOAT", "model_version": "VARCHAR(40)"},
     "user": {"status": "VARCHAR(10) DEFAULT 'active'", "organisation": "VARCHAR(200)", "signup_note": "TEXT",
              "approved_by": "INTEGER"},
 }

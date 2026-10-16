@@ -155,6 +155,10 @@ class ItemTheme(Base):
     method: Mapped[str] = mapped_column(String(8), default="rule")  # rule | query | user | model
     active: Mapped[bool] = mapped_column(Boolean, default=True)    # False = a user said "not about this"
     theme_version: Mapped[int] = mapped_column(Integer, default=1)
+    # why the link exists: {"field": "title"|"snippet"|"query", "terms": [...], "query": "<alert or query key>"}
+    evidence: Mapped[dict | None] = mapped_column(JSON)
+    score: Mapped[float | None] = mapped_column(Float)          # learned model probability, when scored
+    model_version: Mapped[str | None] = mapped_column(String(40))
 
 
 class ItemRegion(Base):
@@ -412,6 +416,40 @@ class NetworkEdgeWeek(Base):
     theme_id: Mapped[int | None] = mapped_column(ForeignKey("theme.id"))
     week_start: Mapped[date | None] = mapped_column(Date, index=True)
     weight: Mapped[float] = mapped_column(Float)
+
+
+class ModelRegistry(Base):
+    """A trained theme classifier. One row per version; exactly one is active per kind.
+    The bundle itself lives on the data volume (path), never in the database."""
+    __tablename__ = "model_registry"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    kind: Mapped[str] = mapped_column(String(20), default="theme")
+    version: Mapped[str] = mapped_column(String(40), unique=True)
+    path: Mapped[str] = mapped_column(String(300))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    trained_on: Mapped[dict] = mapped_column(JSON, default=dict)   # label counts, data window
+    metrics: Mapped[dict] = mapped_column(JSON, default=dict)      # per-theme precision/recall/F1 on the audit set
+    thresholds: Mapped[dict] = mapped_column(JSON, default=dict)   # theme slug -> probability threshold
+    active: Mapped[bool] = mapped_column(Boolean, default=False)
+    note: Mapped[str | None] = mapped_column(Text)
+
+
+class ItemEngagement(Base):
+    """An engagement reading for one article from one source at one age (e.g. Facebook link
+    engagement at 48 h and 7 days, Telegram views, story pickup)."""
+    __tablename__ = "item_engagement"
+    __table_args__ = (UniqueConstraint("item_id", "source", "age_bucket"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    item_id: Mapped[int] = mapped_column(ForeignKey("item.id", ondelete="CASCADE"), index=True)
+    source: Mapped[str] = mapped_column(String(20))       # fb_url | telegram | pickup | youtube
+    age_bucket: Mapped[str] = mapped_column(String(8))    # 48h | 7d | now
+    measured_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    reactions: Mapped[int | None] = mapped_column(Integer)
+    comments: Mapped[int | None] = mapped_column(Integer)
+    shares: Mapped[int | None] = mapped_column(Integer)
+    views: Mapped[int | None] = mapped_column(Integer)
+    total: Mapped[float | None] = mapped_column(Float)
+    raw: Mapped[dict] = mapped_column(JSON, default=dict)
 
 
 class NodeMetric(Base):
