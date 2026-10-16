@@ -99,6 +99,41 @@ def test_guard_moves_old_items_on_unlisted_accounts(db):
     assert (it.relevant, it.extra["filtered"]) == (False, "unlisted_social_account")
 
 
+def test_labelled_account_whose_text_fails_the_guard_moves_to_no_country_mention(db):
+    from app.ingest import apply_relevance_guard
+    from app.models import Item, OutletCategory
+    c = db.scalar(select(Country))
+    it = _store(db, "https://www.facebook.com/somepage/posts/9", title="Football final ends in a draw after extra time")
+    assert (it.relevant, it.extra["filtered"]) == (False, "unlisted_social_account")
+    db.add(OutletCategory(outlet_id=it.outlet_id, dimension="type", value="media", confidence="likely",
+                          evidence_url="https://www.facebook.com/somepage"))
+    db.commit()
+    assert apply_relevance_guard(db, c.id) == 1
+    it = db.get(Item, it.id)
+    assert (it.relevant, it.extra["filtered"]) == (False, "no_country_mention")
+    assert apply_relevance_guard(db, c.id) == 0
+
+
+def test_open_platforms_and_backfill_on_a_bare_platform_are_not_counted(db):
+    from app.ingest import apply_relevance_guard
+    from app.models import Item
+    c = db.scalar(select(Country))
+    short_yt = _store(db, "https://news.google.com/rss/articles/y1", outlet_domain="youtu.be")
+    linkedin = _store(db, "https://www.linkedin.com/posts/khaled-salah_libya-activity-1")
+    site = _store(db, "https://alwasat.ly/news/2", title="Football final ends in a draw", assume_relevant=True)
+    backfill = _store(db, "https://www.facebook.com/watch/?v=77", title="Football final ends in a draw", assume_relevant=True)
+    assert (short_yt.relevant, short_yt.extra["filtered"]) == (False, "unlisted_social_account")
+    assert (linkedin.relevant, linkedin.extra["filtered"]) == (False, "unlisted_social_account")
+    assert site.relevant and site.extra["libya_specific_source"]            # the source vouches for Libya
+    assert (backfill.relevant, backfill.extra["filtered"]) == (False, "unlisted_social_account")
+    # an old backfill row on the bare platform is caught by the guard, and nothing else changes
+    backfill.relevant, backfill.extra = True, {"libya_specific_source": True}
+    db.commit()
+    assert apply_relevance_guard(db, c.id) == 1
+    assert db.get(Item, backfill.id).relevant is False and db.get(Item, site.id).relevant is True
+    assert apply_relevance_guard(db, c.id) == 0
+
+
 def test_page_name_ending_in_ly_is_not_a_libyan_domain(db):
     from app.models import OutletCategory
     it = _store(db, "https://www.facebook.com/someone.ly/posts/1")
@@ -189,6 +224,23 @@ YT_FEED = """<?xml version="1.0"?><feed xmlns="http://www.w3.org/2005/Atom" xmln
   <entry><title>{t}</title><link rel="alternate" href="https://www.youtube.com/watch?v={v}"/>
   <published>2026-10-15T10:00:00+00:00</published><media:group><media:description>تقرير</media:description></media:group></entry>
 </feed>"""
+
+
+def test_seed_never_puts_back_a_label_an_admin_closed(db, users):
+    from datetime import date
+    from app.models import OutletCategory
+    from app.seed import seed_all
+    wasat = db.scalar(select(Outlet).where(Outlet.domain == "youtube.com/channel/UCTjGk6smzE1z4P_nI8dUqJw"))
+    scope = db.scalar(select(OutletCategory).where(OutletCategory.outlet_id == wasat.id, OutletCategory.dimension == "scope"))
+    scope.valid_to = date.today()
+    db.add(OutletCategory(outlet_id=wasat.id, dimension="scope", value="diaspora", confidence="reported",
+                          evidence_url="https://example.org/", set_by=users[0].id))
+    db.commit()
+    seed_all(db)
+    db.commit()
+    assert _cats(db, wasat.id)["scope"] == ("diaspora", "https://example.org/")
+    assert db.scalar(select(func.count(OutletCategory.id)).where(OutletCategory.outlet_id == wasat.id,
+                                                                 OutletCategory.dimension == "scope")) == 2
 
 
 def test_youtube_feed_retries_and_files_videos_on_the_channel(db, monkeypatch):
@@ -407,8 +459,13 @@ def test_label_register_pages_is_idempotent(db, users):
         reg("facebook.com/NoonPost"), reg("facebook.com/SomePage")
     person = Outlet(country_id=c.id, name="someone", domain="facebook.com/someone")
     kofiya = Outlet(country_id=c.id, name="alkofiya", domain="alkofiya.tv", created_via="import")
-    db.add_all([akhbar, hnec, noon, admin_set, person, kofiya])
+    almasar = Outlet(country_id=c.id, name="almasartv.ly", domain="facebook.com/almasartv.ly", created_via="auto")
+    site_ly = Outlet(country_id=c.id, name="some.ly", domain="some.ly", created_via="auto")
+    db.add_all([akhbar, hnec, noon, admin_set, person, kofiya, almasar, site_ly])
     db.flush()
+    for o in (almasar, site_ly):   # what infer_scope wrote before page names were left out
+        db.add(OutletCategory(outlet_id=o.id, dimension="scope", value="libyan", confidence="unverified",
+                              evidence_url=f"https://{o.domain}/", note="Inferred from the .ly domain."))
     db.add(OutletCategory(outlet_id=kofiya.id, dimension="scope", value="libyan", confidence="likely",
                           evidence_url="https://alkofiya.tv/", note="Listed as a Libyan news domain in Social Media scraped data."))
     db.add(OutletCategory(outlet_id=admin_set.id, dimension="scope", value="diaspora", confidence="reported",
@@ -416,6 +473,8 @@ def test_label_register_pages_is_idempotent(db, users):
     db.commit()
     first = label_register_pages(db)
     assert first["added"] == 3 and first["kept"] == 1 and first["alkofiya.tv: replaced"] == 1
+    assert first["page-name scopes closed"] == 1
+    assert "scope" not in _cats(db, almasar.id) and _cats(db, site_ly.id)["scope"][0] == "libyan"
     assert _cats(db, akhbar.id)["scope"] == ("libyan", "https://www.facebook.com/libyaakhbar")
     assert _cats(db, hnec.id)["scope"][0] == "libyan"
     assert _cats(db, noon.id)["scope"] == ("international", "https://www.noonpost.com/")

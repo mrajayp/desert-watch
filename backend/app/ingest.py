@@ -69,6 +69,9 @@ def social_outlet(url: str) -> tuple[str, str] | None:
 
 
 SHORTENERS = {"t.co", "bit.ly", "ift.tt", "ow.ly", "buff.ly", "goo.gl", "tinyurl.com"}
+# Sites where anyone can post and the domain alone names nobody. Their items are treated like a
+# whole-platform bucket (facebook.com with no page): kept, never counted.
+USER_PLATFORMS = {"youtu.be", "linkedin.com", "reddit.com", "medium.com", "threads.net", "threads.com"}
 NOT_COUNTED = {"shortener", "unlisted_social_account"}
 
 
@@ -93,6 +96,8 @@ def not_counted_reason(o: Outlet | None, labelled: set[int]) -> str | None:
         return None
     if o.domain in SHORTENERS:
         return "shortener"
+    if o.domain in USER_PLATFORMS:
+        return "unlisted_social_account"
     if o.domain.split("/", 1)[0] not in SOCIAL:
         return None
     if "/" in o.domain and (o.id in labelled or register_kind(o)):
@@ -263,12 +268,12 @@ def store_article(s: Session, country_id: int, rules: Rules, *, url: str, title:
     # not relevant (users can restore it; the decision becomes a label).
     relevant = True
     extra = dict(extra or {})
-    if assume_relevant:
+    if assume_relevant:   # the source vouches that it is about Libya. Whose post it is still matters
         extra["libya_specific_source"] = True
-    elif added_by is None and (why := not_counted_reason(outlet, rules.labelled_outlets)):
+    if added_by is None and (why := not_counted_reason(outlet, rules.labelled_outlets)):
         relevant = False
         extra["filtered"] = why
-    elif added_by is None and rules.country_terms and not passes_guard(rules, outlet.id, title, snippet):
+    elif not assume_relevant and added_by is None and rules.country_terms and not passes_guard(rules, outlet.id, title, snippet):
         relevant = False
         extra["filtered"] = "no_country_mention"
     item = Item(country_id=country_id, kind=kind, source_key=source_key, dedupe_key=key, url=url,
@@ -296,12 +301,17 @@ def apply_relevance_guard(s: Session, country_id: int) -> int:
     n = 0
     for it in s.scalars(select(Item).where(Item.country_id == country_id, Item.kind == "article",
                                            Item.added_by.is_(None))):
-        if (it.extra or {}).get("user_relevance") is not None or (it.extra or {}).get("libya_specific_source"):
+        if (it.extra or {}).get("user_relevance") is not None:
             continue
         reason = not_counted.get(it.outlet_id)
-        ok = reason is None and passes_guard(rules, it.outlet_id, it.title, it.snippet)
-        why = reason or (None if ok else "no_country_mention")
         prev = (it.extra or {}).get("filtered")
+        if (it.extra or {}).get("libya_specific_source"):   # only the not-counted rule applies
+            if reason is None and prev not in NOT_COUNTED:
+                continue
+            ok = reason is None
+        else:
+            ok = reason is None and passes_guard(rules, it.outlet_id, it.title, it.snippet)
+        why = reason or (None if ok else "no_country_mention")
         if it.relevant != ok or (prev != why and (reason or prev in NOT_COUNTED)):
             it.relevant = ok
             it.extra = {**(it.extra or {}), "filtered": why}

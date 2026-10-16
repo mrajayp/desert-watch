@@ -82,10 +82,12 @@ def run(s: Session, path: Path) -> dict:
 REGISTER_NOTE = "From the 2023-24 social media scrape register"
 # Register pages that are not Libyan (2026-10-16 review), with their real scope.
 NOT_LIBYAN = {
-    "facebook.com/NoonPost": ("https://www.noonpost.com/", "Pan-Arab outlet Noon Post (noonpost.com), not Libyan."),
-    "facebook.com/iraqialivetv": ("https://www.facebook.com/iraqialivetv", "Iraqi channel (Al Iraqiya), not Libyan."),
-    "facebook.com/USEmbassyLibya": ("https://ly.usembassy.gov/", "The US Embassy to Libya's page, not a Libyan body."),
+    "facebook.com/NoonPost": ("https://www.noonpost.com/", "Pan-Arab outlet Noon Post (noonpost.com)."),
+    "facebook.com/iraqialivetv": ("https://www.facebook.com/iraqialivetv", "Iraqi channel Al Iraqiya."),
+    "facebook.com/USEmbassyLibya": ("https://ly.usembassy.gov/", "The page of the US Embassy to Libya."),
 }
+# infer_scope used to read a page name ending in .ly (facebook.com/almasartv.ly) as a .ly domain.
+INFERRED_NOTE = "Inferred from the ."
 # Websites whose imported scope is wrong.
 RELABEL = {
     "alkofiya.tv": ("international", "https://alkofiya.tv/ar",
@@ -107,11 +109,28 @@ def _set_scope(s: Session, o: Outlet, value: str, evidence: str, note: str, repl
     return "replaced" if cur else "added"
 
 
+def close_page_name_scopes(s: Session) -> int:
+    """Close the machine scope labels that came from a social page name ending in a country domain
+    (facebook.com/almasartv.ly). Anyone can name a page that way. An admin's label is never touched."""
+    from ..ingest import SOCIAL
+    n = 0
+    for c, dom in s.execute(select(OutletCategory, Outlet.domain).join(Outlet, Outlet.id == OutletCategory.outlet_id).where(
+            OutletCategory.dimension == "scope", OutletCategory.status == "active", OutletCategory.valid_to.is_(None),
+            OutletCategory.set_by.is_(None), OutletCategory.note.like(f"{INFERRED_NOTE}%"))):
+        if dom.split("/", 1)[0] in SOCIAL:
+            c.valid_to = date.today()
+            n += 1
+    return n
+
+
 def label_register_pages(s: Session) -> dict:
     """Scope for the Facebook register pages: Libyan media and official pages get scope=libyan, the
     few that are not Libyan get their real scope. Without a scope the relevance guard drops every post
-    that does not name Libya. Idempotent. Never sets alignment."""
+    that does not name Libya. Also closes scopes guessed from a page name ending in .ly. Idempotent.
+    Never sets alignment."""
     stats: dict[str, int] = {}
+    if closed := close_page_name_scopes(s):
+        stats["page-name scopes closed"] = closed
     for o in s.scalars(select(Outlet).where(Outlet.domain.like("facebook.com/%"))):
         kind = ((o.external or {}).get("social_media_scrape") or {}).get("kind")
         if kind not in ("media", "official"):
