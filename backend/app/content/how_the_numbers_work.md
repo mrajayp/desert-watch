@@ -88,6 +88,8 @@ The gap list shows the biggest gaps in the last four weeks that nobody has voted
 
 Votes and corrections are saved as labels for training. So are article ratings. Theme labels train the theme model described above. Votes and ratings do not change the rankings yet.
 
+The classifier queue picks recent unlabelled articles the theme model is least sure about, plus a few the word lists may have got wrong. Label this on any article row does the same job. Each theme on a row also says why it is there: the word that matched, the search that found it, the model's score or a person's label.
+
 ## Weekly digest
 
 Once a week we work out the facts here first. These are the biggest gaps with their flags, plus a few headlines. Only those facts go to the AI model, and it is told to use no number that is not in them. The facts are saved with the text so any claim can be checked. It needs the Anthropic key to run.
