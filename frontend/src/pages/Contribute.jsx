@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { api } from '../api'
 import { useApp } from '../App'
 import { LENS_TEXT, fmt, gapLabel } from '../charts/scales'
 import ArticleRow from '../components/ArticleRow'
+import { LabelForm, NotCounted, ThemePills } from '../components/ThemeLabels'
 
 // One place that tells a journalist where their input is needed right now, and why it matters.
 export default function Contribute() {
@@ -76,8 +77,10 @@ export default function Contribute() {
         </Task>
       </div>
 
+      <LearnQueue ro={ro} />
+
       <section className="card" style={{ marginTop: 16 }}>
-        <div className="card-head"><div><h2>7. Suggest</h2>
+        <div className="card-head"><div><h2>8. Suggest</h2>
           <p className="sub">Sources to monitor, search words, place spellings or a gap you know about. An admin reviews each one; you will see its status here.</p></div></div>
         <Suggest meta={meta} nm={nm} onSent={load} ro={ro} />
         {d.my_suggestions.length > 0 && (
@@ -114,6 +117,71 @@ function Tally({ mine, team }) {
         Team, last 30 days: {fmt(team.contributors)} people · {fmt(team.votes)} votes · {fmt(team.corrections)} corrections · {fmt(team.assessments)} ratings · {fmt(team.added)} added
       </div>
     </div>
+  )
+}
+
+// The review queue: one article at a time, labelled with the full set of themes.
+const QUEUE_REASON = {
+  uncertain: () => 'The classifier is unsure about this one.',
+  gender_candidate: () => 'It mentions women but has no gender topic.',
+  generic_term: (it) => `Its topic rests on one common word${it.generic_term ? ` (“${it.generic_term}”)` : ''}.`,
+}
+const COUNT_KEY = 'dw_labels_given'
+
+function LearnQueue({ ro }) {
+  const [q, setQ] = useState(null)
+  const [i, setI] = useState(0)
+  const [err, setErr] = useState(null)
+  const [given, setGiven] = useState(() => { try { return +sessionStorage.getItem(COUNT_KEY) || 0 } catch { return 0 } })
+  const skipped = useRef(new Set())
+  const load = () => {
+    setQ(null); setErr(null)
+    api('/api/review-queue?n=20').then((r) => { setQ({ ...r, items: r.items.filter((x) => !skipped.current.has(x.id)) }); setI(0) })
+      .catch((e) => setErr(e.message))
+  }
+  useEffect(() => { if (!ro) load() }, [ro])
+  const it = q?.items[i]
+  const next = () => (i + 1 < q.items.length ? setI(i + 1) : load())
+  const saved = () => {
+    const n = given + 1
+    setGiven(n)
+    try { sessionStorage.setItem(COUNT_KEY, String(n)) } catch { /* no storage */ }
+    next()
+  }
+  const skip = () => { skipped.current.add(it.id); next() }
+  return (
+    <section className="card" style={{ marginTop: 16 }}>
+      <div className="card-head">
+        <div><h2><span className="muted">7.</span> Help the classifier learn</h2>
+          <p className="sub">Each label you give trains the classifier that sorts articles into themes, and the queue shows the articles it is least sure about.</p></div>
+        <div className="row" style={{ gap: 24 }}>
+          <span className="stat"><span className="v num">{fmt(given)}</span><span className="l">labels this session</span></span>
+          {q && <span className="stat"><span className="v num">{fmt(q.labelled)}</span><span className="l">articles labelled in all</span></span>}
+        </div>
+      </div>
+      {ro ? <p className="small muted">Your account is read-only, so you cannot label articles yet.</p>
+        : err ? <p className="err">{err}</p>
+          : !q ? <div className="empty">Loading…</div>
+            : !it ? (
+              <div className="row"><span className="small muted">Nothing left to label right now.</span>
+                <button className="btn small" onClick={() => { skipped.current.clear(); load() }}>Look again</button></div>)
+              : (
+                <div>
+                  <div className="small muted">Article {i + 1} of {q.items.length} · {QUEUE_REASON[it.reason]?.(it) || it.reason}</div>
+                  <h3 style={{ margin: '6px 0 2px', fontSize: 15, color: 'var(--ink)' }}>
+                    <a href={it.url} target="_blank" rel="noreferrer noopener" dir="auto">{it.title}</a></h3>
+                  <div className="small muted">{it.outlet?.name || '—'} · {it.published_at.slice(0, 10)} · {it.lang?.toUpperCase()}</div>
+                  {it.snippet && <p dir="auto" style={{ margin: '8px 0', maxWidth: 820 }}>{it.snippet.length > 400 ? `${it.snippet.slice(0, 400)}…` : it.snippet}</p>}
+                  <div className="row small" style={{ margin: '6px 0' }}>
+                    <span className="muted">Counted now:</span>
+                    {it.theme_ids.length ? <ThemePills item={it} /> : <span className="muted">no topic</span>}
+                  </div>
+                  <NotCounted item={it} />
+                  <div style={{ marginTop: 12 }}>
+                    <LabelForm key={it.id} item={it} saveText="Save and next" onSaved={saved} onSkip={skip} />
+                  </div>
+                </div>)}
+    </section>
   )
 }
 

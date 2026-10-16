@@ -1,13 +1,16 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { api, track } from '../api'
 import { useApp } from '../App'
 import { DIMENSIONS, sourceLabel } from '../charts/scales'
+import { LabelForm, ThemePills } from './ThemeLabels'
 
 // One article with inline corrections. Every correction is a training label.
-export default function ArticleRow({ item, onChanged, context = {} }) {
-  const { meta, openItem, openOutlet, lang } = useApp()
-  const [open, setOpen] = useState(false)
-  const themes = new Map(meta.themes.map((t) => [t.id, t]))
+export default function ArticleRow({ item: given, onChanged, context = {} }) {
+  const { meta, me, openItem, openOutlet, lang } = useApp()
+  const [open, setOpen] = useState(null)  // 'fix' | 'label'
+  const [saved, setSaved] = useState(null)  // the row as the labels endpoint returned it
+  useEffect(() => setSaved(null), [given])
+  const item = saved || given
   const regions = new Map(meta.regions.map((r) => [r.id, r]))
   const correct = async (body) => { await api(`/api/items/${item.id}/correction`, { method: 'POST', body }); onChanged?.() }
   const scope = item.outlet?.categories?.scope
@@ -21,16 +24,25 @@ export default function ArticleRow({ item, onChanged, context = {} }) {
             {scope && ` · ${DIMENSIONS.scope.values[scope] || scope}`} · {item.lang?.toUpperCase()} · via {sourceLabel(item.source)}{item.user_added && ' · added by team'}
           </div>
           <div className="row small" style={{ marginTop: 3 }}>
-            {item.theme_ids.map((t) => <span key={t} className="pill">{lang === 'ar' ? themes.get(t)?.name_ar : themes.get(t)?.name_en}</span>)}
+            <ThemePills item={item} />
             {item.region_ids.map((r) => <span key={r} className="pill">📍 {lang === 'ar' ? regions.get(r)?.name_ar : regions.get(r)?.name_en}</span>)}
+            {me.role !== 'viewer' && <button className="btn small ghost" style={{ padding: '0 4px' }} aria-expanded={open === 'label'}
+              onClick={() => setOpen(open === 'label' ? null : 'label')}>Label this</button>}
+            {saved && <span className="muted">{saved.relevant === false ? `Saved: not about ${meta.country.name_en}` : 'Saved'}</span>}
           </div>
         </div>
         <div className="row" style={{ flexWrap: 'nowrap' }}>
           <button className="btn small" onClick={() => openItem(item.id)}>Assess</button>
-          <button className="btn small ghost" aria-expanded={open} onClick={() => setOpen(!open)} title="Correct topic or place">Fix</button>
+          <button className="btn small ghost" aria-expanded={open === 'fix'} onClick={() => setOpen(open === 'fix' ? null : 'fix')} title="Correct topic or place">Fix</button>
         </div>
       </div>
-      {open && (
+      {open === 'label' && (
+        <div className="card" style={{ marginTop: 6, padding: 10 }}>
+          <p className="small" style={{ margin: '0 0 8px' }}>Tick every topic this article is about. Anything left unticked counts as a no.</p>
+          <LabelForm item={item} onCancel={() => setOpen(null)}
+            onSaved={(r, { off }) => { setSaved({ ...r, relevant: !off }); setOpen(null) }} />
+        </div>)}
+      {open === 'fix' && (
         <div className="card" style={{ marginTop: 6, padding: 10 }}>
           <div className="small"><b>Topics</b> — toggle what this article is really about:</div>
           <div className="chips" style={{ margin: '4px 0 8px' }}>

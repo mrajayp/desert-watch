@@ -381,6 +381,38 @@ def test_admin_models(client, users, db, tmp_path, monkeypatch):
     assert learning["models"][0]["version"] == "theme-2" and learning["note"] is None
 
 
+def test_fields_the_frontend_reads(client, users, db, tmp_path):
+    """ThemeLabels.jsx, the Contribute queue and the Admin classifier card read exactly these fields."""
+    themes, _ = ids(db)
+    a, _ = _story_with_copy(db)
+    store_article(db, db.scalar(select(Country)).id, load_rules(db, db.scalar(select(Country)).id),
+                         url="https://ex.ly/w", title="Women open a market in Benghazi, Libya",
+                         published_at=utcnow() - timedelta(days=2), source_key="rss")
+    db.add(Label(label_type="theme_set", object_type="item", object_key="999999", origin="silver", weight=0.5,
+                 source_ref="t:silver", value={"themes": [], "libya": True}))
+    registry.register(db, *_fake_bundle_file(tmp_path, "theme-ui"), activate_now=True)
+    db.commit()
+    login(client, "admin@example.org", "admin-password-1")
+    it = client.post(f"/api/items/{a.id}/labels", json={"themes": [themes["health"]], "libya": True}).json()
+    assert it["theme_ids"] == [themes["health"]]
+    d = next(x for x in it["theme_detail"] if x["theme_id"] == themes["health"])
+    assert set(d) == {"theme_id", "method", "active", "score", "evidence"} and d["method"] == "user"
+    q = client.get("/api/review-queue?n=5").json()
+    assert {"items", "model", "labelled"} <= set(q) and q["items"]
+    assert {"id", "url", "title", "snippet", "lang", "published_at", "outlet", "theme_ids", "theme_detail",
+            "reason", "generic_term"} <= set(q["items"][0])
+    from app.learning import build_labels
+    build_labels(db)
+    m = client.get("/api/admin/models").json()
+    by = {(x["origin"], x["label_type"]): x["n"] for x in m["labels"]["by_origin_and_type"]}
+    assert by[("explicit", "theme_set")] == 1 and by[("silver", "theme_set")] == 1
+    assert set(m["links"]) == {"model", "vetoed"}
+    assert {"slug", "group", "labelled", "positives", "threshold", "gate"} <= set(m["themes"][0])
+    live = next(x for x in m["models"] if x["active"])
+    assert {"version", "created_at", "trained_on", "metrics", "note"} <= set(live)
+    assert live["trained_on"]["labels"]["items"] == 3
+
+
 # ---------------------------------------------------------------- scheduler hook and import hygiene
 def test_model_job_runs_in_child_process(db, tmp_path, monkeypatch):
     from app import jobs
