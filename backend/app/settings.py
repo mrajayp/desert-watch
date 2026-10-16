@@ -35,8 +35,10 @@ MIN_NEED_UNITS = {          # below this a cell is "insufficient evidence"
     "journalist": 1,
 }
 SHRINK_STRENGTH = {"audience": 2000, "events": 10, "humanitarian": 5, "journalist": 2}
-# Search lens (Google Trends, anchor units a week). Need is never too small to score: a cell is
-# insufficient when any week of its window lacks data (gtrends.flag_missing_weeks).
+# Search lens (Google Trends, anchor units). A cell is insufficient when any week of its window
+# lacks data (gtrends.flag_missing_weeks), not below a need level. Shrink ~ a quarter of the
+# smallest list's 4-week need (governance, ~57 in 2025-26). Coverage counts there are in the
+# hundreds, so it barely moves the gap (checked 20 / 50 / 100 on the 2026-10-16 snapshot).
 MIN_NEED_UNITS["search"] = 1
-SHRINK_STRENGTH["search"] = 100
+SHRINK_STRENGTH["search"] = 20
 RAW_EVENT_RETENTION_DAYS = 365

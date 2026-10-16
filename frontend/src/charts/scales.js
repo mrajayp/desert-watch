@@ -80,6 +80,7 @@ export const LENS_TEXT = {
   events: { label: 'Events', unit: 'events', blurb: 'Conflict & protest events (ACLED/UCDP) vs coverage' },
   humanitarian: { label: 'Humanitarian', unit: 'reports', blurb: 'ReliefWeb reports vs coverage' },
   journalist: { label: 'Journalists', unit: 'flags', blurb: 'Gaps flagged by your team vs coverage' },
+  search: { label: 'Libyan searches (Google)', unit: 'search index', blurb: 'Google searches from people in Libya vs coverage, against the theme’s own recent history (national only)' },
 }
 
 export const fmt = (n) => n == null ? '–' : n >= 1e6 ? `${(n / 1e6).toFixed(n >= 1e7 ? 0 : 1)}M` : n >= 10000 ? `${(n / 1000).toFixed(n >= 100000 ? 0 : 1)}K` : Math.round(n).toLocaleString()
