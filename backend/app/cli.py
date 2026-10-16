@@ -25,7 +25,7 @@ theme model (app/ml):
   import-gold-labels PATH   blind review labels (jsonl) as silver theme_set labels (idempotent)
   train-small-model         refit the label-trained part of the live model; promote it if it does no worse
   model-status              live model, registry, labels per theme
-  activate-model VERSION | rollback-model
+  activate-model VERSION [--let-nightly] | rollback-model  live by hand; nightly versions then stay inactive
 """
 import getpass
 import os
@@ -41,6 +41,9 @@ def main(argv: list[str]):
         return 1
     cmd, args = argv[0], argv[1:]
     init_db()
+    from .ml.commands import COMMANDS as ML_COMMANDS, run as run_ml
+    if cmd in ML_COMMANDS:  # no seed_all: the scheduler runs these hourly, and seeding brings back deleted key events
+        return run_ml(cmd, args)
     with SessionLocal() as s:
         seed_all(s)
         s.commit()
@@ -171,9 +174,6 @@ def main(argv: list[str]):
         from .jobs import recompute
         print(recompute(weeks=int(args[args.index("--weeks") + 1]) if "--weeks" in args else None), "cells")
     else:
-        from .ml.commands import COMMANDS as ML_COMMANDS, run as run_ml
-        if cmd in ML_COMMANDS:
-            return run_ml(cmd, args)
         print(__doc__)
         return 1
     return 0

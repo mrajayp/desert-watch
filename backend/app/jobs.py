@@ -77,8 +77,9 @@ def model_job(source_key: str, *args: str) -> dict | None:
         s.commit()
         out = {}
         try:
-            # one BLAS thread: multi-threaded OpenBLAS reserves several hundred MB the job does not need
-            env = {**os.environ, "OPENBLAS_NUM_THREADS": "1", "OMP_NUM_THREADS": "1", "MKL_NUM_THREADS": "1"}
+            # one BLAS thread and one fitting thread: the job shares a 512 MB machine with the web process
+            env = {**os.environ, "OPENBLAS_NUM_THREADS": "1", "OMP_NUM_THREADS": "1", "MKL_NUM_THREADS": "1",
+                   "DW_NJOBS": "1"}
             p = subprocess.run([sys.executable, "-m", "app.cli", *args], cwd=Path(__file__).resolve().parents[1],
                                capture_output=True, text=True, encoding="utf-8", timeout=3600, env=env)
             try:
@@ -87,9 +88,11 @@ def model_job(source_key: str, *args: str) -> dict | None:
                 out = {}
             run.status = "ok" if p.returncode == 0 else "error"
             run.rows = int(out.get("changed") or 0)
-            run.error = (p.stderr or p.stdout)[-1500:] if p.returncode else out.get("skipped") or out.get("reason")
+            run.error = (p.stderr or p.stdout)[-1500:] if p.returncode else None  # the outcome is in the registry note
         except subprocess.TimeoutExpired:
             run.status, run.error = "error", "timed out after an hour"
+        except Exception as e:  # never leave the run at "running"
+            run.status, run.error = "error", repr(e)[:1500]
         run.ok = run.status == "ok"
         run.finished_at = utcnow()
         s.commit()

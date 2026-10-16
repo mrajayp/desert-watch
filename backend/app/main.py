@@ -40,7 +40,7 @@ for r in (account.router, gaps.router, items.router, social.router, outlets.rout
 def health():
     sched = _state["scheduler"]
     with SessionLocal() as s:
-        last = s.scalar(select(func.max(SourceRun.started_at)))
+        last = s.scalar(select(func.max(SourceRun.started_at)).where(SourceRun.source_key.not_like("theme_model%")))
     return {"ok": True, "scheduler": bool(sched and sched.running),
             "next_runs": [str(j.next_run_time) for j in sched.get_jobs()] if sched else [],
             "last_collector_run": last.isoformat() if last else None}
