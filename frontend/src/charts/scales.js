@@ -88,5 +88,6 @@ export const fmt = (n) => n == null ? '–' : n >= 1e6 ? `${(n / 1e6).toFixed(n 
 export const SOURCE_LABELS = {
   galerts: 'Google Alerts', gnews: 'Google News', rss: 'Outlet RSS', gdelt: 'GDELT',
   official: 'Official / ReliefWeb', user: 'Added by team', backfill: 'Historical backfill',
+  gnews_social: 'Social (Google-indexed)', youtube: 'YouTube channels',
 }
 export const sourceLabel = (k) => SOURCE_LABELS[k] || k

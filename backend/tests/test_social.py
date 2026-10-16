@@ -1,6 +1,6 @@
 from sqlalchemy import func, select
 
-from app.ingest import load_rules, social_outlet, store_article
+from app.ingest import load_rules, social_outlet, store_article, url_key
 from app.models import Country, Outlet, utcnow
 
 
@@ -202,3 +202,85 @@ def test_youtube_feed_retries_and_files_videos_on_the_channel(db, monkeypatch):
     monkeypatch.setattr(rss, "polite_get", lambda *a, **k: SimpleNamespace(
         content=b"", status_code=500, raise_for_status=lambda: (_ for _ in ()).throw(RuntimeError("500"))))
     assert [rss.collect(db).errors for _ in range(3)] == [0, 0, 1]
+
+
+def test_gnews_social_post_text():
+    from app.collectors.gnews_social import post_text
+    names = set()
+    assert post_text("Libya Alahrar TV - قناة ليبيا الأحرار. . قصيدة ساخرة للشاعر الراحل عبدالمولى البغدادي بسبب الغلاء - Facebook",
+                     names) == "قصيدة ساخرة للشاعر الراحل عبدالمولى البغدادي بسبب الغلاء"
+    assert "Libya Alahrar TV - قناة ليبيا الأحرار" in names
+    assert post_text("Libya Alahrar TV - قناة ليبيا الأحرار. . - Facebook", names) is None        # nothing after the name
+    assert post_text("Libya Alahrar TV - قناة ليب - Facebook", names) is None                     # the name, cut short
+    assert post_text("الدبيبة لطلاب الشهادة: ثقتي فيكم كبيرة جدا - Facebook") == "الدبيبة لطلاب الشهادة: ثقتي فيكم كبيرة جدا"
+    assert post_text('Libya Observer on X: "Heavy rain floods streets in Benghazi tonight" - X') == \
+        "Heavy rain floods streets in Benghazi tonight"
+    assert post_text("بلدية بنغازي - Facebook") is None                                           # too short to be a post
+    assert post_text("Al Menassa (@almenassa_libya) • Instagram photos and videos") is None
+
+
+RSS = """<?xml version="1.0"?><rss version="2.0"><channel>{}</channel></rss>"""
+ITEM = """<item><title>{t}</title><link>https://news.google.com/rss/articles/{k}?oc=5</link>
+<pubDate>Wed, 15 Oct 2026 10:00:00 GMT</pubDate><source url="https://www.facebook.com">Facebook</source></item>"""
+
+
+def _fake_google(monkeypatch, answers):
+    from types import SimpleNamespace
+    from app.collectors import gnews_social
+    calls = []
+
+    def fake(client, url, params=None, **kw):
+        calls.append(params)
+        status, body = answers(params) if callable(answers) else answers.pop(0)
+        return SimpleNamespace(status_code=status, content=body.encode())
+    monkeypatch.setattr(gnews_social, "polite_get", fake)
+    return calls
+
+
+def test_gnews_social_one_fixed_day_per_window(db, monkeypatch):
+    from datetime import date
+    from app.collectors import gnews_social
+    from app.models import Item
+    c = db.scalar(select(Country))
+    page = Outlet(country_id=c.id, name="libyaakhbar", domain="facebook.com/libyaakhbar", monitored=False,
+                  external={"social_media_scrape": {"kind": "media", "posts": 32480}})
+    person = Outlet(country_id=c.id, name="some.person", domain="facebook.com/some.person")
+    numeric = Outlet(country_id=c.id, name="100044172232412", domain="facebook.com/100044172232412",
+                     external={"social_media_scrape": {"kind": "media"}})
+    group = Outlet(country_id=c.id, name="groups/benghazi", domain="facebook.com/groups/benghazi",
+                   external={"social_media_scrape": {"kind": "media"}})
+    plat = Outlet(country_id=c.id, name="facebook.com", domain="facebook.com")
+    db.add_all([page, person, numeric, group, plat])
+    db.flush()
+    old = Item(country_id=c.id, kind="article", source_key="gnews", dedupe_key=url_key("https://news.google.com/rss/articles/k2?oc=5"),
+               url="https://news.google.com/rss/articles/k2?oc=5", title="x", published_at=utcnow(), outlet_id=plat.id, extra={})
+    db.add(old)
+    db.commit()
+    body = RSS.format("".join([
+        ITEM.format(t="ليبيا أخبار. . انقطاع الكهرباء في سبها لساعات طويلة اليوم - Facebook", k="k1"),
+        ITEM.format(t="ليبيا أخبار. . المصرف المركزي يعلن سعر صرف الدينار الليبي - Facebook", k="k2"),
+        ITEM.format(t="ليبيا أخبار - Facebook", k="k3"),
+        ITEM.format(t="ليبيا أخبار. . صورة اليوم من الشاطئ الجميل في الصيف - Facebook", k="k4")]))
+    calls = _fake_google(monkeypatch, lambda p: (200, body if "after:2026-10-15" in p["q"] else RSS.format("")))
+    res = gnews_social.collect(db, today=date(2026, 10, 16))
+    # only the register page; one fixed 1-day window for yesterday and one for the day before
+    assert [p["q"] for p in calls] == ["site:facebook.com/libyaakhbar after:2026-10-15 before:2026-10-16",
+                                       "site:facebook.com/libyaakhbar after:2026-10-14 before:2026-10-15"]
+    assert {p["gl"] for p in calls} == {"EG"} and {p["ceid"] for p in calls} == {"EG:ar"}
+    assert res.rows == 1 and res.errors == 0
+    stored = db.scalar(select(Item).where(Item.source_key == "gnews_social"))
+    assert (stored.outlet_id, stored.title, stored.relevant) == (page.id, "انقطاع الكهرباء في سبها لساعات طويلة اليوم", True)
+    db.refresh(old)
+    assert old.outlet_id == page.id                      # moved off the whole-platform outlet
+    assert "'capped': 0" in res.detail and "'no_theme': 1" in res.detail
+
+
+def test_gnews_social_stops_after_three_refusals(db, monkeypatch):
+    from app.collectors import gnews_social
+    c = db.scalar(select(Country))
+    db.add_all([Outlet(country_id=c.id, name=f"p{i}", domain=f"facebook.com/page{i}",
+                       external={"social_media_scrape": {"kind": "media"}}) for i in range(4)])
+    db.commit()
+    calls = _fake_google(monkeypatch, lambda p: (429, ""))
+    res = gnews_social.collect(db)
+    assert len(calls) == 3 and "stopped after 3 refusals" in res.detail

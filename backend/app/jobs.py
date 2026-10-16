@@ -65,6 +65,7 @@ def nightly():
         learning.purge_old_events(s)
     for key in ("wikipedia", "acled", "ucdp", "reliefweb"):
         collect(key)
+    collect("gnews_social")   # yesterday and the day before, one fixed day each (Google indexes late)
 
 
 @_locked
@@ -114,6 +115,7 @@ JOBS = {
     "rss": lambda: _locked(collect)("rss"),
     "galerts": lambda: _locked(collect)("galerts"),
     "gnews": lambda: _locked(collect)("gnews"),
+    "gnews_social": lambda: _locked(collect)("gnews_social"),
     "official": lambda: _locked(collect)("official"),
     "gdelt": lambda: _locked(collect)("gdelt"),
     "gdelt_timeline": lambda: _locked(collect)("gdelt_timeline"),
