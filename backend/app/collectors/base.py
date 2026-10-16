@@ -53,6 +53,15 @@ def polite_get(client: httpx.Client, url: str, *, params=None, min_interval: flo
     return r
 
 
+STOP_AFTER = 3  # refused requests in a row (after their retries) end a collector run
+
+
+def refused(r: httpx.Response) -> bool:
+    """The server said no (rate limit or overload) instead of answering. A run that keeps asking only
+    holds the job lock longer, so collectors stop after STOP_AFTER of these in a row."""
+    return r.status_code == 429 or r.status_code >= 500 or "Please limit requests" in r.text[:200]
+
+
 def to_naive_utc(dt: datetime) -> datetime:
     if dt.tzinfo:
         dt = dt.astimezone(timezone.utc).replace(tzinfo=None)

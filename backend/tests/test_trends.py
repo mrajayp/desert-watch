@@ -28,19 +28,25 @@ def _at(d: date, hour=9):
 
 
 # ---------------------------------------------------------------- Wikipedia
-def _fake_wiki(views):
+def _fake_wiki(views, calls=None):
     def get(client, url, **kw):
+        if calls is not None:
+            calls.append(url)
         days = [date(2026, 10, 1) + timedelta(days=i) for i in range(3)]
-        return SimpleNamespace(status_code=200, json=lambda: {"items": [
+        return SimpleNamespace(status_code=200, text="", json=lambda: {"items": [
             {"timestamp": d.strftime("%Y%m%d00"), "views": views} for d in days]})
     return get
 
 
 def test_shared_wikipedia_title_counts_for_each_theme(db, monkeypatch):
     themes, _ = ids(db)
-    monkeypatch.setattr(wikipedia, "polite_get", _fake_wiki(10))
+    calls = []
+    monkeypatch.setattr(wikipedia, "polite_get", _fake_wiki(10, calls))
     res = wikipedia.collect(db)
     assert res.errors == 0
+    # each title is fetched once, however many themes list it
+    shared = [u for u in calls if "/en.wikipedia/" in u and "/Women_in_Libya/" in u]
+    assert len(shared) == 1 and len(calls) == len(set(calls))
     # Women_in_Libya is listed under gender_violence AND gender_legal_status: one item per day, two themes
     rows = db.scalars(select(Item).where(Item.dedupe_key.like("wiki:en:Women\\_in\\_Libya:%", escape="\\"))).all()
     assert len(rows) == 3
@@ -96,6 +102,38 @@ def test_polite_get_backs_off_on_429_and_honours_retry_after(monkeypatch):
     r = base.polite_get(client, "https://backoff.test/x", min_interval=0, retries=4, backoff=2.0, state={})
     assert r.status_code == 200 and len(calls) == 3
     assert sleeps == [30.0, 8.0]          # Retry-After wins over 4 s, then 2 x 2^2
+
+
+def _refusing(calls):
+    def get(client, url, **kw):
+        calls.append(kw.get("retries"))
+        return httpx.Response(429)
+    return get
+
+
+def test_collectors_stop_after_three_refusals_in_a_row(db, monkeypatch):
+    calls = []
+    monkeypatch.setattr(wikipedia, "polite_get", _refusing(calls))
+    res = wikipedia.collect(db)
+    assert len(calls) == base.STOP_AFTER and res.rows == 0 and res.detail.startswith("stopped after 3 refusals")
+    # GDELT: the six-hourly article run keeps the short backoff, only the long-run line retries 4 times
+    calls.clear()
+    monkeypatch.setattr(gdelt, "polite_get", _refusing(calls))
+    res = gdelt.collect(db)
+    assert calls == [gdelt.RETRIES] * 3 and gdelt.RETRIES == 2 and "stopped after 3" in res.detail
+    calls.clear()
+    res = gdelt.collect_timeline(db)
+    assert calls == [gdelt.TIMELINE_RETRIES] * 3 and "stopped after 3" in res.detail
+    # an answer that is not a refusal (a bad query) resets the count
+    answers = iter([429, 429, 200, 429, 429, 429, 429])
+    calls.clear()
+
+    def mixed(client, url, **kw):
+        calls.append(1)
+        return httpx.Response(next(answers), text="Your search contained an illegal character")
+    monkeypatch.setattr(gdelt, "polite_get", mixed)
+    gdelt.collect(db)
+    assert len(calls) == 6
 
 
 def test_gdelt_quotes_hyphenated_terms():
