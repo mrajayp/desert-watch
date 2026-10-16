@@ -161,7 +161,9 @@ YOUTUBE_FEED = "https://www.youtube.com/feeds/videos.xml?channel_id={id}"
 def seed_social_accounts(s: Session, c: Country, cfg: dict, file: str) -> None:
     """YouTube channels (created, read through their feed) and social accounts that an outlet's own
     website links to (existing outlets only). Each gets external.parent = that website and the
-    website's scope/type. Idempotent, and a label an admin has closed is never put back."""
+    website's scope/type. Idempotent, and a label an admin has closed is never put back. The feed and
+    the parent are filled once (external.seed_filled lists them), so a feed or parent an admin
+    cleared stays cleared."""
     for ch in cfg.get("youtube_channels") or []:
         dom = f"youtube.com/channel/{ch['id']}"
         o = s.scalar(select(Outlet).where(func.lower(Outlet.domain) == dom.lower()))
@@ -173,7 +175,8 @@ def seed_social_accounts(s: Session, c: Country, cfg: dict, file: str) -> None:
             s.add(OutletCategory(outlet_id=o.id, dimension="medium", value="youtube", confidence="reported",
                                  evidence_url=f"https://www.youtube.com/channel/{ch['id']}",
                                  note=f"Seeded from {SEED_EVIDENCE.format(file=file)}.", valid_from=date.today()))
-        o.rss_url = o.rss_url or YOUTUBE_FEED.format(id=ch["id"])
+        if _fill_once(o, "rss_url") and not o.rss_url:
+            o.rss_url = YOUTUBE_FEED.format(id=ch["id"])
         _link_parent(s, o, ch["parent"], ch, file)
     for site, accounts in (cfg.get("social_parents") or {}).items():
         for dom in accounts:
@@ -182,8 +185,18 @@ def seed_social_accounts(s: Session, c: Country, cfg: dict, file: str) -> None:
                 _link_parent(s, o, site, {}, file)
 
 
+def _fill_once(o: Outlet, field: str) -> bool:
+    """True the first time the seed handles this field on this outlet (it may then fill it if empty),
+    False ever after. Notes the field in external.seed_filled."""
+    done = (o.external or {}).get("seed_filled") or []
+    if field in done:
+        return False
+    o.external = {**(o.external or {}), "seed_filled": [*done, field]}
+    return True
+
+
 def _link_parent(s: Session, o: Outlet, site: str, fallback: dict, file: str) -> None:
-    if not (o.external or {}).get("parent"):
+    if _fill_once(o, "parent") and not (o.external or {}).get("parent"):
         o.external = {**(o.external or {}), "parent": site}
     parent = s.scalar(select(Outlet).where(Outlet.domain == site))
     for dim in ("scope", "type"):  # never alignment

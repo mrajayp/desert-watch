@@ -348,8 +348,9 @@ def test_nightly_respects_a_hand_pick_and_prunes_old_files(client, users, db, tm
 
     def fake_retrain(s, bundle, seen=(), log=None):
         i = next(n)
+        # a fingerprint the database never has ([0, 0] here), so the check before the bundle loads lets it run
         return ({"version": f"theme-n{i:02d}-small", "metrics": {}, "thresholds": {},
-                 "trained_on": {"labels": {"fingerprint": [i, i]}, "small_from": bundle["version"]}},
+                 "trained_on": {"labels": {"fingerprint": [1000 + i, i]}, "small_from": bundle["version"]}},
                 {"promote": True, "reason": "passed"})
 
     def fake_save(b, path):

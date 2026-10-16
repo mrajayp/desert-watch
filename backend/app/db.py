@@ -21,7 +21,7 @@ def make_engine(url: str | None = None):
             cur = conn.cursor()
             cur.execute("PRAGMA journal_mode=WAL")
             cur.execute("PRAGMA foreign_keys=ON")
-            cur.execute("PRAGMA busy_timeout=10000")
+            cur.execute("PRAGMA busy_timeout=30000")  # a web write may wait out a long recompute transaction
             cur.close()
     return engine
 

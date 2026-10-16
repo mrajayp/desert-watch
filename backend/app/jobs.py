@@ -135,12 +135,38 @@ def reach_snapshot(limit: int | None = None):
         return run_collector(s, "reach", lambda sess: reach.collect(sess, limit=limit)).status
 
 
+CATCH_UP = 5000  # older articles the live model has not scored, picked up per hourly run (newest first)
+CLASSIFY_HOURLY = ("classify-items", "--days", "3", "--catch-up", str(CATCH_UP))
+
+
+def classify_due() -> bool:
+    """Whether the hourly scoring has work: a counted article created since the last successful scoring
+    run, or one the live version never scored (it became relevant later). Plain SQL in this process,
+    so a quiet hour starts no scikit-learn child."""
+    from sqlalchemy import func, select
+    from .ml.registry import active, unscored
+    from .models import Item, SourceRun
+    with SessionLocal() as s:
+        live = active(s)
+        if live is None:
+            return False
+        last = s.scalar(select(func.max(SourceRun.started_at)).where(SourceRun.source_key == "theme_model",
+                                                                      SourceRun.status == "ok"))
+        counted = (Item.kind == "article", Item.relevant.is_(True), Item.duplicate_of.is_(None))
+        if last is None or s.scalar(select(Item.id).where(*counted, Item.created_at >= last).limit(1)) is not None:
+            return True
+        return s.scalar(select(Item.id).where(*counted, unscored(live.version)).limit(1)) is not None
+
+
 @_locked
 def hourly():
     collect("rss")
     collect("youtube")
     collect("galerts")
-    model_job("theme_model", "classify-items", "--days", "3")  # before the recompute at :45
+    if classify_due():  # before the recompute at :45
+        model_job("theme_model", *CLASSIFY_HOURLY)
+    else:
+        log.info("theme_model: nothing new to score this hour")
 
 
 @_locked
@@ -197,7 +223,7 @@ JOBS = {
     "resolve_links": resolve_links,
     "fb_url": lambda: _locked(collect)("fb_url"),
     "reach": reach_snapshot,
-    "classify": lambda: _locked(model_job)("theme_model", "classify-items", "--days", "3"),
+    "classify": lambda: _locked(model_job)("theme_model", *CLASSIFY_HOURLY),
     "classify_all": lambda: _locked(model_job)("theme_model", "classify-items", "--all"),
 }
 

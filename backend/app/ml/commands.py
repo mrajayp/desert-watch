@@ -54,11 +54,19 @@ def train_theme_model(s: Session, args: list[str]) -> dict:
 
 
 def register_model(s: Session, args: list[str]) -> dict:
+    """register-model PATH [--activate] [--note TEXT]. Running it again with the same file does nothing,
+    so a deploy script can be re-run; the same version with a different file is an error."""
     from .infer import load_bundle
     from .train import bundle_meta
     path = Path(args[0])
-    row = registry.register(s, path, bundle_meta(load_bundle(path)), activate_now="--activate" in args,
-                            note=_opt(args, "--note"))
+    meta = bundle_meta(load_bundle(path))
+    have = registry.get(s, meta["version"])
+    if have is not None and registry.same_file(have, path):
+        print(f"{have.version} is already registered with this file"
+              f"{'' if have.active else ' (it is not live: activate-model makes it live)'}")
+        return {"version": have.version, "path": have.path, "active": have.active, "already_registered": True,
+                "changed": 0}
+    row = registry.register(s, path, meta, activate_now="--activate" in args, note=_opt(args, "--note"))
     s.commit()
     return {"version": row.version, "path": row.path, "active": row.active, "changed": 1}
 
@@ -86,10 +94,11 @@ def classify_items_cmd(s: Session, args: list[str]) -> dict:
     since = None if "--all" in args else utcnow() - timedelta(days=int(_opt(args, "--days", "3")))
     t0 = time.time()
     res = classify_items(s, model, since=since, dry_run="--dry-run" in args,
-                         log=print if "--verbose" in args else None)
+                         catch_up=int(_opt(args, "--catch-up", "0")), log=print if "--verbose" in args else None)
     res["seconds"] = round(time.time() - t0, 1)
     acts = ("above", "added", "removed", "vetoed", "unvetoed", "unchanged")
-    print(f"{res['items']} items, model {res['version']}{' (dry run)' if res['dry_run'] else ''}, {res['seconds']}s")
+    print(f"{res['items']} items ({res['caught_up']} older ones the live version had not scored), "
+          f"model {res['version']}{' (dry run)' if res['dry_run'] else ''}, {res['seconds']}s")
     print(f"{'theme':32s} " + " ".join(f"{a:>9s}" for a in acts))
     for sl, c in res["themes"].items():
         print(f"{sl:32s} " + " ".join(f"{c.get(a, 0):9d}" for a in acts))
@@ -129,14 +138,18 @@ def import_gold_labels(s: Session, args: list[str]) -> dict:
 def train_small_model(s: Session, args: list[str]) -> dict:
     """Nightly: retrain the label-trained part on top of the live version. It goes live only if it
     passes the check and the live version was not picked by hand."""
-    from .infer import load_bundle
-    from .train import bundle_meta, retrain_small, save_bundle
     row = registry.active(s)
     if not row:
         return {"skipped": "no active theme model", "changed": 0}
-    seen = [(r.trained_on or {}).get("labels", {}).get("fingerprint") for r in s.scalars(select(ModelRegistry))
-            if (r.trained_on or {}).get("small_from") == row.version]
-    cand, decision = retrain_small(s, load_bundle(row.path), seen=[f for f in seen if f])
+    seen = [f for r in s.scalars(select(ModelRegistry)) if (r.trained_on or {}).get("small_from") == row.version
+            and (f := ((r.trained_on or {}).get("labels") or {}).get("fingerprint"))]
+    # nothing new since the live version or the last check: stop before scikit-learn and the bundle are loaded
+    fp = L.labels_fingerprint(s)
+    if fp == ((row.trained_on or {}).get("labels") or {}).get("fingerprint") or fp in [list(f) for f in seen]:
+        return {"skipped": "no new labels since the live model or the last check", "live": row.version, "changed": 0}
+    from .infer import load_bundle
+    from .train import bundle_meta, retrain_small, save_bundle
+    cand, decision = retrain_small(s, load_bundle(row.path), seen=seen)
     if cand is None:
         return {**decision, "live": row.version, "changed": 0}
     pinned = registry.is_pinned(row)

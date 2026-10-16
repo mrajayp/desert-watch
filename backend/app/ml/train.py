@@ -23,12 +23,12 @@ from pathlib import Path
 import joblib
 import numpy as np
 from sklearn.linear_model import LogisticRegression
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..classify import classify_themes
 from ..ingest import Rules, load_rules
-from ..models import Country, Item, ItemTheme, Label, Theme, utcnow
+from ..models import Country, Item, ItemTheme, Theme, utcnow
 from ..textnorm import normalise
 from . import labels as L
 from .features import Features, item_text
@@ -232,10 +232,7 @@ def labelled_set(s: Session, model: ThemeModel, gold: dict[int, dict] | None = N
             "relevant": np.array([bool(items[i].relevant) for i in ids], dtype=bool), "origins": origins}
 
 
-def labels_fingerprint(s: Session) -> list[int]:
-    q = select(func.count(Label.id), func.max(Label.id)).where(Label.label_type.in_(L.THEME_LABELS))
-    n, mx = s.execute(q).one()
-    return [int(n or 0), int(mx or 0)]
+labels_fingerprint = L.labels_fingerprint  # lives in labels.py (no scikit-learn) for the nightly check
 
 
 # ---------------------------------------------------------------- evaluation

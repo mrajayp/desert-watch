@@ -11,12 +11,11 @@ from sqlalchemy import exists, func, not_, select
 from sqlalchemy.orm import Session
 
 from .. import auth
-from ..classify import classify_themes
 from ..db import get_db
 from ..ml import labels as L
 from ..ml import registry
 from ..models import Event, Item, ItemTheme, Label, ModelRegistry, Theme, User, utcnow
-from ..textnorm import term_variants
+from ..textnorm import normalise, term_variants
 from .common import country_or_404, duplicate_cluster, hydrate_items
 
 router = APIRouter(prefix="/api")
@@ -26,7 +25,6 @@ WOMEN_WORDS = ["women", "woman", "girl", "نساء", "امرأة", "فتاة", "
 GENERIC_TERMS = ["minister", "وزير", "killed", "مقتل", "المياه"]
 GENERIC = {v for t in GENERIC_TERMS for v in term_variants(t)}
 _WOMEN_RE = re.compile("|".join(map(re.escape, WOMEN_WORDS)), re.I)
-_GENERIC_RE = re.compile("|".join(map(re.escape, GENERIC_TERMS)), re.I)
 
 
 # ---------------------------------------------------------------- full theme-set labels
@@ -70,12 +68,15 @@ def label_item(item_id: int, body: LabelsIn, s: Session = Depends(get_db), u: Us
 
 
 # ---------------------------------------------------------------- review queue
-def _generic_only(text: str, rules) -> str | None:
-    """The generic term when every rule hit on this text is that one generic word, else None."""
-    hits = classify_themes(text, rules)
-    terms = {h for hs in hits.values() for h in hs}
-    if hits and all(len(hs) == 1 for hs in hits.values()) and len(terms) == 1 and terms <= GENERIC:
-        return next(iter(terms))
+def _generic_only(evidence: list[dict | None]) -> str | None:
+    """The generic word when every active rule link on an article rests on that one word, else None.
+    Reads the links' own evidence (the title-first match that made them), not a fresh match."""
+    terms = {tuple((ev or {}).get("terms") or ()) for ev in evidence}
+    if len(terms) != 1:
+        return None
+    (only,) = terms
+    if len(only) == 1 and normalise(only[0]).strip() in GENERIC:
+        return only[0]
     return None
 
 
@@ -84,7 +85,6 @@ def review_queue(n: int = 10, country: str = "LY", s: Session = Depends(get_db),
                  u: User = Depends(auth.require_contributor)):
     """Unlabelled recent articles worth a person's look: where the model is least sure, possible
     gender stories the rules missed, and links that rest on one generic word."""
-    from ..ingest import load_rules
     n = max(1, min(n, 50))
     c = country_or_404(s, country)
     live = registry.active(s)
@@ -110,14 +110,18 @@ def review_queue(n: int = 10, country: str = "LY", s: Session = Depends(get_db),
     women = [r[0] for r in rows if _WOMEN_RE.search(text[r[0]])][:n * 20]
     has_gender = linked(women, ItemTheme.theme_id.in_([t.id for t in themes if t.group == "gender"]))
     queues.append(("gender_candidate", [i for i in women if i not in has_gender][:n]))
-    generic = [r for r in rows if _GENERIC_RE.search(text[r[0]])][:300]
-    has_rule = linked([r[0] for r in generic], ItemTheme.method == "rule")
-    rules = load_rules(s, c.id).themes
+    # newest first, 900 articles at a time until n are found (no text prefilter: a link on «المياه» can
+    # rest on «مياه» in the raw text)
+    ids = [r[0] for r in rows]
     generic_terms: dict[int, str] = {}
-    for iid, title, snip, _ in generic:
-        term = _generic_only(" ".join(x for x in (title, snip) if x), rules) if iid in has_rule else None
-        if term:
-            generic_terms[iid] = term
+    for i in range(0, len(ids), 900):
+        part, evidence = ids[i:i + 900], {}
+        for iid, ev in s.execute(select(ItemTheme.item_id, ItemTheme.evidence).where(
+                ItemTheme.item_id.in_(part), ItemTheme.method == "rule", ItemTheme.active.is_(True))):
+            evidence.setdefault(iid, []).append(ev)
+        for iid in part:
+            if len(generic_terms) < n and iid in evidence and (term := _generic_only(evidence[iid])):
+                generic_terms[iid] = term
         if len(generic_terms) >= n:
             break
     queues.append(("generic_term", list(generic_terms)))

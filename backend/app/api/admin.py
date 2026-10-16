@@ -71,14 +71,26 @@ def preview_theme(body: ThemeIn, days: int = 30, tid: int | None = None, s: Sess
                         for it, hs in matched[:40]]}
 
 
-def _retag_theme(theme_id: int, recompute: bool = True):
+def _retag_theme(theme_id: int, recompute: bool = True, classify: bool | None = None):
     """Re-run rule tagging for one theme over all articles. Rule links follow the rules, query
-    links count only when the rules confirm them, user and model links are kept (retag.py)."""
+    links count only when the rules confirm them, user and model links are kept (retag.py).
+    With a model live the model then re-scores every article (classify_all, as after Activate), before
+    the recompute. classify defaults to recompute: sync-themes retags several themes without either
+    and is told to run classify-items --all once at the end."""
+    from ..jobs import JOBS
+    from ..ml.registry import active
     from ..retag import retag_theme
     from ..scoring import compute_all
+    classify = recompute if classify is None else classify
     with SessionLocal() as s:
         retag_theme(s, theme_id)
-        if recompute:
+        live = active(s)
+    if live and classify:
+        JOBS["classify_all"]()
+    elif live:
+        print(f"A theme model is live ({live.version}): run classify-items --all after the themes are retagged.")
+    if recompute:
+        with SessionLocal() as s:
             compute_all(s)
             from ..gtrends import flag_missing_weeks
             flag_missing_weeks(s)  # search lens: the same rule as jobs.recompute

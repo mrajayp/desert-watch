@@ -8,20 +8,22 @@ Decision per theme:
                      rule link (active False, evidence.veto = p). Before that it only writes scores.
 People's links (method 'user') are never changed, also when a person labels an article while a
 batch is being scored. Imports numpy / scikit-learn (through features)."""
-from collections import Counter
+from collections import Counter, namedtuple
 from datetime import datetime
 
 import joblib
 import numpy as np
-from sqlalchemy import func, or_, select, text
+from sqlalchemy import and_, func, or_, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from ..models import Item, ItemTheme, Theme
 from .features import Features, item_text
+from .registry import unscored
 
 BATCH = 1000
 NEAR = 0.5  # non-gender p at or above NEAR * t (and below t) is kept on the item as a near miss, for the review queue
+_Th = namedtuple("_Th", "id slug version")
 
 
 def _sigmoid(z):
@@ -178,15 +180,26 @@ def _keep_peoples_changes(s: Session, chunk: list[int], links: dict, marks: dict
 
 
 def classify_items(s: Session, model: ThemeModel, *, since: datetime | None = None, dry_run: bool = False,
-                   batch: int = BATCH, log=None) -> dict:
+                   batch: int = BATCH, catch_up: int = 0, log=None) -> dict:
     """Score relevant, counted articles (published or collected since `since`, or all) and apply the
-    model. Commits per batch so memory and write locks stay small. Returns per-theme counts."""
-    db_themes = {t.slug: t for t in s.scalars(select(Theme).where(Theme.active.is_(True)))}
+    model. With `since`, also up to `catch_up` older ones (newest first) that this version has not
+    scored: articles that became relevant after their window (a guard change, a labelled account).
+    Commits per batch so memory and write locks stay small. Returns per-theme counts."""
+    # plain values, not Theme rows: a dry run's rollback expires those and expunge_all detaches them
+    db_themes = {t.slug: _Th(t.id, t.slug, t.version) for t in s.scalars(select(Theme).where(Theme.active.is_(True)))}
     cols = [(k, db_themes[slug]) for k, slug in enumerate(model.themes) if slug in db_themes and model.has[k]]
-    q = select(Item.id).where(Item.kind == "article", Item.relevant.is_(True), Item.duplicate_of.is_(None))
+    counted = (Item.kind == "article", Item.relevant.is_(True), Item.duplicate_of.is_(None))
+    q = select(Item.id).where(*counted)
     if since is not None:
         q = q.where(or_(Item.published_at >= since, Item.created_at >= since))
     ids = s.scalars(q.order_by(Item.id)).all()
+    caught_up = 0
+    if since is not None and catch_up > 0:
+        before = and_(Item.published_at < since, or_(Item.created_at.is_(None), Item.created_at < since))
+        older = s.scalars(select(Item.id).where(*counted, before, unscored(model.version))
+                          .order_by(Item.id.desc()).limit(catch_up)).all()
+        caught_up = len(older)
+        ids = sorted({*ids, *older})
     counts = {t.slug: Counter() for _, t in cols}
     tids = [t.id for _, t in cols]
     ks = [k for k, _ in cols]
@@ -234,7 +247,7 @@ def classify_items(s: Session, model: ThemeModel, *, since: datetime | None = No
         s.expunge_all()
         if log:
             log(f"  {n}/{len(ids)} items")
-    return {"items": n, "dry_run": dry_run, "version": model.version, "kept_for_people": kept,
+    return {"items": n, "caught_up": caught_up, "dry_run": dry_run, "version": model.version, "kept_for_people": kept,
             "failed_items": failed, "themes": {slug: dict(c) for slug, c in counts.items()}}
 
 

@@ -15,7 +15,7 @@ from collections import Counter, defaultdict
 from datetime import date, datetime, timedelta
 
 import networkx as nx
-from sqlalchemy import and_, delete, or_, select
+from sqlalchemy import and_, delete, insert, or_, select
 from sqlalchemy.orm import Session
 
 from .engagement import SHORTENERS, upsert_readings
@@ -42,10 +42,15 @@ def jaccard(a: frozenset, b: frozenset) -> float:
     return len(a & b) / len(a | b)
 
 
-def find_syndication(items: list[tuple[int, int, datetime, str]], *, clusters: bool = False):
+def find_syndication(items: list[tuple[int, int, datetime, str]], *, clusters: bool = False,
+                     family: dict[int, int] | None = None):
     """items: (item_id, outlet_id, published_at, title). Returns Counter[(from_outlet, to_outlet)].
     With clusters=True also returns the stories: lists of item ids joined (union-find) by the same
-    matched pairs, singletons included. Blocking on the two rarest tokens keeps this near-linear."""
+    matched pairs, singletons included. Blocking on the two rarest tokens keeps this near-linear.
+    family: outlet id -> family id (a page or channel and its own website, see families()). A pair
+    inside one family is no reprint, as a pair inside one outlet is not, but it still joins the story:
+    a website's article that only its own page's post matches stays with the outlets that matched the post."""
+    fam = family or {}
     toks = [(i, o, p, title_tokens(t)) for i, o, p, t in items if t]
     parent = {x[0]: x[0] for x in toks}
 
@@ -74,8 +79,9 @@ def find_syndication(items: list[tuple[int, int, datetime, str]], *, clusters: b
                 if abs((a[2] - b[2]).total_seconds()) > SYNDICATION_HOURS * 3600:
                     continue
                 if jaccard(a[3], b[3]) >= SYNDICATION_JACCARD:
-                    first, second = (a, b) if a[2] <= b[2] else (b, a)
-                    pairs[(first[1], second[1])] += 1
+                    if fam.get(a[1], a[1]) != fam.get(b[1], b[1]):
+                        first, second = (a, b) if a[2] <= b[2] else (b, a)
+                        pairs[(first[1], second[1])] += 1
                     parent[root(a[0])] = root(b[0])
     if not clusters:
         return pairs
@@ -85,9 +91,12 @@ def find_syndication(items: list[tuple[int, int, datetime, str]], *, clusters: b
     return pairs, list(stories.values())
 
 
-def story_pickup(items: list[tuple[int, int, datetime, str]], stories: list[list[int]]) -> dict[int, dict]:
-    """item_id -> pickup reading: distinct outlets that carried the item's story (1 = only its own)."""
-    outlet = {i: o for i, o, *_ in items}
+def story_pickup(items: list[tuple[int, int, datetime, str]], stories: list[list[int]],
+                 family: dict[int, int] | None = None) -> dict[int, dict]:
+    """item_id -> pickup reading: distinct outlets that carried the item's story (1 = only its own).
+    With `family` a page or channel and its own website count as one outlet."""
+    fam = family or {}
+    outlet = {i: fam.get(o, o) for i, o, *_ in items}
     out = {}
     for members in stories:
         n = len({outlet[i] for i in members})
@@ -96,24 +105,32 @@ def story_pickup(items: list[tuple[int, int, datetime, str]], stories: list[list
     return out
 
 
-def pickup_readings(s: Session, country_id: int, since: datetime) -> dict[int, dict]:
+def families(s: Session) -> dict[int, int]:
+    """outlet id -> family id (dedupe.outlet_families without the social flag)."""
+    from .dedupe import outlet_families
+    return {o: f for o, (f, _) in outlet_families(s).items()}
+
+
+def pickup_readings(s: Session, country_id: int, since: datetime, family: dict[int, int] | None = None) -> dict[int, dict]:
     """Story pickup for every counted article with an outlet since `since`, with or without a theme.
-    Link shorteners are not outlets: left out."""
+    Link shorteners are not outlets: left out. Outlets of one family count once."""
+    family = families(s) if family is None else family
     shorteners = set(s.scalars(select(Outlet.id).where(Outlet.domain.in_(SHORTENERS))))
     rows = s.execute(select(Item.id, Item.outlet_id, Item.published_at, Item.title).where(
         Item.country_id == country_id, Item.kind == "article", Item.relevant.is_(True), Item.duplicate_of.is_(None),
         Item.outlet_id.is_not(None), Item.published_at >= since)).all()
     items = [(i, o, p, t or "") for i, o, p, t in rows if o not in shorteners]
-    _, stories = find_syndication(items, clusters=True)
-    return story_pickup(items, stories)
+    _, stories = find_syndication(items, clusters=True, family=family)
+    return story_pickup(items, stories, family)
 
 
 def store_pickup(s: Session, country_id: int, since: datetime, readings: dict[int, dict]) -> int:
     """Writes the readings that changed and removes the readings of articles since `since` that left
-    the set (now a duplicate, not relevant, or without an outlet)."""
-    n = upsert_readings(s, "pickup", "now", readings)
+    the set (now a duplicate, not relevant, or without an outlet). Everything is read before the
+    first write, so the caller's write transaction holds only the writes."""
     had = s.scalars(select(ItemEngagement.item_id).join(Item, Item.id == ItemEngagement.item_id).where(
         ItemEngagement.source == "pickup", Item.country_id == country_id, Item.published_at >= since)).all()
+    n = upsert_readings(s, "pickup", "now", readings)
     gone = [i for i in had if i not in readings]
     for i in range(0, len(gone), 900):
         s.execute(delete(ItemEngagement).where(ItemEngagement.source == "pickup",
@@ -165,21 +182,9 @@ def compute(s: Session, country_id: int, *, weeks: int = 12, today: date | None 
         if r.published_at >= recent:
             profile[r.outlet_id][r.theme_id] += 1
             titles[r.id] = (r.id, r.outlet_id, r.published_at, r.title or "")
-    pickup = pickup_readings(s, country_id, recent)   # before the write below: clustering is the slow part
+    family = families(s)
+    pickup = pickup_readings(s, country_id, recent, family)
 
-    # Replace only what this run recomputes: weekly edges from `first` on, plus the whole-window
-    # kinds. (The hourly 12-week run used to wipe the full weekly history until the nightly run.)
-    s.execute(delete(NetworkEdgeWeek).where(
-        NetworkEdgeWeek.country_id == country_id,
-        or_(and_(NetworkEdgeWeek.kind.in_(("outlet_region", "outlet_theme")), NetworkEdgeWeek.week_start >= first),
-            NetworkEdgeWeek.kind.in_(("outlet_outlet", "syndication")))))
-    edges = []
-    for (o, reg, t, wk), w in o_r.items():
-        edges.append(NetworkEdgeWeek(country_id=country_id, kind="outlet_region", source_node=f"o:{o}",
-                                     target_node=f"r:{reg}", theme_id=t, week_start=wk, weight=w))
-    for (o, t, wk), w in o_t.items():
-        edges.append(NetworkEdgeWeek(country_id=country_id, kind="outlet_theme", source_node=f"o:{o}",
-                                     target_node=f"t:{t}", theme_id=t, week_start=wk, weight=w))
     # Similarity on theme *specialisation*: each outlet's theme shares minus the overall
     # shares (raw profiles all look alike because every outlet covers the big themes).
     outlets = sorted((o for o, p in profile.items() if sum(p.values()) >= MIN_ARTICLES_FOR_SIMILARITY),
@@ -199,29 +204,46 @@ def compute(s: Session, country_id: int, *, weeks: int = 12, today: date | None 
         for sim, o2 in sims[:TOP_K_SIMILAR]:
             if sim >= MIN_SIMILARITY:
                 sim_graph.add_edge(o, o2, weight=sim)
-    for a, b, d in sim_graph.edges(data=True):
-        edges.append(NetworkEdgeWeek(country_id=country_id, kind="outlet_outlet", source_node=f"o:{a}",
-                                     target_node=f"o:{b}", weight=round(d["weight"], 4)))
     # reprints (link shorteners are not outlets: left out)
     shorteners = set(s.scalars(select(Outlet.id).where(Outlet.domain.in_(SHORTENERS))))
     story_items = [v for v in titles.values() if v[1] not in shorteners]
-    syndication = find_syndication(story_items)
-    for (a, b), w in syndication.items():
-        edges.append(NetworkEdgeWeek(country_id=country_id, kind="syndication", source_node=f"o:{a}",
-                                     target_node=f"o:{b}", weight=w))
-    s.add_all(edges)
-    store_pickup(s, country_id, recent, pickup)
+    syndication = find_syndication(story_items, family=family)
 
+    edges = [{"country_id": country_id, "kind": "outlet_region", "source_node": f"o:{o}", "target_node": f"r:{reg}",
+              "theme_id": t, "week_start": wk, "weight": w} for (o, reg, t, wk), w in o_r.items()]
+    edges += [{"country_id": country_id, "kind": "outlet_theme", "source_node": f"o:{o}", "target_node": f"t:{t}",
+               "theme_id": t, "week_start": wk, "weight": w} for (o, t, wk), w in o_t.items()]
+    edges += [{"country_id": country_id, "kind": "outlet_outlet", "source_node": f"o:{a}", "target_node": f"o:{b}",
+               "theme_id": None, "week_start": None, "weight": round(d["weight"], 4)}
+              for a, b, d in sim_graph.edges(data=True)]
+    edges += [{"country_id": country_id, "kind": "syndication", "source_node": f"o:{a}", "target_node": f"o:{b}",
+               "theme_id": None, "week_start": None, "weight": w} for (a, b), w in syndication.items()]
     # node metrics on the outlet-similarity graph (communities = coverage clusters)
-    s.execute(delete(NodeMetric).where(NodeMetric.country_id == country_id))
+    metrics = []
     if sim_graph.number_of_nodes():
         comms = nx.community.louvain_communities(sim_graph, weight="weight", seed=42)
         comm_of = {n: i for i, c in enumerate(comms) for n in c}
         cent = nx.degree_centrality(sim_graph)
-        for n in sim_graph.nodes:
-            s.add(NodeMetric(country_id=country_id, graph="outlet_outlet", node=f"o:{n}",
-                             degree=sim_graph.degree(n), strength=sim_graph.degree(n, weight="weight"),
-                             community=comm_of.get(n), centrality=cent.get(n, 0), computed_at=utcnow()))
+        now = utcnow()
+        metrics = [{"country_id": country_id, "graph": "outlet_outlet", "node": f"o:{n}", "degree": sim_graph.degree(n),
+                    "strength": sim_graph.degree(n, weight="weight"), "community": comm_of.get(n),
+                    "centrality": cent.get(n, 0), "computed_at": now} for n in sim_graph.nodes]
+
+    # Everything is worked out: the writes follow in two short transactions, so a sign-in or a label
+    # saved meanwhile waits a moment at most. Story pickup first, in its own.
+    store_pickup(s, country_id, recent, pickup)
+    s.commit()
+    # Replace only what this run recomputes: weekly edges from `first` on, plus the whole-window
+    # kinds. (The hourly 12-week run used to wipe the full weekly history until the nightly run.)
+    s.execute(delete(NetworkEdgeWeek).where(
+        NetworkEdgeWeek.country_id == country_id,
+        or_(and_(NetworkEdgeWeek.kind.in_(("outlet_region", "outlet_theme")), NetworkEdgeWeek.week_start >= first),
+            NetworkEdgeWeek.kind.in_(("outlet_outlet", "syndication")))))
+    if edges:
+        s.execute(insert(NetworkEdgeWeek), edges)
+    s.execute(delete(NodeMetric).where(NodeMetric.country_id == country_id))
+    if metrics:
+        s.execute(insert(NodeMetric), metrics)
     s.commit()
     return len(edges)
 

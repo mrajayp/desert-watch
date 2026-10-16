@@ -6,14 +6,15 @@ A version made live by hand (Admin > Activate, activate-model, rollback-model) i
 nightly retrain still builds and checks new versions but keeps them inactive until an admin
 activates one or lets nightly updates take over again. Activation state lives in trained_on:
 activated (timestamps), pinned (live by hand now), by_hand (was ever picked by hand)."""
+import hashlib
 import shutil
 from pathlib import Path
 
-from sqlalchemy import select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from .. import settings
-from ..models import ModelRegistry, utcnow
+from ..models import Item, ModelRegistry, utcnow
 
 KIND = "theme"
 KEEP_NIGHTLY = 5  # nightly versions kept on disk besides the live one and hand-picked ones
@@ -53,8 +54,31 @@ def register(s: Session, path: Path, meta: dict, *, activate_now: bool = False, 
     return row
 
 
+def unscored(version: str | None):
+    """SQL condition on Item: this model version has not scored the article (classify-items marks every
+    article it scores in item.extra.model.v)."""
+    mark = func.json_extract(Item.extra, "$.model.v")
+    return or_(mark.is_(None), mark != version)
+
+
 def has_file(r: ModelRegistry) -> bool:
     return bool(r.path) and Path(r.path).exists()
+
+
+def _sha256(path: Path) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for block in iter(lambda: f.read(1 << 20), b""):
+            h.update(block)
+    return h.hexdigest()
+
+
+def same_file(r: ModelRegistry, path: Path) -> bool:
+    """True when the registered bundle file is byte for byte the file at `path` (size, then sha256)."""
+    if not has_file(r) or not Path(path).is_file():
+        return False
+    a, b = Path(r.path), Path(path)
+    return a.stat().st_size == b.stat().st_size and _sha256(a) == _sha256(b)
 
 
 def is_pinned(r: ModelRegistry | None) -> bool:

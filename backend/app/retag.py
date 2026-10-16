@@ -6,6 +6,12 @@ longer confirm becomes a query link when the item's own search or alert asked fo
 learned-model links are never touched. Articles are read in id order, BATCH at a time, and
 each batch is committed and dropped from the session so memory stays flat.
 
+With a theme model live the decision is 'rule OR p >= t' for non-gender themes (ml/infer.py), so a
+link the rules no longer confirm stays counted when its stored score is at or above the live
+threshold: it becomes the model's link (method 'model', evidence kept, 'was' says what it goes back
+to). A gender rule link the model vetoed (evidence.veto) stays off while the rules still match.
+Re-tagging scores nothing itself: classify-items --all brings the rest in line afterwards.
+
 Writes are guarded UPDATEs (WHERE method is still 'rule' or 'query'), so a correction a user
 makes while a batch is being worked out is never written over. A dry run writes nothing at all:
 it works out the same changes in memory and adds them to the counts taken at the start, so it
@@ -38,10 +44,21 @@ class Plan:
         return len(self.links) + len(self.regions)
 
 
+def model_thresholds(s: Session) -> dict[int, float]:
+    """theme_id -> the live model's threshold, for the themes where the model counts on its own
+    (non-gender: rule OR p >= t). Empty while no model is live. Reads the registry row only."""
+    from .ml.registry import active
+    row = active(s)
+    th = (row.thresholds or {}) if row else {}
+    return {t.id: float(th[t.slug]) for t in s.scalars(select(Theme))
+            if t.group != "gender" and th.get(t.slug) is not None}
+
+
 def plan_item(item: Item, rules: Rules, links: dict, regions: dict | None = None, themes: list | None = None,
-              alert_themes: dict | None = None) -> Plan:
+              alert_themes: dict | None = None, model_t: dict | None = None) -> Plan:
     """Bring one article's rule and query links in line with the rules. `links` maps theme_id ->
-    ItemTheme; with `regions` (region_id -> ItemRegion) rule place tags are re-run too. Reads only."""
+    ItemTheme; with `regions` (region_id -> ItemRegion) rule place tags are re-run too. `model_t`
+    (model_thresholds) keeps the links the live model supports. Reads only."""
     themes = rules.themes if themes is None else themes
     snippet = clean_snippet(item.source_key, item.title, item.snippet)
     hits = theme_hits(rules, item.title, snippet, themes)
@@ -55,15 +72,21 @@ def plan_item(item: Item, rules: Rules, links: dict, regions: dict | None = None
         if lk.method not in OURS:
             continue
         qk = query_key(item, r.slug, alert_themes)
-        method = lk.method
+        method, active, stored = lk.method, bool(hit), lk.evidence or {}
         if hit:
             ev = evidence(*hit, qk)
+            if method == "rule" and "veto" in stored:  # the model vetoed this gender link: it stays off
+                active, ev = False, {**ev, "veto": stored["veto"]}
         elif method == "query" or qk:
             # no longer confirmed, but the item's own search or alert asked for this theme: a prior
             method, ev = "query", evidence("query", [], qk)
         else:
             ev = None
-        new = (method, bool(hit), r.version, ev)
+        t = (model_t or {}).get(r.theme_id)
+        if not active and t is not None and lk.score is not None and lk.score >= t:
+            # the live model scores it at or above its threshold: it stays counted, as the model's link
+            method, active, ev = "model", True, {**stored, "model": lk.score, "was": method}
+        new = (method, active, r.version, ev)
         if (lk.method, lk.active, lk.theme_version, lk.evidence) != new:
             p.links[r.theme_id] = (*new, False)
     if regions is not None:
@@ -157,11 +180,12 @@ def retag_theme(s: Session, theme_id: int, batch: int = BATCH) -> int:
     """One theme over all articles (after an edit in Admin). Places are left alone."""
     rule = rule_for(s.get(Theme, theme_id))
     rules = {c.id: load_rules(s, c.id) for c in s.scalars(select(Country))}
-    not_counted = {cid: not_counted_outlets(s, r.labelled_outlets) for cid, r in rules.items()}
     alerts = _alert_themes(s)
+    model_t = model_thresholds(s)
     n = 0
     for items, links, _ in _batches(s, batch, with_regions=False):
-        plans = [(it.id, plan_item(it, rules[it.country_id], links.get(it.id, {}), themes=[rule], alert_themes=alerts))
+        plans = [(it.id, plan_item(it, rules[it.country_id], links.get(it.id, {}), themes=[rule], alert_themes=alerts,
+                                   model_t=model_t))
                  for it in items]
         write_plans(s, plans)
         n += sum(len(p) for _, p in plans)
@@ -241,13 +265,14 @@ def retag_all(s: Session, *, dry_run: bool = False, batch: int = BATCH, out=prin
     rules = {c.id: load_rules(s, c.id) for c in s.scalars(select(Country))}
     not_counted = {cid: not_counted_outlets(s, r.labelled_outlets) for cid, r in rules.items()}
     alerts = _alert_themes(s)
+    model_t = model_thresholds(s)
     delta = _Delta(s) if dry_run else None
     changed = seen = flips = 0
     for items, links, regions in _batches(s, batch):
         plans = []
         for it in items:
             lk, rg = links.get(it.id, {}), regions.get(it.id, {})
-            p = plan_item(it, rules[it.country_id], lk, rg, alert_themes=alerts)
+            p = plan_item(it, rules[it.country_id], lk, rg, alert_themes=alerts, model_t=model_t)
             plans.append((it.id, p))
             changed += len(p)
             if dry_run:
@@ -275,6 +300,11 @@ def retag_all(s: Session, *, dry_run: bool = False, batch: int = BATCH, out=prin
               "regions": {k: (before[2].get(k, 0), after[2].get(k, 0)) for k in sorted(before[2].keys() | after[2].keys())},
               "dry_run": dry_run}
     _print_report(report, out)
+    from .ml.registry import active
+    live = active(s)
+    if live:  # only the model can score what the rules changed (a new rule link on a gender theme it vetoes)
+        out(f"A theme model is live ({live.version}): run classify-items --all "
+            f"{'after the real retag-all' if dry_run else 'next'}.")
     return report
 
 

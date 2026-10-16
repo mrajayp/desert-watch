@@ -12,7 +12,7 @@ and are the fixed reference set new versions are compared on.
 Plain Python: no numpy here."""
 import re
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..models import Event, ItemTheme, Label, Theme
@@ -32,6 +32,13 @@ def latest_gold_tag(s: Session) -> str | None:
     ref = s.scalar(select(Label.source_ref).where(Label.source_ref.like("gold%:%"), Label.label_type.in_(THEME_LABELS))
                    .order_by(Label.id.desc()).limit(1))
     return ref.split(":")[0] if ref else None
+
+
+def labels_fingerprint(s: Session) -> list[int]:
+    """[count, highest id] of the theme labels: a model trained on the same fingerprint saw the same labels.
+    Here rather than in train.py so the nightly check needs no scikit-learn."""
+    n, mx = s.execute(select(func.count(Label.id), func.max(Label.id)).where(Label.label_type.in_(THEME_LABELS))).one()
+    return [int(n or 0), int(mx or 0)]
 
 
 def reference_ids(s: Session, tag: str | None) -> set[int]:
