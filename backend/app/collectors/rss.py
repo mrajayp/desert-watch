@@ -1,5 +1,7 @@
-"""Outlet RSS feeds (Arabic + English). Only items matching at least one theme are kept."""
+"""Outlet RSS feeds (Arabic + English), and YouTube channel feeds. Only items matching at least one
+theme are kept."""
 import calendar
+import time
 from datetime import datetime
 
 import feedparser
@@ -14,6 +16,24 @@ from .base import RunResult, http_client, polite_get
 import re
 
 _TAGS = re.compile(r"<[^>]+>")
+YOUTUBE_FEED = "youtube.com/feeds/videos.xml"
+YOUTUBE_TRIES = 3
+YOUTUBE_BACKOFF = 3.0       # seconds, doubled after each failed try
+YOUTUBE_FAILED_RUNS = 3     # a channel feed counts as an error only after this many failed runs in a row
+
+
+def _youtube_feed(client, url: str):
+    """YouTube channel feeds answer 404 or 500 to about half of all requests (2026-10-16) and then
+    work on the next try, so we try three times with a pause."""
+    for attempt in range(YOUTUBE_TRIES):
+        try:
+            r = polite_get(client, url, min_interval=1.0, retries=0)
+            r.raise_for_status()
+            return feedparser.parse(r.content)
+        except Exception:  # noqa: BLE001
+            if attempt == YOUTUBE_TRIES - 1:
+                raise
+            time.sleep(YOUTUBE_BACKOFF * 2 ** attempt)
 
 
 def collect(s: Session) -> RunResult:
@@ -24,14 +44,27 @@ def collect(s: Session) -> RunResult:
         rules_by_country = {}
         for o in outlets:
             rules = rules_by_country.setdefault(o.country_id, load_rules(s, o.country_id))
+            youtube = YOUTUBE_FEED in o.rss_url
             try:
-                r = polite_get(client, o.rss_url, min_interval=0.5)
-                r.raise_for_status()
-                feed = feedparser.parse(r.content)
+                if youtube:
+                    feed = _youtube_feed(client, o.rss_url)
+                else:
+                    r = polite_get(client, o.rss_url, min_interval=0.5)
+                    r.raise_for_status()
+                    feed = feedparser.parse(r.content)
             except Exception as e:  # noqa: BLE001
+                if youtube:  # one bad run is normal for YouTube: only a streak counts as an error
+                    streak = (o.external or {}).get("feed_failed_runs", 0) + 1
+                    o.external = {**(o.external or {}), "feed_failed_runs": streak}
+                    s.commit()
+                    if streak < YOUTUBE_FAILED_RUNS:
+                        errors.append(f"{o.domain}: unavailable this run ({streak} in a row)")
+                        continue
                 res.errors += 1
                 errors.append(f"{o.domain}: {e}")
                 continue
+            if youtube and (o.external or {}).get("feed_failed_runs"):
+                o.external = {k: v for k, v in o.external.items() if k != "feed_failed_runs"}
             for e in feed.entries:
                 when = e.get("published_parsed") or e.get("updated_parsed")
                 if not when or not e.get("link"):
@@ -40,7 +73,8 @@ def collect(s: Session) -> RunResult:
                 title = e.get("title", "")
                 item, created = store_article(
                     s, o.country_id, rules, url=e.link, title=title, snippet=snippet,
-                    published_at=datetime.utcfromtimestamp(calendar.timegm(when)), source_key="rss",
+                    published_at=datetime.utcfromtimestamp(calendar.timegm(when)),
+                    source_key="youtube" if youtube else "rss",
                     lang=detect_lang(title + " " + snippet), outlet_domain=o.domain, outlet_name=o.name,
                     require_theme=True, outlet_cache={o.domain: o})
                 res.rows += created
@@ -56,7 +90,8 @@ def backfill(s: Session, *, since, max_pages: int = 2000) -> RunResult:
     res = RunResult()
     notes = []
     with http_client() as client:
-        outlets = s.scalars(select(Outlet).where(Outlet.rss_url.is_not(None), Outlet.active.is_(True))).all()
+        outlets = s.scalars(select(Outlet).where(Outlet.rss_url.is_not(None), Outlet.active.is_(True),
+                                                 Outlet.rss_url.not_like(f"%{YOUTUBE_FEED}%"))).all()  # no paging
         for o in outlets:
             rules = load_rules(s, o.country_id)
             try:

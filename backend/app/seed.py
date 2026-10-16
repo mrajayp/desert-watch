@@ -3,7 +3,7 @@ Idempotent: existing rows are kept (themes edited in the UI are not overwritten)
 from datetime import date
 
 import yaml
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from . import settings
@@ -43,7 +43,8 @@ def seed_country(s: Session, file: str) -> Country:
         s.add(c)
         s.flush()
     import json
-    c.config = json.loads(json.dumps({k: v for k, v in cfg.items() if k not in ("districts", "outlets", "macro_regions")},
+    c.config = json.loads(json.dumps({k: v for k, v in cfg.items() if k not in ("districts", "outlets", "macro_regions",
+                                                                                 "youtube_channels", "social_parents")},
                                      default=str, ensure_ascii=False))  # YAML dates -> ISO strings
     c.config["config_file"] = file
     c.config["district_geo"] = {d["slug"]: d.get("geo") for d in cfg["districts"]}
@@ -126,7 +127,55 @@ def seed_country(s: Session, file: str) -> Country:
             s.add(OutletCategory(outlet_id=o.id, dimension="scope", value=scope, confidence="likely",
                                  evidence_url=f"https://{dom}/", note=f"From {SEED_EVIDENCE.format(file=file)} scope_overrides.",
                                  valid_from=date.today()))
+    seed_social_accounts(s, c, cfg, file)
     return c
+
+
+YOUTUBE_FEED = "https://www.youtube.com/feeds/videos.xml?channel_id={id}"
+
+
+def seed_social_accounts(s: Session, c: Country, cfg: dict, file: str) -> None:
+    """YouTube channels (created, read through their feed) and social accounts that an outlet's own
+    website links to (existing outlets only). Each gets external.parent = that website and the
+    website's scope/type. Idempotent, and a label an admin has closed is never put back."""
+    for ch in cfg.get("youtube_channels") or []:
+        dom = f"youtube.com/channel/{ch['id']}"
+        o = s.scalar(select(Outlet).where(func.lower(Outlet.domain) == dom.lower()))
+        if not o:
+            o = Outlet(country_id=c.id, name=ch["name"], domain=dom, languages=ch.get("languages", []),
+                       created_via="seed", external={})
+            s.add(o)
+            s.flush()
+            s.add(OutletCategory(outlet_id=o.id, dimension="medium", value="youtube", confidence="reported",
+                                 evidence_url=f"https://www.youtube.com/channel/{ch['id']}",
+                                 note=f"Seeded from {SEED_EVIDENCE.format(file=file)}.", valid_from=date.today()))
+        o.rss_url = o.rss_url or YOUTUBE_FEED.format(id=ch["id"])
+        _link_parent(s, o, ch["parent"], ch, file)
+    for site, accounts in (cfg.get("social_parents") or {}).items():
+        for dom in accounts:
+            o = s.scalar(select(Outlet).where(func.lower(Outlet.domain) == dom.lower()))
+            if o:
+                _link_parent(s, o, site, {}, file)
+
+
+def _link_parent(s: Session, o: Outlet, site: str, fallback: dict, file: str) -> None:
+    if not (o.external or {}).get("parent"):
+        o.external = {**(o.external or {}), "parent": site}
+    parent = s.scalar(select(Outlet).where(Outlet.domain == site))
+    for dim in ("scope", "type"):  # never alignment
+        if s.scalar(select(OutletCategory.id).where(OutletCategory.outlet_id == o.id, OutletCategory.dimension == dim)):
+            continue
+        src = parent and s.scalar(select(OutletCategory).where(
+            OutletCategory.outlet_id == parent.id, OutletCategory.dimension == dim, OutletCategory.status == "active",
+            OutletCategory.valid_to.is_(None)))
+        if src:
+            value, conf, note = src.value, src.confidence, f"Copied from {site}, the website that links this account."
+        elif fallback.get(dim):
+            value, conf, note = fallback[dim], "likely", f"From {SEED_EVIDENCE.format(file=file)}. {site} links this account."
+        else:
+            continue
+        s.add(OutletCategory(outlet_id=o.id, dimension=dim, value=value, confidence=conf, evidence_url=f"https://{site}/",
+                             note=note, valid_from=date.today()))
 
 
 def seed_all(s: Session):

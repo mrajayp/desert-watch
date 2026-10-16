@@ -1,4 +1,4 @@
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.ingest import load_rules, social_outlet, store_article
 from app.models import Country, Outlet, utcnow
@@ -20,7 +20,7 @@ def test_social_outlet_youtube_forms():
 def test_store_article_keeps_the_collectors_channel(db):
     c = db.scalar(select(Country))
     rules = load_rules(db, c.id)
-    ch = Outlet(country_id=c.id, name="Wasat TV", domain="youtube.com/channel/UCTjGk6smzE1z4P_nI8dUqJw", languages=["ar"])
+    ch = Outlet(country_id=c.id, name="Some TV", domain="youtube.com/channel/UCxxxxxxxxxxxxxxxxxxxxxx", languages=["ar"])
     db.add(ch)
     db.flush()
     it, created = store_article(db, c.id, rules, url="https://www.youtube.com/watch?v=v1", title="انقطاع الكهرباء في سبها",
@@ -131,3 +131,74 @@ def test_page_post_and_website_story_count_once(db):
     assert post.duplicate_of == site.id         # the website copy is kept
     assert elsewhere.duplicate_of is None       # a page outside the family stays
     assert mark_duplicates(db) == 0
+
+
+def _cats(db, oid):
+    from app.models import OutletCategory
+    return {c.dimension: (c.value, c.evidence_url) for c in db.scalars(select(OutletCategory).where(
+        OutletCategory.outlet_id == oid, OutletCategory.status == "active", OutletCategory.valid_to.is_(None)))}
+
+
+def test_seed_creates_youtube_channels_with_parent_labels(db):
+    from app.models import OutletCategory
+    from app.seed import seed_all
+    wasat = db.scalar(select(Outlet).where(Outlet.domain == "youtube.com/channel/UCTjGk6smzE1z4P_nI8dUqJw"))
+    assert wasat.rss_url == "https://www.youtube.com/feeds/videos.xml?channel_id=UCTjGk6smzE1z4P_nI8dUqJw"
+    assert wasat.external["parent"] == "alwasat.ly"
+    cats = _cats(db, wasat.id)
+    assert cats["medium"][0] == "youtube"
+    assert cats["scope"] == ("libyan", "https://alwasat.ly/")          # copied from the website
+    assert "alignment" not in cats
+    hnec = db.scalar(select(Outlet).where(Outlet.domain == "youtube.com/channel/UCnygNoGcbVM8AY4fIa3Nm8w"))
+    assert _cats(db, hnec.id)["scope"] == ("libyan", "https://hnec.ly/")   # no website outlet: config fallback
+    assert _cats(db, hnec.id)["type"][0] == "state"
+    n = db.scalar(select(func.count(OutletCategory.id)))
+    seed_all(db)
+    db.commit()
+    assert db.scalar(select(func.count(OutletCategory.id))) == n          # idempotent
+    assert db.scalar(select(func.count(Outlet.id)).where(Outlet.domain.like("youtube.com/channel/%"))) == 9
+
+
+def test_seed_links_existing_social_accounts_to_their_website(db):
+    from app.seed import seed_all
+    c = db.scalar(select(Country))
+    page = Outlet(country_id=c.id, name="lyobserver", domain="facebook.com/lyobserver")
+    stranger = Outlet(country_id=c.id, name="someone", domain="facebook.com/someone")
+    db.add_all([page, stranger])
+    db.commit()
+    seed_all(db)
+    db.commit()
+    assert page.external["parent"] == "libyaobserver.ly"
+    assert _cats(db, page.id)["scope"] == ("libyan", "https://libyaobserver.ly/")
+    assert not (stranger.external or {}).get("parent") and "scope" not in _cats(db, stranger.id)
+
+
+def test_youtube_feed_retries_and_files_videos_on_the_channel(db, monkeypatch):
+    from types import SimpleNamespace
+    from app.collectors import rss
+    from app.models import Item
+    monkeypatch.setattr(rss, "YOUTUBE_BACKOFF", 0)
+    db.query(Outlet).filter(Outlet.rss_url.is_not(None), ~Outlet.domain.like("youtube.com/channel/UCTj%")).update(
+        {"rss_url": None}, synchronize_session=False)
+    db.commit()
+    feed = """<?xml version="1.0"?><feed xmlns="http://www.w3.org/2005/Atom" xmlns:media="http://search.yahoo.com/mrss/">
+      <entry><title>انقطاع الكهرباء في سبها لساعات</title><link rel="alternate" href="https://www.youtube.com/watch?v=abc"/>
+      <published>2026-10-15T10:00:00+00:00</published><media:group><media:description>تقرير</media:description></media:group></entry>
+    </feed>"""
+    calls = []
+
+    def fake_get(client, url, **kw):
+        calls.append(url)
+        ok = len(calls) % 2 == 0      # every other request fails, as YouTube does
+        return SimpleNamespace(content=feed.encode(), status_code=200 if ok else 404,
+                               raise_for_status=(lambda: None) if ok else (lambda: (_ for _ in ()).throw(RuntimeError("404"))))
+    monkeypatch.setattr(rss, "polite_get", fake_get)
+    res = rss.collect(db)
+    assert len(calls) == 2 and res.errors == 0 and res.rows == 1
+    it = db.scalar(select(Item).where(Item.source_key == "youtube"))
+    assert db.get(Outlet, it.outlet_id).domain == "youtube.com/channel/UCTjGk6smzE1z4P_nI8dUqJw" and it.relevant
+
+    # a run where every try fails is noted, not an error, until it happens three runs in a row
+    monkeypatch.setattr(rss, "polite_get", lambda *a, **k: SimpleNamespace(
+        content=b"", status_code=500, raise_for_status=lambda: (_ for _ in ()).throw(RuntimeError("500"))))
+    assert [rss.collect(db).errors for _ in range(3)] == [0, 0, 1]
