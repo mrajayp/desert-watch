@@ -47,13 +47,28 @@ def meta(country: str = "LY", s: Session = Depends(get_db), _: User = Depends(au
                    for k, v in LENSES.items()],
         "red_from": settings.GAP_RED_FROM,
         "weeks": [w.isoformat() for w in weeks],
-        "latest_week": latest.isoformat() if latest else None,
+        # the default week is the latest one that has ended (the current week is never judged)
+        "latest_week": (latest_complete_week(s, c.id) or latest).isoformat() if latest else None,
+        "current_week": latest.isoformat() if latest else None,
         "window_weeks": settings.WINDOW_WEEKS,
         "events": c.config.get("events", []),
     }
 
 
 LENS_RECENT_WEEKS, LENS_MIN_WEEKS = 12, 4
+
+
+def latest_complete_week(s: Session, country_id: int) -> date | None:
+    """The latest week whose national cells are all complete (none still coming in)."""
+    weeks = s.scalars(select(CellWeek.week_start).where(CellWeek.country_id == country_id).distinct()
+                      .order_by(CellWeek.week_start.desc()).limit(4)).all()
+    national = s.scalar(select(Region.id).where(Region.country_id == country_id, Region.level == "national"))
+    for wk in weeks:
+        cells = s.scalars(select(CellWeek.breakdown).where(CellWeek.country_id == country_id, CellWeek.week_start == wk,
+                                                           CellWeek.region_id == national)).all()
+        if cells and not any((b or {}).get("in_progress") for b in cells):
+            return wk
+    return None
 
 
 def _lens_status(s: Session, country_id: int, latest: date | None, themes: list[Theme]) -> tuple[set, dict]:
@@ -131,7 +146,8 @@ def cells(country: str = "LY", lens: str = "audience", week: date | None = None,
     c = country_or_404(s, country)
     if lens not in LENSES:
         raise HTTPException(400, "Unknown lens")
-    week = week or s.scalar(select(func.max(CellWeek.week_start)).where(CellWeek.country_id == c.id))
+    week = week or latest_complete_week(s, c.id) or s.scalar(
+        select(func.max(CellWeek.week_start)).where(CellWeek.country_id == c.id))
     if not week:
         return {"week": None, "cells": []}
     q = select(CellWeek).where(CellWeek.country_id == c.id, CellWeek.lens == lens, CellWeek.week_start == week)
@@ -238,7 +254,8 @@ def coverage_history(theme_id: int, s: Session = Depends(get_db), _: User = Depe
 def gap_detail(theme_id: int, region_id: int, lens: str = "audience", week: date | None = None,
                source: str | None = None, s: Session = Depends(get_db), u: User = Depends(auth.current_user)):
     theme, region = theme_or_404(s, theme_id), region_or_404(s, region_id)
-    week = week or s.scalar(select(func.max(CellWeek.week_start)).where(CellWeek.country_id == region.country_id))
+    week = week or latest_complete_week(s, region.country_id) or s.scalar(
+        select(func.max(CellWeek.week_start)).where(CellWeek.country_id == region.country_id))
     cell = s.scalar(select(CellWeek).where(CellWeek.theme_id == theme_id, CellWeek.region_id == region_id,
                                            CellWeek.lens == lens, CellWeek.week_start == week)) if week else None
     start, end = window_bounds(week or week_start(date.today()), settings.WINDOW_WEEKS)

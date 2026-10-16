@@ -349,6 +349,10 @@ def test_trends_payload_matches_scores_and_article_lists(client, users, db):
         assert client.get("/api/items", params=params).json()["total"] == x["articles_all"]
     assert any(x["articles_all"] > x["articles"] for x in rows[-10:])
     assert client.get("/api/items", params={"basis": "nope"}).status_code == 400
+    # pages open on the latest week that has ended, never the one still coming in
+    m = client.get("/api/meta").json()
+    assert m["latest_week"] == rows[-2]["week"] and m["current_week"] == cur.isoformat()
+    assert client.get("/api/cells", params={"lens": "audience"}).json()["week"] == rows[-2]["week"]
 
 
 def test_coverage_monthly_by_source_and_partial_month(client, users, db):
