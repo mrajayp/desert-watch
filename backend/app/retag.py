@@ -1,7 +1,8 @@
 """Re-run the current theme and place rules over stored articles.
 
 Only rule and query links change: a rule link is active when the rules match, a query link
-(a search or alert result) is active only when the rules confirm it. User corrections and
+(a search or alert result) is active only when the rules confirm it. A rule link the rules no
+longer confirm becomes a query link when the item's own search or alert asked for that theme. User corrections and
 learned-model links are never touched. Articles are read in id order, BATCH at a time, and
 each batch is committed and dropped from the session so memory stays flat."""
 from collections import Counter
@@ -36,12 +37,17 @@ def retag_item(s: Session, item: Item, rules: Rules, links: dict, regions: dict 
             continue
         if lk.method not in OURS:
             continue
+        qk = query_key(item, r.slug)
+        method = lk.method
         if hit:
-            ev = evidence(*hit, query_key(item, r.slug))
+            ev = evidence(*hit, qk)
+        elif method == "query" or qk:
+            # no longer confirmed, but the item's own search or alert asked for this theme: a prior
+            method, ev = "query", evidence("query", [], qk)
         else:
-            ev = evidence("query", [], query_key(item, r.slug)) if lk.method == "query" else None
-        if (lk.active, lk.theme_version, lk.evidence) != (bool(hit), r.version, ev):
-            lk.active, lk.theme_version, lk.evidence = bool(hit), r.version, ev
+            ev = None
+        if (lk.method, lk.active, lk.theme_version, lk.evidence) != (method, bool(hit), r.version, ev):
+            lk.method, lk.active, lk.theme_version, lk.evidence = method, bool(hit), r.version, ev
             n += 1
     if regions is not None:
         placed = set(tag_places(" ".join(x for x in (item.title, snippet) if x), rules.places))

@@ -95,7 +95,12 @@ def test_owner_examples_old_links_are_cleared_by_retag(db):
     retag_all(db, out=lambda *_: None)
     assert not active(db, a.id) & {"gender_political_participation", "governance", "security"}
     assert not active(db, b.id) & {"gender_political_participation", "governance", "security"}
-    assert links(db, b.id)[th["security"]].evidence is None          # stale rule row, kept inactive
+    # rule rows the rules no longer confirm, on the item's own alert or search theme, become query priors
+    lk = links(db, a.id)[th["gender_political_participation"]]
+    assert (lk.method, lk.active) == ("query", False)
+    assert lk.evidence == {"field": "query", "terms": [], "query": "theme:gender_political_participation:en"}
+    assert links(db, b.id)[th["security"]].method == "query"
+    assert links(db, b.id)[th["security"]].evidence["query"] == "gnews:security"
     assert links(db, b.id)[th["governance"]].evidence == {"field": "query", "terms": [], "query": None}
 
 
@@ -255,7 +260,8 @@ def test_retag_all_is_idempotent_and_leaves_user_and_model_rows(db):
     db.add_all([ItemTheme(item_id=it.id, theme_id=th["health"], method="query", active=True),
                 ItemTheme(item_id=it.id, theme_id=th["security"], method="query", active=False),
                 ItemTheme(item_id=it.id, theme_id=th["governance"], method="user", active=False),
-                ItemTheme(item_id=it.id, theme_id=th["migration"], method="model", active=True, score=0.9)])
+                ItemTheme(item_id=it.id, theme_id=th["migration"], method="model", active=True, score=0.9),
+                ItemTheme(item_id=it.id, theme_id=th["services"], method="rule", active=True)])
     db.commit()
     dry = retag_all(db, dry_run=True, out=lambda *_: None)
     assert dry["links_changed"] > 0
@@ -272,6 +278,7 @@ def test_retag_all_is_idempotent_and_leaves_user_and_model_rows(db):
     assert lk[th["economy"]].evidence == {"field": "title", "terms": ["NOC", "oil output"], "query": None}
     assert (lk[th["governance"]].method, lk[th["governance"]].active) == ("user", False)
     assert (lk[th["migration"]].method, lk[th["migration"]].active) == ("model", True)
+    assert (lk[th["services"]].method, lk[th["services"]].active, lk[th["services"]].evidence) == ("rule", False, None)
     assert first["themes"]["economy"]["after"][0] >= 1
     second = retag_all(db, out=lambda *_: None)
     assert second["links_changed"] == 0 and second["relevance_flipped"] == 0
