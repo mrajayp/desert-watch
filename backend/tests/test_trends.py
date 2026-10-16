@@ -440,6 +440,8 @@ def test_trends_payload_matches_scores_and_article_lists(client, users, db):
         assert math.isclose(x["gap"], math.log((x["expected_4w"] + A) / (x["articles_4w"] + A)))
         if i >= 3:
             assert x["articles_4w"] == sum(y["articles"] for y in rows[i - 3:i + 1])
+            # the chart draws a verdict's 4 weeks at its cell's baseline: they add up to the usual it quotes
+            assert math.isclose(sum(y["need_week"] for y in rows[i - 3:i + 1]) * x["ref"], x["expected_4w"])
     assert judged >= 40
     # each bar's click-through list adds up to the bar; without the basis it lists every source
     for x in rows[-12:]:

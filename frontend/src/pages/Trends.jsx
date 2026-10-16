@@ -66,7 +66,7 @@ export default function Trends() {
         <label>Region
           <select value={regionId} onChange={(e) => setRegionPick(+e.target.value)} disabled={regions.length < 2}
             title={regions.length < 2 ? `The ${LENS_TEXT[filters.lens]?.label || filters.lens} lens only has figures for all of ${meta.country.name_en}` : undefined}>
-            {regions.filter((r) => r.level !== 'district').map((r) => <option key={r.id} value={r.id}>{r.level === 'macro' ? '— ' : ''}{r.name_en}</option>)}
+            {regions.filter((r) => r.level !== 'district').map((r) => <option key={r.id} value={r.id}>{r.level === 'macro' ? '· ' : ''}{r.name_en}</option>)}
             {regions.some((r) => r.level === 'district') && (
               <optgroup label="Districts">{regions.filter((r) => r.level === 'district').map((r) => <option key={r.id} value={r.id}>{r.name_en}</option>)}</optgroup>)}
           </select>
@@ -75,7 +75,7 @@ export default function Trends() {
       <main className="page">
         <section className="card">
           <h2>Articles per week, theme by theme</h2>
-          <p className="sub">Bars count the articles each week from the outlets we followed all year. The grey line is the usual level for {lensNeed(filters.lens).usual}. The strip under each chart turns red when the last 4 weeks fell clearly short. Google News finds more for recent weeks when we search back, so bars run higher on the right. Click a bar to see its articles, or the strip under it for the full gap. A theme’s name picks it for the charts below.</p>
+          <p className="sub">Bars count the articles each week from the outlets we followed all year. The grey line is the usual level for {lensNeed(filters.lens).usual}. The strip under each chart turns red when the last 4 weeks fell clearly short. Google News finds more for recent weeks when we search back, so bars run higher on the right. The usual level lags behind that rise, so recent weeks can look better covered than they were. Click a bar to see its articles, or the strip under it for the full gap. A theme’s name picks it for the charts below.</p>
           {!trend ? <div className="empty">Loading…</div> : (
             <>
               <TrendBars themes={meta.themes} data={trend} lens={filters.lens} lang={lang} selectedId={themeId}
@@ -102,7 +102,7 @@ export default function Trends() {
         <section className="card" style={{ marginTop: 16 }}>
           <div className="card-head">
             <div><h2>Long-run coverage · {lang === 'ar' ? theme.name_ar : theme.name_en}</h2>
-              <p className="sub">Daily articles worldwide matching this theme with “{meta.country.name_en}” (GDELT, English machine translation of 65 languages). Each point is the average of the last 7 calendar days we have. The line breaks on days GDELT did not give us. Click to review our own articles for that week.</p></div>
+              <p className="sub">Daily articles worldwide matching this theme with “{meta.country.name_en}” (GDELT, English machine translation of 65 languages). Each point averages the days we have among the 7 calendar days ending there. The line breaks on days GDELT did not give us. Click to review our own articles for that week.</p></div>
             <div className="row">
               <select value={themeId} onChange={(e) => setFilters({ themeId: e.target.value })} aria-label="Theme">
                 {meta.themes.map((t) => <option key={t.id} value={t.id}>{t.name_en}</option>)}</select>

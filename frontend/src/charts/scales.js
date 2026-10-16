@@ -77,7 +77,7 @@ export function flagText(f) {
 }
 
 export const LENS_TEXT = {
-  audience: { label: 'International readers (Wikipedia)', unit: 'pageviews', blurb: 'Worldwide page views of the Wikipedia articles we picked for each theme, against the theme’s own recent record. Most views are of English pages, so this shows interest from outside Libya more than need inside it' },
+  audience: { label: 'International readers (Wikipedia)', unit: 'pageviews', blurb: 'Worldwide page views of the Wikipedia articles we picked for each theme, against the theme’s own recent record. Most views are of English pages, and the readers can be anywhere' },
   events: { label: 'Events', unit: 'events', blurb: 'Conflict & protest events (ACLED/UCDP) vs coverage' },
   humanitarian: { label: 'Humanitarian', unit: 'reports', blurb: 'ReliefWeb reports vs coverage' },
   journalist: { label: 'Journalists', unit: 'flags', blurb: 'Gaps flagged by your team vs coverage' },

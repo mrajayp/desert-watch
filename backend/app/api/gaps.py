@@ -164,7 +164,10 @@ def all_series(country: str = "LY", lens: str = "audience", region_id: int | Non
                s: Session = Depends(get_db), _: User = Depends(auth.current_user)):
     """Articles per week for every theme in one region (default national): 52 complete weeks plus the
     week still coming in. Bars count comparable source|outlet pairs only (the set the scores use, see
-    scoring.trend_basis). The usual level and the 4-week verdicts come from the scored cells."""
+    scoring.trend_basis). The usual level and the 4-week verdicts come from the scored cells.
+    Bars are live counts while articles_4w, expected and gap date from the last recompute, so between
+    an hourly collector run (:07) and the recompute (:45) the latest bars can add up to more than
+    articles_4w. They match again after the recompute (the pairs are cached until then too)."""
     c = country_or_404(s, country)
     if lens not in LENSES:
         raise HTTPException(400, "Unknown lens")
@@ -211,6 +214,9 @@ def all_series(country: str = "LY", lens: str = "audience", region_id: int | Non
                          "need_en": langs.get("en", 0) if daily and cw else None,
                          "need_ar": langs.get("ar", 0) if daily and cw else None,
                          "expected_week": b.get("expected_week"),
+                         # the cell's baseline (articles per need unit): the chart draws the 4 weeks a
+                         # verdict covers at this one, so they add up to its expected_4w
+                         "ref": cw.ref_ratio if cw else None,
                          "articles_4w": b.get("articles_4w"), "expected_4w": b.get("expected_4w"),
                          "gap": cw.gap if cw else None, "insufficient": cw.insufficient if cw else True,
                          "reason": b.get("reason") if cw else "not_scored",
