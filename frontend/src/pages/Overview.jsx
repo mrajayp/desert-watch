@@ -111,7 +111,7 @@ export default function Overview() {
   const feedback = Object.fromEntries(cells.map((c) => [`${c.theme_id}:${c.region_id}`, c.votes]))
   const themeName = themeId ? meta.themes.find((t) => t.id === themeId)?.name_en : themeGroup ? `All ${themeGroup} themes` : 'All themes'
   const caption = `Source: Desert Watch monitored coverage (Google News, GDELT, outlet RSS) · ${meta.window_weeks}-week window ending ${filters.week}.\n` +
-    `Lines join outlets to districts their articles name. Monitored coverage only; Facebook/Telegram-only reporting is not captured.\n${meta.country.boundaries?.attribution || ''}`
+    `Lines join outlets to districts their articles name. Monitored coverage only. We see Facebook only through the posts Google indexes, and Telegram not at all.\n${meta.country.boundaries?.attribution || ''}`
   const unplacedShare = nationalCells.length ? d3.sum(nationalCells, (c) => c.breakdown?.unplaced || 0) / Math.max(1, d3.sum(nationalCells, (c) => c.coverage)) : null
   const lensInfo = LENS_TEXT[filters.lens]
 

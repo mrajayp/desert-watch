@@ -54,7 +54,7 @@ export default function OutletPanel({ id }) {
               {c.evidence_url?.startsWith('http') ? <a className="small" href={c.evidence_url} target="_blank" rel="noreferrer noopener">evidence ↗</a>
                 : <span className="small muted">source: Social Media scraped data (2023–24)</span>}</> : <span className="muted">unclassified</span>}</td></tr>
         })}
-        {o.monitored === false && <tr><th>Collection</th><td><span className="pill flag">not monitored</span> <span className="small muted">Facebook page: Desert Watch cannot collect its posts</span></td></tr>}
+        {o.monitored === false && <tr><th>Collection</th><td><span className="pill flag">not monitored</span> <span className="small muted">Facebook page: we only see the posts Google News indexes</span></td></tr>}
         {o.external?.social_media_scrape && <tr><th>Social-media scrape</th><td className="small">
           {Object.entries(o.external.social_media_scrape).filter(([k]) => !['source', 'period', 'link', 'kind'].includes(k)).map(([k, v]) => `${k.replace('_', ' ')} ${Number(v).toLocaleString()}`).join(' · ')}
           <div className="muted">Social Media scraped data, {o.external.social_media_scrape.period?.from} to {o.external.social_media_scrape.period?.to}</div></td></tr>}

@@ -6,11 +6,23 @@ This is for admins. It says how each figure in Desert Watch is worked out and wh
 
 An article counts as coverage when it mentions Libya or a Libyan place, or comes from a Libyan outlet and matches a theme. Anything else is kept but marked as not relevant.
 
-Articles come from Google News searches, outlet news feeds, Google Alerts and the historical backfill. People can also add them. Every article counts once, whatever its source.
+Articles come from Google News searches, outlet news feeds, Google Alerts, YouTube channels, social media posts that Google indexes and the historical backfill. People can also add them. Every article counts once, whatever its source.
 
-The same story often reaches us twice. Google News gives us its own link, and the outlet's feed or the backfill gives the real one. So we look for articles from the same outlet, published within a day of each other, with almost the same headline. We count one copy and keep the outlet's own link. The others are kept but left out of every number.
+The same story often reaches us twice. Google News gives us its own link, and the outlet's feed or the backfill gives the real one. So we look for articles from the same outlet, published within a day of each other, with almost the same headline. We count one copy and keep the outlet's own link. The others are kept but left out of every number. A Facebook page or YouTube channel that the outlet's website links to counts as the same outlet here, and we keep the website's copy.
 
 Coverage also goes up whenever we add a source. The trend charts and the audience gap allow for this. The monthly bars don't.
+
+## Social media
+
+We collect two kinds of social media posts. Neither needs us to sign up or pay, and both stay within what the platforms allow.
+
+The first is YouTube. We follow nine channels that their outlets' own websites link to, among them Wasat TV, Libya Al Ahrar, HNEC and UNSMIL. Every hour we read each channel's public feed. The feed only lists the 15 newest videos, and YouTube often turns a request away, so we try again a few times. A channel takes the scope of the website that links to it.
+
+The second is posts that Google News has indexed. This covers the Facebook pages on the 2023-24 social media scrape register, plus any Facebook, X, Instagram or TikTok account we have given a type or scope. Each night we ask Google News for each account's posts from yesterday, and again for the day before, because Google adds posts late. Google keeps only some posts, mostly recent ones, and never gives more than 100 for one day. So this is a sample of what a page posts and it misses a lot. These posts show as "Social (Google-indexed)" and count as coverage like any article. Comparisons over time leave each account out until we have collected it for the whole period compared.
+
+We don't read Telegram. We don't scrape Facebook or X ourselves either. Telegram's terms ban scraping for AI use, and Libyan channels there are small. X charges for every post we would read. Facebook and Instagram have no public route for a dashboard like this one. Paid scraping services would be a separate decision.
+
+Posts from private people stay out of the numbers. A social account only counts once it is on the register or someone has given it a type or scope in Admin. Posts filed under a whole platform, like facebook.com with no page, never count, because we can't tell whose they are. Link shorteners such as t.co and bit.ly are not outlets, so their items don't count either. We keep all of these. Labelling an account brings its posts back on the next hourly run.
 
 ## Themes and places
 
@@ -84,8 +96,8 @@ Once a week we work out the facts here first. These are the biggest gaps with th
 
 ## When the numbers update
 
-- Hourly: outlet feeds and Google Alerts, then scores and the network for the last 12 weeks.
+- Hourly: outlet feeds, YouTube channels and Google Alerts, then scores and the network for the last 12 weeks.
 - Every six hours: Google News, GDELT articles and the official statements.
-- Nightly: Wikipedia page views, then the full history of scores and the network.
+- Nightly: Wikipedia page views and the social media posts Google has indexed, then the full history of scores and the network.
 - Mondays: the digest.
 - By hand only: the GDELT long-run line and anything in the backfill job.
