@@ -250,6 +250,26 @@ def test_reimport_keeps_a_users_relevance_decision(db):
     assert items[0].extra["user_relevance"] is False and items[1].extra["user_relevance"] is False
 
 
+def test_source_health_shows_when_search_data_goes_stale(client, users, db):
+    from app.models import SourceRun
+
+    login(client, "j@example.org", "journo-password-1")
+
+    def health():
+        return next(r for r in client.get("/api/sources/health").json() if r["key"] == "gtrends")
+    assert health()["status"] == "never_run" and health()["stale"]
+    import_rows(db, _rows(_cfg(db), ["services"], weeks=4))
+    h = health()
+    assert h["status"] == "ok" and not h["stale"] and "latest week with data" in h["error"]
+    run = db.scalar(select(SourceRun).where(SourceRun.source_key == "gtrends"))
+    run.finished_at = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=9)  # a weekly import, a bit late
+    db.commit()
+    assert not health()["stale"]
+    run.finished_at -= timedelta(days=2)                                                  # 11 days: a week was missed
+    db.commit()
+    assert health()["stale"]
+
+
 def test_gap_panel_lists_search_words_with_glosses(client, users, db):
     themes, regions = ids(db)
     login(client, "j@example.org", "journo-password-1")

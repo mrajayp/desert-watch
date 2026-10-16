@@ -59,13 +59,13 @@ def meta(country: str = "LY", s: Session = Depends(get_db), _: User = Depends(au
 
 @router.get("/sources/health")
 def sources_health(s: Session = Depends(get_db), _: User = Depends(auth.current_user)):
-    from ..collectors import COLLECTORS, EXTRA_HEALTH
+    from ..collectors import COLLECTORS, EXTRA_HEALTH, STALE_HOURS
     out = []
     for key, label in [*((k, v[1]) for k, v in COLLECTORS.items()), *EXTRA_HEALTH.items()]:
         last = s.scalar(select(SourceRun).where(SourceRun.source_key == key).order_by(SourceRun.id.desc()).limit(1))
         last_ok = s.scalar(select(SourceRun).where(SourceRun.source_key == key, SourceRun.status.in_(("ok", "partial")))
                            .order_by(SourceRun.id.desc()).limit(1))
-        stale = last_ok is None or (utcnow() - (last_ok.finished_at or last_ok.started_at)).total_seconds() > 48 * 3600
+        stale = last_ok is None or (utcnow() - (last_ok.finished_at or last_ok.started_at)).total_seconds() > STALE_HOURS.get(key, 48) * 3600
         out.append({"key": key, "label": label, "status": last.status if last else "never_run",
                     "last_run": last.started_at.isoformat() if last else None,
                     "last_ok": (last_ok.finished_at or last_ok.started_at).isoformat() if last_ok else None,
