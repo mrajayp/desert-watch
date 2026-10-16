@@ -1,11 +1,12 @@
 """Labelling for the theme model: full theme-set labels on an article, the review queue that picks
 what to label next, and the model registry for admins. No scikit-learn here: scores come from
 item_theme and from item.extra['model'], which classify-items writes."""
+import re
 from datetime import timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
-from sqlalchemy import and_, exists, func, not_, or_, select
+from sqlalchemy import exists, func, not_, select
 from sqlalchemy.orm import Session
 
 from .. import auth
@@ -23,6 +24,8 @@ QUEUE_DAYS = 120
 WOMEN_WORDS = ["women", "woman", "girl", "نساء", "امرأة", "فتاة", "سيدة", "المرأة"]
 GENERIC_TERMS = ["minister", "وزير", "killed", "مقتل", "المياه"]
 GENERIC = {v for t in GENERIC_TERMS for v in term_variants(t)}
+_WOMEN_RE = re.compile("|".join(map(re.escape, WOMEN_WORDS)), re.I)
+_GENERIC_RE = re.compile("|".join(map(re.escape, GENERIC_TERMS)), re.I)
 
 
 # ---------------------------------------------------------------- full theme-set labels
@@ -85,38 +88,32 @@ def review_queue(n: int = 10, country: str = "LY", s: Session = Depends(get_db),
     c = country_or_404(s, country)
     live = registry.active(s)
     done = L.labelled_item_ids(s)
-    base = and_(Item.country_id == c.id, Item.kind == "article", Item.relevant.is_(True), Item.duplicate_of.is_(None),
-                Item.published_at >= utcnow() - timedelta(days=QUEUE_DAYS),
-                not_(exists().where(ItemTheme.item_id == Item.id, ItemTheme.method == "user")))
     themes = s.scalars(select(Theme).where(Theme.active.is_(True))).all()
+    # one pass over the window (each extra scan of item costs about half a second on the production data)
+    unsure = func.json_extract(Item.extra, "$.model.u")
+    rows = [r for r in s.execute(select(Item.id, Item.title, Item.snippet, unsure).where(
+        Item.country_id == c.id, Item.kind == "article", Item.relevant.is_(True), Item.duplicate_of.is_(None),
+        Item.published_at >= utcnow() - timedelta(days=QUEUE_DAYS),
+        not_(exists().where(ItemTheme.item_id == Item.id, ItemTheme.method == "user")))
+        .order_by(Item.published_at.desc())).all() if r[0] not in done]
+    text = {r[0]: f"{r[1] or ''} {r[2] or ''}" for r in rows}
 
-    def fresh(stmt, limit):
-        out = []
-        for iid in s.scalars(stmt.limit(limit * 4 + 40)):
-            if iid not in done:
-                out.append(iid)
-            if len(out) >= limit:
-                break
-        return out
+    def linked(ids: list[int], *conds) -> set[int]:
+        return set(s.scalars(select(ItemTheme.item_id).where(ItemTheme.item_id.in_(ids), ItemTheme.active.is_(True),
+                                                             *conds))) if ids else set()
 
     queues: list[tuple[str, list[int]]] = []
     if live:
-        unsure = func.json_extract(Item.extra, "$.model.u")
-        queues.append(("uncertain", fresh(select(Item.id).where(base, unsure.is_not(None)).order_by(unsure.desc()), n)))
-    gender_ids = [t.id for t in themes if t.group == "gender"]
-    women = or_(*[col.ilike(f"%{w}%") for w in WOMEN_WORDS for col in (Item.title, Item.snippet)])
-    no_gender = not_(exists().where(ItemTheme.item_id == Item.id, ItemTheme.theme_id.in_(gender_ids),
-                                    ItemTheme.active.is_(True)))
-    queues.append(("gender_candidate", fresh(select(Item.id).where(base, women, no_gender)
-                                             .order_by(Item.published_at.desc()), n)))
-    has_rule = exists().where(ItemTheme.item_id == Item.id, ItemTheme.method == "rule", ItemTheme.active.is_(True))
-    generic = or_(*[col.ilike(f"%{w}%") for w in GENERIC_TERMS for col in (Item.title, Item.snippet)])
+        queues.append(("uncertain", [r[0] for r in sorted((r for r in rows if r[3] is not None), key=lambda r: -r[3])[:n]]))
+    women = [r[0] for r in rows if _WOMEN_RE.search(text[r[0]])][:n * 20]
+    has_gender = linked(women, ItemTheme.theme_id.in_([t.id for t in themes if t.group == "gender"]))
+    queues.append(("gender_candidate", [i for i in women if i not in has_gender][:n]))
+    generic = [r for r in rows if _GENERIC_RE.search(text[r[0]])][:300]
+    has_rule = linked([r[0] for r in generic], ItemTheme.method == "rule")
     rules = load_rules(s, c.id).themes
     generic_terms: dict[int, str] = {}
-    cand = s.execute(select(Item.id, Item.title, Item.snippet).where(base, has_rule, generic)
-                     .order_by(Item.published_at.desc()).limit(300)).all()
-    for iid, title, snip in cand:
-        term = None if iid in done else _generic_only(" ".join(x for x in (title, snip) if x), rules)
+    for iid, title, snip, _ in generic:
+        term = _generic_only(" ".join(x for x in (title, snip) if x), rules) if iid in has_rule else None
         if term:
             generic_terms[iid] = term
         if len(generic_terms) >= n:

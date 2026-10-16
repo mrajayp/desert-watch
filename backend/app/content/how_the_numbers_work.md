@@ -20,6 +20,16 @@ Places work the same way. We look for district and town names, including other s
 
 You can change the words for any theme in Admin → Themes and preview what they would match before saving.
 
+## The theme model
+
+Word lists miss stories and catch the wrong ones. So we also use a model that learned from our own articles which words go with which theme. It reads the headline and the summary and gives each theme a score from 0 to 1. Each theme has its own bar, set where the model did best on labelled articles.
+
+For the six main themes an article counts when the word list matches or the score passes the bar. The model can add a theme. It never takes away one the word list found. For the gender themes the word lists still decide. A gender theme lets the model switch off a word-list match once it has at least 100 labelled articles with 10 or more about that theme. The model also has to do at least as well as the word list on them.
+
+People label articles by marking every theme an article is about and whether it is about Libya. A label on one copy of a story covers its other copies. We started with 532 articles labelled in a blind review in October 2026. Each night we retrain the part of the model that learns from labels. A new version goes live only if it does about as well as the one before on the labelled articles. Admins can see every version and switch back to an older one. Nothing changes until a version is made live.
+
+On the October 2026 labels the model with the word lists made fewer wrong matches for the six main themes than we had before. It found about as many of the right ones as the search results did.
+
 ## Need
 
 Need is the other side of the comparison. It is what suggests a topic should be getting coverage. We have four kinds, one per lens.
@@ -76,7 +86,7 @@ Arrows between clusters are reprints. Two headlines count as the same story when
 
 The gap list shows the biggest gaps in the last four weeks that nobody has voted on. The article lists are recent articles with no theme or no place, one unrated article from each busy outlet, and outlets with a lot of articles but no scope or alignment on record.
 
-Votes and corrections are saved as labels for training. So are article ratings. Nothing changes the rankings automatically yet. The plan is to switch on a model only once there are enough labels and it beats the word lists on a test set.
+Votes and corrections are saved as labels for training. So are article ratings. Theme labels train the theme model described above. Votes and ratings do not change the rankings yet.
 
 ## Weekly digest
 
@@ -84,8 +94,8 @@ Once a week we work out the facts here first. These are the biggest gaps with th
 
 ## When the numbers update
 
-- Hourly: outlet feeds and Google Alerts, then scores and the network for the last 12 weeks.
+- Hourly: outlet feeds and Google Alerts, the theme model on new articles, then scores and the network for the last 12 weeks.
 - Every six hours: Google News, GDELT articles and the official statements.
-- Nightly: Wikipedia page views, then the full history of scores and the network.
+- Nightly: Wikipedia page views and a retrain of the theme model on new labels, then the full history of scores and the network.
 - Mondays: the digest.
 - By hand only: the GDELT long-run line and anything in the backfill job.
