@@ -37,7 +37,7 @@ STOP_AFTER = 3         # consecutive 429/5xx answers end the run
 DAYS_BACK = (1, 2)     # yesterday and the day before
 MAX_QUERIES = 400
 
-_SUFFIX = re.compile(r"\s*[-|•]\s*(Facebook|X|Twitter|Instagram|TikTok)\s*$", re.I)
+_SUFFIX = re.compile(r"\s*[-|•/]\s*(Facebook|X|Twitter|Instagram|TikTok)\s*$", re.I)
 _SEP = re.compile(r"\.\s\.(?:\s|$)")          # "<page name>. . <post text>"
 _ON = re.compile(r"^.{1,80}? on (X|Twitter|Instagram|TikTok):\s*", re.I)
 _PROFILE = re.compile(r"Instagram photos and videos|\(@[\w.]+\)\s*$", re.I)

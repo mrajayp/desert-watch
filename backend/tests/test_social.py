@@ -215,6 +215,8 @@ def test_gnews_social_post_text():
     assert post_text("الدبيبة لطلاب الشهادة: ثقتي فيكم كبيرة جدا - Facebook") == "الدبيبة لطلاب الشهادة: ثقتي فيكم كبيرة جدا"
     assert post_text('Libya Observer on X: "Heavy rain floods streets in Benghazi tonight" - X') == \
         "Heavy rain floods streets in Benghazi tonight"
+    assert post_text('HNEC on X: "Voter registration opens in Sabha next week" / X') == \
+        "Voter registration opens in Sabha next week"
     assert post_text("بلدية بنغازي - Facebook") is None                                           # too short to be a post
     assert post_text("Al Menassa (@almenassa_libya) • Instagram photos and videos") is None
 
