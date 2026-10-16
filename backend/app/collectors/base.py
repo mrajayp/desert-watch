@@ -33,14 +33,14 @@ def http_client(timeout: float = 30) -> httpx.Client:
 
 
 def polite_get(client: httpx.Client, url: str, *, params=None, min_interval: float = 1.0,
-               retries: int = 2, state: dict = {}) -> httpx.Response:
+               retries: int = 2, state: dict = {}, headers=None) -> httpx.Response:
     """GET with a per-host minimum interval and simple backoff on 429/5xx."""
     host = httpx.URL(url).host
     for attempt in range(retries + 1):
         wait = state.get(host, 0) + min_interval - time.monotonic()
         if wait > 0:
             time.sleep(wait)
-        r = client.get(url, params=params)
+        r = client.get(url, params=params, headers=headers)
         state[host] = time.monotonic()
         if r.status_code == 429 or r.status_code >= 500 or "Please limit requests" in r.text[:200]:
             time.sleep(min_interval * (2 ** (attempt + 1)))

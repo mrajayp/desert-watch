@@ -74,7 +74,8 @@ def test_reads_48h_and_7d_with_the_app_token(db, keys, articles):
         res = fb_engagement.collect(db, client=c, now=NOW)
     assert res.rows == 2 and res.errors == 0
     q = parse_qs(urlsplit(str(calls[0].url)).query)
-    assert calls[0].url.path == "/v26.0/" and q["fields"] == ["engagement"] and q["access_token"] == ["123|s3cret"]
+    assert calls[0].url.path == "/v26.0/" and q["fields"] == ["engagement"] and "access_token" not in q
+    assert calls[0].headers["authorization"] == "Bearer 123|s3cret"     # the token never goes in the URL
     assert q["ids"][0].split(",") == ["https://www.libyaakhbar.com/breaking/9.html", "https://www.almarsad.co/news/1"]
     rows = {r.item_id: r for r in db.scalars(select(ItemEngagement).where(ItemEngagement.source == "fb_url"))}
     assert set(rows) == {articles["h48"].id, articles["d7"].id}
@@ -115,3 +116,45 @@ def test_secret_never_reaches_the_run_log(db, keys, articles):
         run = run_collector(db, "fb_url", lambda s: fb_engagement.collect(s, client=c, now=NOW))
     run = db.get(SourceRun, run.id)
     assert run.status == "error" and "s3cret" not in (run.error or "") and "ConnectError" in run.error
+
+
+def test_secret_never_reaches_the_server_log(db, keys, articles, caplog):
+    import logging
+    import app.main  # noqa: F401  (sets the httpx log level the server runs with)
+    assert logging.getLogger("httpx").getEffectiveLevel() >= logging.WARNING
+    caplog.set_level(logging.INFO, logger="httpx")       # even with request lines logged, no secret
+    calls = []
+    with httpx.Client(transport=httpx.MockTransport(graph(calls))) as c:
+        res = fb_engagement.collect(db, client=c, now=NOW)
+    assert res.rows == 2 and calls
+    assert "graph.facebook.com" in caplog.text and "s3cret" not in caplog.text
+    assert all("s3cret" not in str(r.url) for r in calls)
+
+
+def test_empty_reading_is_asked_once_more_then_stands(db, keys, articles):
+    calls = []
+
+    def handler(request):
+        calls.append(request)
+        ids = parse_qs(urlsplit(str(request.url)).query)["ids"][0].split(",")
+        # Facebook echoes the 7-day URL with another scheme and a trailing slash and has nothing for the other
+        return httpx.Response(200, json={u.replace("https://", "http://") + "/": {
+            "engagement": {"reaction_count": 4, "comment_count": 0, "share_count": 1}, "id": u}
+            for u in ids if "libyaakhbar" in u})
+
+    for k in range(3):
+        with httpx.Client(transport=httpx.MockTransport(handler)) as c:
+            fb_engagement.collect(db, client=c, now=NOW + timedelta(hours=6 * k))
+    rows = {r.item_id: r for r in db.scalars(select(ItemEngagement).where(ItemEngagement.source == "fb_url"))}
+    assert rows[articles["d7"].id].total == 5                    # matched despite the different echo
+    miss = rows[articles["h48"].id]
+    assert miss.total is None and miss.raw["missing"] and miss.raw["tries"] == fb_engagement.MISSING_TRIES
+    asked = [parse_qs(urlsplit(str(r.url)).query)["ids"][0] for r in calls]
+    assert sum("almarsad.co/news/1" in a for a in asked) == 2 and len(calls) == 2   # third run: nothing due
+
+
+def test_url_key():
+    k = fb_engagement.url_key
+    assert k("https://www.libyaakhbar.com/breaking/9.html") == k("http://libyaakhbar.com/breaking/9.html/")
+    assert k("https://ex.ly/%D9%84%D9%8A%D8%A8%D9%8A%D8%A7") == k("https://ex.ly/ليبيا")
+    assert k("https://ex.ly/post.php?id=1") != k("https://ex.ly/post.php?id=2")
