@@ -85,7 +85,7 @@ class Outlet(Base):
     lat: Mapped[float | None] = mapped_column(Float)
     lon: Mapped[float | None] = mapped_column(Float)
     created_via: Mapped[str] = mapped_column(String(10), default="seed")  # seed | auto | user | import
-    # False = known outlet we cannot collect from (e.g. Facebook pages): a visible blind spot
+    # False = known outlet we only see in part (Facebook register pages: the posts Google News indexes)
     monitored: Mapped[bool | None] = mapped_column(Boolean, default=True)
     # metrics from external datasets, keyed by source, e.g. {"social_media_scrape": {...}}
     external: Mapped[dict | None] = mapped_column(JSON, default=dict)

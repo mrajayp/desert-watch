@@ -9,9 +9,11 @@ gdelt:
   sourcecountry: LY              # FIPS code used by GDELT for outlets based in Libya
 gnews:
   country_term_ar: ليبيا
+  # Google News has no Libya edition. gl=LY answers with a redirect to the Egypt-Arabic edition
+  # (checked 2026-10-16), so we ask for that edition by name.
   hl: ar
-  gl: LY
-  ceid: "LY:ar"
+  gl: EG
+  ceid: "EG:ar"
 acled: {country: Libya}
 ucdp: {country_id: 620}
 reliefweb: {country_iso3: lby}
