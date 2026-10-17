@@ -1,6 +1,13 @@
 import { Fragment, useEffect, useState } from 'react'
 import { api } from '../api'
 import { useApp } from '../App'
+import { N_, fmtDate, getLang, isAr, t } from '../i18n'
+
+// digest status codes from the API (shown for anything but 'ok')
+const STATUS = { error: N_('error'), refused: N_('refused') }
+const status = (s) => t(STATUS[s] || s)
+// a week start (YYYY-MM-DD): as is in English, with Libyan month names in Arabic
+const day = (d) => (isAr() ? fmtDate(d) : d)
 
 // Minimal, safe Markdown: headings, bullets, paragraphs, **bold**, *italic*. Text only, no HTML.
 function inline(text) {
@@ -9,9 +16,9 @@ function inline(text) {
   let last = 0, m
   while ((m = re.exec(text))) {
     if (m.index > last) parts.push(text.slice(last, m.index))
-    const t = m[0]
-    parts.push(t.startsWith('**') ? <strong key={m.index}>{t.slice(2, -2)}</strong> : <em key={m.index}>{t.slice(1, -1)}</em>)
-    last = m.index + t.length
+    const tok = m[0]
+    parts.push(tok.startsWith('**') ? <strong key={m.index}>{tok.slice(2, -2)}</strong> : <em key={m.index}>{tok.slice(1, -1)}</em>)
+    last = m.index + tok.length
   }
   if (last < text.length) parts.push(text.slice(last))
   return parts
@@ -57,40 +64,41 @@ export default function DigestPage() {
   const open = (id) => api(`/api/digests/${id}`).then((d) => { setCur(d); setShowFacts(false) })
   const regenerate = async () => {
     await api('/api/admin/run/digest', { method: 'POST' })
-    setMsg('Generating… refresh in a minute. (Needs the ANTHROPIC_API_KEY secret on the server.)')
+    setMsg(t('Generating… refresh in a minute. (Needs the ANTHROPIC_API_KEY secret on the server.)'))
   }
   return (
     <main className="page">
       <div className="grid two">
         <section className="card">
-          {!list ? <div className="empty">Loading…</div> : !cur ? (
+          {!list ? <div className="empty">{t('Loading…')}</div> : !cur ? (
             <div className="empty">
-              No digest yet. It is written about the week before, on Monday at 06:00 UTC. If Sunday’s Wikipedia
-              views are not in by then, it tries again each morning up to Thursday. It needs an Anthropic API key
-              on the server.{me.role === 'admin' && <><br /><br /><button className="btn" onClick={regenerate}>Generate now</button></>}
+              {t('No digest yet. It is written about the week before, on Monday at 06:00 UTC. If Sunday’s Wikipedia views are not in by then, it tries again each morning up to Thursday. It needs an Anthropic API key on the server.')}
+              {me.role === 'admin' && <><br /><br /><button className="btn" onClick={regenerate}>{t('Generate now')}</button></>}
               {msg && <p className="small">{msg}</p>}
             </div>
           ) : (
             <>
               <div className="card-head">
-                <div><h2>Weekly brief · week of {cur.week_start}</h2>
-                  <p className="sub">Written by {cur.model} from the facts below · {cur.created_at.slice(0, 16).replace('T', ' ')} UTC
-                    {cur.usage?.input_tokens ? ` · ${cur.usage.input_tokens + cur.usage.output_tokens} tokens` : ''}</p></div>
-                {me.role === 'admin' && <button className="btn small" onClick={regenerate}>Regenerate</button>}
+                <div><h2>{t('Weekly brief · week of {week}', { week: day(cur.week_start) })}</h2>
+                  <p className="sub">{t('Written by {model} from the facts below · {time} UTC', { model: cur.model, time: cur.created_at.slice(0, 16).replace('T', ' ') })}
+                    {cur.usage?.input_tokens ? <> · {t('{n} tokens', { n: cur.usage.input_tokens + cur.usage.output_tokens })}</> : ''}</p></div>
+                {me.role === 'admin' && <button className="btn small" onClick={regenerate}>{t('Regenerate')}</button>}
               </div>
               {msg && <p className="small">{msg}</p>}
-              {cur.status === 'ok' ? <Markdown text={cur.content_md} /> : <div className="banner">{cur.status}: {cur.error}</div>}
-              <p className="small muted" style={{ marginTop: 16 }}>AI-written from the tool’s own counts; every number should appear in the facts. Check before quoting.</p>
-              <button className="btn small ghost" onClick={() => setShowFacts(!showFacts)}>{showFacts ? 'Hide' : 'Show'} the facts it was given</button>
+              {cur.status === 'ok' && cur.lang && cur.lang !== getLang() &&
+                <p className="small muted">{t('This brief was written before briefs were produced in Arabic too, so it is shown in English.')}</p>}
+              {cur.status === 'ok' ? <Markdown text={cur.content_md} /> : <div className="banner">{status(cur.status)}: {cur.error}</div>}
+              <p className="small muted" style={{ marginTop: 16 }}>{t('AI-written from the tool’s own counts; every number should appear in the facts. Check before quoting.')}</p>
+              <button className="btn small ghost" onClick={() => setShowFacts(!showFacts)}>{showFacts ? t('Hide the facts it was given') : t('Show the facts it was given')}</button>
               {showFacts && <pre className="mono" style={{ whiteSpace: 'pre-wrap', maxHeight: 420, overflow: 'auto', background: 'var(--surface-2)', padding: 10, borderRadius: 6 }}>{JSON.stringify(cur.facts, null, 2)}</pre>}
             </>)}
         </section>
         <section className="card">
-          <h2>Archive</h2>
+          <h2>{t('Archive')}</h2>
           <ul className="list">{(list || []).map((d) => (
-            <li key={d.id}><button className="btn ghost" aria-pressed={cur?.id === d.id} onClick={() => open(d.id)}>Week of {d.week_start}</button>
-              <span className="small muted"> {d.status !== 'ok' && d.status}</span></li>))}</ul>
-          {list && !list.length && <p className="muted small">No briefs yet.</p>}
+            <li key={d.id}><button className="btn ghost" aria-pressed={cur?.id === d.id} onClick={() => open(d.id)}>{t('Week of {week}', { week: day(d.week_start) })}</button>
+              <span className="small muted"> {d.status !== 'ok' && status(d.status)}</span></li>))}</ul>
+          {list && !list.length && <p className="muted small">{t('No briefs yet.')}</p>}
         </section>
       </div>
     </main>

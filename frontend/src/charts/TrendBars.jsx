@@ -7,23 +7,25 @@
 import * as d3 from 'd3'
 import { memo, useMemo, useRef, useState } from 'react'
 import { fmt, gapFill } from './scales'
-import { DAY, about, articles, judged, lensNeed, levelLegend, levelWord, needLine, noSearchData, reasonText, shortfall, stepPath, trendGroups, usualLine, utc, verdict, weekEnd, weekRange, yScale } from './trendText'
+import { DAY, about, articles, judged, lensNeed, levelLegend, needLine, noSearchData, reasonText, shortfall, stepPath, trendGroups, usualLine, utc, verdict, weekEnd, weekRange, yScale } from './trendText'
 import { HatchDefs, themeLabel, useSize, useTooltip } from './util'
+import { t, utcFormat } from '../i18n.js'
 
 // focus from the keyboard, not from a click (a click opens the week's articles instead)
-const keyFocus = (el) => { try { return el.matches(':focus-visible') } catch { return true } }
+const keyFocus = (el) => { try { return el.matches(':focus-visible') } catch { return true } } // i18n-ok: a CSS selector, never shown
 
-const cap = (w) => w[0].toUpperCase() + w.slice(1)
-const dayMonth = d3.utcFormat('%-d %b')
+// in the interface language, so formatted when drawn (never at import time)
+const dayMonth = (d) => utcFormat('%-d %b')(d)
 
-const Panel = memo(function Panel({ t, rows, hasNeed, note, fullName, width, lens, reference, scoredWeek, red, lang, selected, onSelect, onPickWeek, onPickBar }) {
+// th: the theme (the prop keeps its name t; inside, t is the translation function)
+const Panel = memo(function Panel({ t: th, rows, hasNeed, note, fullName, width, lens, reference, scoredWeek, red, lang, selected, onSelect, onPickWeek, onPickBar }) {
   const wrap = useRef(null)
   const tip = useTooltip()
   const [hover, setHover] = useState(null)
   const [focused, setFocused] = useState(false)
   const need = lensNeed(lens, reference)
-  const level = cap(levelWord(need))
-  const name = (lang === 'ar' ? t.name_ar : t.name_en) || t.name_en
+  const pooled = !!need.pooled
+  const name = (lang === 'ar' ? th.name_ar : th.name_en) || th.name_en
   const L = 30, R = 4, T = 16, y0 = 116, sy = y0 + 3, sh = 7, H = sy + sh + 15
   const xs = d3.scaleBand().domain(rows.map((r) => r.week)).range([L, width - R])
   const step = xs.step()
@@ -61,12 +63,13 @@ const Panel = memo(function Panel({ t, rows, hasNeed, note, fullName, width, len
     return (
       <div>
         <b>{weekRange(r.week)}</b>
-        <div>{articles(r.articles)} from outlets we followed all year{r.in_progress ? ' so far' : ''}</div>
-        {r.articles_all !== r.articles && <div>{articles(r.articles_all)} from all sources</div>}
-        {lined(r) && <div>{level} for this week: {about(r.expected_week)}</div>}
+        <div>{r.in_progress ? t('{articles} from outlets we followed all year so far', { articles: articles(r.articles) })
+          : t('{articles} from outlets we followed all year', { articles: articles(r.articles) })}</div>
+        {r.articles_all !== r.articles && <div>{t('{articles} from all sources', { articles: articles(r.articles_all) })}</div>}
+        {lined(r) && <div>{pooled ? t('Expected for this week: {n}', { n: about(r.expected_week) }) : t('Usual for this week: {n}', { n: about(r.expected_week) })}</div>}
         {nl && <div>{nl}</div>}
         <div style={{ marginTop: 4 }}>{verdict(r, red, need)}</div>
-        {onPickBar && <div className="small muted">{keys ? 'Enter lists this week’s articles. G opens the gap.' : 'Click for this week’s articles'}</div>}
+        {onPickBar && <div className="small muted">{keys ? t('Enter lists this week’s articles. G opens the gap.') : t('Click for this week’s articles')}</div>}
       </div>)
   }
   const show = (e) => {
@@ -90,9 +93,9 @@ const Panel = memo(function Panel({ t, rows, hasNeed, note, fullName, width, len
       showKey(Math.max(0, Math.min(rows.length - 1, go)), e.currentTarget)
     } else if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault()
-      onPickBar?.(t, rows[cur])
+      onPickBar?.(th, rows[cur])
     } else if ((e.key === 'g' || e.key === 'G') && !rows[cur].in_progress) {
-      onPickWeek?.(t.id, rows[cur].week)
+      onPickWeek?.(th.id, rows[cur].week)
     }
   }
   const hide = () => { setHover(null); tip.hide() }
@@ -100,18 +103,20 @@ const Panel = memo(function Panel({ t, rows, hasNeed, note, fullName, width, len
   return (
     <div ref={wrap} className="card viz trend-panel">
       <div className="trend-head">
-        <button type="button" className="linkish" aria-pressed={!!selected} title={`${name}. Show this theme in the charts below.`}
-          onClick={() => onSelect?.(t.id)}>{fullName ? name : themeLabel(t, lang)}</button>
+        <button type="button" className="linkish" aria-pressed={!!selected} title={t('{name}. Show this theme in the charts below.', { name })}
+          onClick={() => onSelect?.(th.id)}>{fullName ? name : themeLabel(th, lang)}</button>
         {last && (
           <button type="button" className={judged(last) && last.gap >= red ? 'pill flag' : 'pill'}
-            title={`${weekRange(last.week)}. ${verdict(last, red, need)} Click for the full gap.`}
-            onClick={() => onPickWeek?.(t.id, last.week)}>
+            title={t('{week}. {verdict} Click for the full gap.', { week: weekRange(last.week), verdict: verdict(last, red, need) })}
+            onClick={() => onPickWeek?.(th.id, last.week)}>
             {judged(last) ? shortfall(last.gap, red, need) : reasonText(last.reason, need, false)}</button>)}
       </div>
       <div className="small muted" style={{ margin: '2px 0 4px' }}>
-        {scored ? `4 weeks to ${dayMonth(utc(weekEnd(last.week)))}` : 'Last 4 weeks'}: {articles(a4)}.{hasNeed && last?.expected_4w != null ? ` ${level}: ${about(last.expected_4w)}.` : ''}{!hasNeed && note ? ` ${note}` : ''}</div>
-      <svg viewBox={`0 0 ${width} ${H}`} role="group" aria-label={`${name}: articles per week`}>
-        <HatchDefs id={`tb-hatch-${t.id}`} />
+        {scored ? t('4 weeks to {date}: {articles}.', { date: dayMonth(utc(weekEnd(last.week))), articles: articles(a4) })
+          : t('Last 4 weeks: {articles}.', { articles: articles(a4) })}
+        {hasNeed && last?.expected_4w != null ? ` ${pooled ? t('Expected: {n}.', { n: about(last.expected_4w) }) : t('Usual: {n}.', { n: about(last.expected_4w) })}` : ''}{!hasNeed && note ? ` ${note}` : ''}</div>
+      <svg viewBox={`0 0 ${width} ${H}`} role="group" aria-label={t('{name}: articles per week', { name })}>
+        <HatchDefs id={`tb-hatch-${th.id}`} />
         {hover != null && !rows[hover].in_progress && (
           // the 4 weeks the hovered week's verdict covers
           <rect x={xs(rows[Math.max(0, hover - 3)].week)} y={T} width={step * (hover - Math.max(0, hover - 3) + 1)} height={y0 - T}
@@ -120,7 +125,7 @@ const Panel = memo(function Panel({ t, rows, hasNeed, note, fullName, width, len
         {ticks.map((v) => (
           <g key={v}><line x1={L} x2={width - R} y1={y(v)} y2={y(v)} stroke="var(--grid)" />
             <text x={L - 4} y={y(v) + 3} textAnchor="end" className="num" style={{ fontSize: 9 }}>{fmt(v)}</text></g>))}
-        <text x={L} y={9} style={{ fontSize: 9, fill: 'var(--muted)' }}>articles a week</text>
+        <text x={L} y={9} style={{ fontSize: 9, fill: 'var(--muted)' }}>{t('articles a week')}</text>
         {rows.map((r) => {
           const x = xs(r.week) + step * 0.12, w = Math.max(1, step * 0.76), top = y(r.articles)
           if (r.in_progress) {
@@ -130,27 +135,28 @@ const Panel = memo(function Panel({ t, rows, hasNeed, note, fullName, width, len
           return r.articles > 0 ? <rect key={r.week} x={x} y={top} width={w} height={y0 - top} fill="var(--accent)" /> : null
         })}
         {hasNeed ? (path && <path d={path} fill="none" stroke="var(--ink-2)" strokeWidth={1.6} strokeLinejoin="round" />)
-          : <text x={L + 4} y={T + 9} className="halo" style={{ fontSize: 10, fill: 'var(--muted)' }}>{need.none}</text>}
+          : <text x={L + 4} y={T + 9} className="halo" style={{ fontSize: 10, fill: 'var(--muted)' }}>{t(need.none)}</text>}
         {cur && <g>
           <line x1={curX} x2={curX} y1={11} y2={Math.max(11, y(cur.articles) - 2)} stroke="var(--muted)" strokeDasharray="1 2" />
-          <text x={width - R} y={9} textAnchor="end" style={{ fontSize: 9, fill: 'var(--muted)' }}>still coming in</text></g>}
+          <text x={width - R} y={9} textAnchor="end" style={{ fontSize: 9, fill: 'var(--muted)' }}>{t('still coming in')}</text></g>}
         <rect x={L} y={T} width={width - R - L} height={y0 - T} fill="transparent" style={{ cursor: onPickBar ? 'pointer' : 'default', outline: 'none' }}
-          onMouseMove={show} onMouseLeave={() => !focused && hide()} onClick={(e) => onPickBar?.(t, rows[at(e)])}
-          tabIndex={0} role="button" aria-label={`${name}, articles per week. Arrow keys move between weeks. Enter lists a week’s articles, G opens its gap.`}
+          onMouseMove={show} onMouseLeave={() => !focused && hide()} onClick={(e) => onPickBar?.(th, rows[at(e)])}
+          tabIndex={0} role="button" aria-label={t('{name}, articles per week. Arrow keys move between weeks. Enter lists a week’s articles, G opens its gap.', { name })}
           onFocus={(e) => { if (keyFocus(e.currentTarget)) { setFocused(true); showKey(hover ?? lastIdx, e.currentTarget) } }}
           onBlur={() => { if (focused) { setFocused(false); hide() } }}
           onKeyDown={onKey} />
         {focused && <rect x={L} y={T} width={width - R - L} height={y0 - T} fill="none" stroke="var(--focus)" strokeWidth={2} rx={2} pointerEvents="none" />}
         {rows.map((r) => {
-          const fill = r.in_progress ? null : judged(r) ? (r.gap >= red ? gapFill(r) : 'var(--gap-0)') : `url(#tb-hatch-${t.id})`
+          const fill = r.in_progress ? null : judged(r) ? (r.gap >= red ? gapFill(r) : 'var(--gap-0)') : `url(#tb-hatch-${th.id})` // i18n-ok: an SVG fill reference, never shown
           return (
             <rect key={r.week} x={xs(r.week)} y={sy} width={step + 0.3} height={sh} fill={fill || 'transparent'}
-              style={{ cursor: fill && onPickWeek ? 'pointer' : 'default' }} onClick={fill ? () => onPickWeek?.(t.id, r.week) : undefined}>
-              <title>{`${weekRange(r.week)}. ${verdict(r, red, need)}${fill ? ' Click for the full gap.' : ''}`}</title></rect>)
+              style={{ cursor: fill && onPickWeek ? 'pointer' : 'default' }} onClick={fill ? () => onPickWeek?.(th.id, r.week) : undefined}>
+              <title>{fill ? t('{week}. {verdict} Click for the full gap.', { week: weekRange(r.week), verdict: verdict(r, red, need) })
+                : `${weekRange(r.week)}. ${verdict(r, red, need)}`}</title></rect>)
         })}
         {months.map(({ m, x }) => (
           <g key={+m}><line x1={x} x2={x} y1={sy + sh} y2={sy + sh + 3} stroke="var(--axis)" />
-            <text x={x + 2} y={sy + sh + 12} style={{ fontSize: 9 }}>{m.getUTCMonth() === 0 ? m.getUTCFullYear() : d3.utcFormat('%b')(m)}</text></g>))}
+            <text x={x + 2} y={sy + sh + 12} style={{ fontSize: 9 }}>{m.getUTCMonth() === 0 ? m.getUTCFullYear() : utcFormat('%b')(m)}</text></g>))}
       </svg>
       {tip.node}
     </div>
@@ -171,8 +177,8 @@ export default function TrendBars({ themes, data, lens, reference, scoredWeek, l
     <div ref={wrap}>
       {groups.map((g) => (
         <div key={g.label}>
-          {groups.length > 1 && <div className="trend-group">{g.label}</div>}
-          {g.note && <p className="small muted" style={{ margin: '0 0 8px' }}>{g.note}</p>}
+          {groups.length > 1 && <div className="trend-group">{t(g.label)}</div>}
+          {g.note && <p className="small muted" style={{ margin: '0 0 8px' }}>{t(g.note)}</p>}
           <div className="trend-grid" style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}>
             {g.themes.map((t) => (
               <Panel key={t.id} t={t} rows={data.themes[t.id].rows} hasNeed={data.themes[t.id].has_need} note={data.themes[t.id].note} fullName={g.fullNames} width={width}
@@ -181,12 +187,12 @@ export default function TrendBars({ themes, data, lens, reference, scoredWeek, l
           </div>
         </div>))}
       <div className="legend" style={{ marginTop: 12 }}>
-        <span><span className="sw" style={{ background: 'var(--accent)' }} />Articles from the outlets we followed all year</span>
+        <span><span className="sw" style={{ background: 'var(--accent)' }} />{t('Articles from the outlets we followed all year')}</span>
         <span><span className="sw" style={{ background: 'var(--ink-2)', height: 2, verticalAlign: 3 }} />{levelLegend(need)}</span>
-        <span><span className="ramp" style={{ marginRight: 5 }}>{[2, 3, 4, 5, 6].map((i) => <span key={i} style={{ background: `var(--gap-${i})` }} />)}</span>Last 4 weeks fell clearly short</span>
-        <span><span className="sw" style={{ background: 'var(--gap-0)', boxShadow: 'inset 0 0 0 1px var(--line)' }} />About as {levelWord(need)}, or more</span>
-        <span><svg width="14" height="12" style={{ verticalAlign: -2, marginRight: 5 }}><HatchDefs id="tb-hatch-legend" /><rect width="14" height="12" rx="2" fill="url(#tb-hatch-legend)" /></svg>Not judged</span>
-        <span><span className="sw" style={{ border: '1px dashed var(--accent)', background: 'none' }} />This week, still coming in</span>
+        <span><span className="ramp" style={{ marginInlineEnd: 5 }}>{[2, 3, 4, 5, 6].map((i) => <span key={i} style={{ background: `var(--gap-${i})` }} />)}</span>{t('Last 4 weeks fell clearly short')}</span>
+        <span><span className="sw" style={{ background: 'var(--gap-0)', boxShadow: 'inset 0 0 0 1px var(--line)' }} />{need.pooled ? t('About as expected, or more') : t('About as usual, or more')}</span>
+        <span><svg width="14" height="12" style={{ verticalAlign: -2, marginInlineEnd: 5 }}><HatchDefs id="tb-hatch-legend" /><rect width="14" height="12" rx="2" fill="url(#tb-hatch-legend)" /></svg>{t('Not judged')}</span>
+        <span><span className="sw" style={{ border: '1px dashed var(--accent)', background: 'none' }} />{t('This week, still coming in')}</span>
       </div>
     </div>
   )

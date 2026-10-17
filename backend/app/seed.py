@@ -138,10 +138,12 @@ def seed_country(s: Session, file: str) -> Country:
     slug_ids = {t.slug: t.id for t in s.scalars(select(_Theme))}
     for e in cfg.get("events", []) or []:
         day = e["date"] if isinstance(e["date"], date) else date.fromisoformat(str(e["date"]))
-        if not s.scalar(select(KeyEvent.id).where(KeyEvent.country_id == c.id, KeyEvent.day == day,
-                                                  KeyEvent.label == e["label"])):
-            s.add(KeyEvent(country_id=c.id, day=day, label=e["label"], theme_id=slug_ids.get(e.get("theme")),
-                           source_url=e.get("source", ""), origin="config"))
+        row = s.scalar(select(KeyEvent).where(KeyEvent.country_id == c.id, KeyEvent.day == day, KeyEvent.label == e["label"]))
+        if not row:
+            s.add(KeyEvent(country_id=c.id, day=day, label=e["label"], label_ar=e.get("label_ar"),
+                           theme_id=slug_ids.get(e.get("theme")), source_url=e.get("source", ""), origin="config"))
+        elif row.label_ar != e.get("label_ar"):
+            row.label_ar = e.get("label_ar")     # Arabic labels added to the config later
     for scope, domains in (cfg.get("scope_overrides") or {}).items():
         for dom in domains:
             o = s.scalar(select(Outlet).where(Outlet.domain == dom))

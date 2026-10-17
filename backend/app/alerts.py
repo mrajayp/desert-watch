@@ -9,18 +9,19 @@ from sqlalchemy.orm import Session
 
 from . import settings
 from .models import AlertFeed, Country, Region, Theme
+from .i18n import N_, tr
 
 AR = re.compile("[؀-ۿ]")
 MAX_THEME_TERMS = 8
 MAX_ALIASES = 3
 
-SETTINGS = {
-    "How often": "As-it-happens",
-    "Sources": "Automatic",
-    "Language": "Arabic for (AR) alerts, English for (EN) alerts",
-    "Region": "Any region",
-    "How many": "All results",
-    "Deliver to": "RSS feed",
+SETTINGS = {   # Google Alerts' own option names; the admin page shows them in the interface language
+    N_("How often"): N_("As-it-happens"),
+    N_("Sources"): N_("Automatic"),
+    N_("Language"): N_("Arabic for (AR) alerts, English for (EN) alerts"),
+    N_("Region"): N_("Any region"),
+    N_("How many"): N_("All results"),
+    N_("Deliver to"): N_("RSS feed"),
 }
 
 
@@ -94,15 +95,15 @@ def attach_feeds(s: Session, text: str) -> dict:
             continue
         parts = re.split(r"[\s,;]+", line)
         if len(parts) < 2:
-            problems.append(f"{line[:60]}: expected '<key> <feed url>'")
+            problems.append(tr("{line}: expected '<key> <feed url>'", line=line[:60]))
             continue
         key, url = parts[0], parts[-1]
         row = s.scalar(select(AlertFeed).where(AlertFeed.key == key))
         if not row:
-            problems.append(f"{key}: unknown alert key")
+            problems.append(tr("{key}: unknown alert key", key=key))
             continue
         if not FEED_RE.match(url):
-            problems.append(f"{key}: not a Google Alerts feed URL")
+            problems.append(tr("{key}: not a Google Alerts feed URL", key=key))
             continue
         row.feed_url, row.active = url, True
         ok += 1

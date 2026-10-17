@@ -12,6 +12,7 @@ from ..db import get_db
 from ..models import (ArticleAssessment, CellWeek, Event, Item, ItemTheme, NetworkEdgeWeek, NodeMetric, Outlet,
                       OutletCategory, Region, Theme, User, utcnow)
 from .common import country_or_404, outlet_categories
+from ..i18n import tr
 
 router = APIRouter(prefix="/api")
 
@@ -95,15 +96,15 @@ def _activate(s: Session, cat: OutletCategory):
 def set_category(oid: int, body: CategoryIn, s: Session = Depends(get_db), u: User = Depends(auth.require_contributor)):
     """Admins apply directly (previous value is closed, not overwritten); journalists propose."""
     if not s.get(Outlet, oid):
-        raise HTTPException(404, "Unknown outlet")
+        raise HTTPException(404, tr("Unknown outlet"))
     tax = taxonomy()
     dim = next((d for d in tax["dimensions"] if d["key"] == body.dimension), None)
     if not dim or body.value not in dim["values"]:
-        raise HTTPException(400, "Unknown dimension or value")
+        raise HTTPException(400, tr("Unknown dimension or value"))
     if body.confidence not in tax["confidence_levels"]:
-        raise HTTPException(400, "Unknown confidence level")
+        raise HTTPException(400, tr("Unknown confidence level"))
     if not body.evidence_url.startswith(("http://", "https://")):
-        raise HTTPException(400, "Evidence must be a link.")
+        raise HTTPException(400, tr("Evidence must be a link."))
     cat = OutletCategory(outlet_id=oid, dimension=body.dimension, value=body.value, confidence=body.confidence,
                          evidence_url=body.evidence_url, note=body.note, set_by=u.id, status="proposed")
     s.add(cat)
@@ -124,7 +125,7 @@ class ReviewIn(BaseModel):
 def review_category(cid: int, body: ReviewIn, s: Session = Depends(get_db), u: User = Depends(auth.require_admin)):
     cat = s.get(OutletCategory, cid)
     if not cat or cat.status != "proposed":
-        raise HTTPException(404, "No pending proposal")
+        raise HTTPException(404, tr("No pending proposal"))
     if body.approve:
         _activate(s, cat)
     else:
@@ -147,7 +148,7 @@ class OutletPatch(BaseModel):
 def patch_outlet(oid: int, body: OutletPatch, s: Session = Depends(get_db), u: User = Depends(auth.require_admin)):
     o = s.get(Outlet, oid)
     if not o:
-        raise HTTPException(404, "Unknown outlet")
+        raise HTTPException(404, tr("Unknown outlet"))
     data = body.model_dump(exclude_unset=True)
     if "base_city" in data and data["base_city"] and "lat" not in data:
         # place on the map from the country's city list
@@ -276,7 +277,7 @@ def clusters(country: str = "LY", s: Session = Depends(get_db), _: User = Depend
             tags.append(known_scope[0][0])
         districts = {rid: n for rid, n in rn.items() if regions.get(rid) and regions[rid].level == "district"}
         out.append({
-            "id": cm, "name": name or "Mixed coverage", "name_ar": " و".join(t.name_ar.split(" (")[0] for t in top),
+            "id": cm, "name": name or "Mixed coverage", "name_ar": " و".join(t.name_ar.split(" (")[0] for t in top) or "تغطية متنوعة",
             "tags": tags, "outlets": len(members), "articles": articles,
             "top_outlets": [outlets[o].name for o in sorted(members, key=lambda o: -sum(theme_n[o].values()))[:5]],
             "themes": [{"theme_id": t, "share": round(n / articles, 3), "lift": round((n / articles) / (total_theme[t] / grand), 2)}
@@ -359,5 +360,5 @@ def outlet_reach_api(oid: int, s: Session = Depends(get_db), _: User = Depends(a
     from ..engagement import outlet_reach
     o = s.get(Outlet, oid)
     if not o:
-        raise HTTPException(404, "Unknown outlet")
+        raise HTTPException(404, tr("Unknown outlet"))
     return outlet_reach(s, o)

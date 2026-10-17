@@ -10,6 +10,7 @@ from urllib.parse import urljoin, urlsplit
 import httpx
 
 from . import settings
+from .i18n import tr
 
 MAX_BYTES = 600_000
 _META = re.compile(r"<meta\s+[^>]*>", re.I | re.S)
@@ -25,15 +26,15 @@ class FetchError(ValueError):
 def _check_public(url: str) -> None:
     p = urlsplit(url)
     if p.scheme not in ("http", "https") or not p.hostname:
-        raise FetchError("Only http(s) links are accepted.")
+        raise FetchError(tr("Only http(s) links are accepted."))
     try:
         infos = socket.getaddrinfo(p.hostname, p.port or (443 if p.scheme == "https" else 80))
     except socket.gaierror as e:
-        raise FetchError("That address could not be resolved.") from e
+        raise FetchError(tr("That address could not be resolved.")) from e
     for info in infos:
         ip = ipaddress.ip_address(info[4][0])
         if not ip.is_global:
-            raise FetchError("That address is not a public website.")
+            raise FetchError(tr("That address is not a public website."))
 
 
 def parse_meta(html: str) -> dict:
@@ -67,7 +68,7 @@ def fetch_meta(url: str) -> dict:
                     current = urljoin(current, r.headers.get("location", ""))
                     continue
                 if r.status_code >= 400:
-                    raise FetchError(f"The site answered {r.status_code}.")
+                    raise FetchError(tr("The site answered {code}.", code=r.status_code))
                 buf = b""
                 for chunk in r.iter_bytes():
                     buf += chunk
@@ -75,4 +76,4 @@ def fetch_meta(url: str) -> dict:
                         break
                 html = buf.decode(r.encoding or "utf-8", errors="replace")
                 return {"final_url": current, **parse_meta(html)}
-    raise FetchError("Too many redirects.")
+    raise FetchError(tr("Too many redirects."))

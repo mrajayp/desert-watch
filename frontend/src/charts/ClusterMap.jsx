@@ -4,8 +4,17 @@
 // drawn because there the link itself is the evidence. A legend table sits beside it.
 import * as d3 from 'd3'
 import { Fragment, useMemo, useRef, useState } from 'react'
+import { fmtNum, isAr, pick, t } from '../i18n'
+
+const N_ = (s) => s // marks English for the catalogue; translated with t() when shown
 import { fmt } from './scales'
 import { useSize, useTooltip } from './util'
+
+// Cluster tags from the API: the main language ("Arabic") and a scope code ("libyan"), shown as they are in English.
+const TAG = { Arabic: N_('Arabic'), English: N_('English'), UND: N_('Language not detected'), libyan: N_('libyan'), international: N_('international'), diaspora: N_('diaspora') }
+export const tagText = (x) => (TAG[x] ? t(TAG[x]) : x)
+// a decimal with the interface language's decimal mark: num(1.4) or num(12.345, 1) like (12.345).toFixed(1)
+const num = (v, d) => fmtNum(v, d == null ? { useGrouping: false } : { minimumFractionDigits: d, maximumFractionDigits: d, useGrouping: false })
 
 // Five validated slots (adjacent-pair check, light + dark); every cluster also carries a
 // text tag, so identity never relies on colour alone. Clusters beyond five fold into "Other".
@@ -80,13 +89,14 @@ export default function ClusterMap({ network, clusters, showReprints = true, sho
 
   const graph = useMemo(() => layoutClusters(network, clusters, rankOf, W, H), [network, clusters, rankOf, W, H])
 
-  if (!graph) return <div ref={wrap} className="viz"><div className="empty">Clusters appear once enough outlets have 10+ articles.</div></div>
+  if (!graph) return <div ref={wrap} className="viz"><div className="empty">{t('Clusters appear once enough outlets have 10+ articles.')}</div></div>
   const focus = hover || (highlight != null ? `c:${highlight}` : null)
   const active = (n) => !focus || (focus.startsWith('c:') ? n.rank === +focus.slice(2) : n.id === focus)
   const name = (c) => (lang === 'ar' && c.name_ar ? c.name_ar : c.name)
+  const clusterOf = (n) => clusters.find((c) => c.rank === n.rank)
   return (
     <div ref={wrap} className="viz" onMouseLeave={() => { tip.hide(); setHover(null) }}>
-      <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Outlets positioned by coverage similarity, coloured and labelled by cluster">
+      <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} role="img" aria-label={t('Outlets positioned by coverage similarity, coloured and labelled by cluster')}>
         <defs>
           <marker id="rp-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
             <path d="M0,0 L10,5 L0,10 z" fill="var(--ink-2)" />
@@ -101,9 +111,9 @@ export default function ClusterMap({ network, clusters, showReprints = true, sho
         })}
         {graph.nodes.map((n) => (
           <g key={n.id} transform={`translate(${n.x},${n.y})`} opacity={active(n) ? 1 : 0.18} style={{ cursor: 'pointer' }}
-            onMouseMove={(e) => { setHover(n.id); tip.show(e, <div><b>{n.name}</b> <span className="muted">{n.domain}</span>
-              <div>{fmt(n.articles)} articles (12 weeks)</div>
-              <div className="small">{clusters.find((c) => c.rank === n.rank)?.name || 'Other clusters'}</div></div>, wrap.current) }}
+            onMouseMove={(e) => { setHover(n.id); tip.show(e, <div><b dir="auto">{n.name}</b> <span className="muted">{n.domain}</span>
+              <div>{t('{n} articles (12 weeks)', { n: fmt(n.articles) })}</div>
+              <div className="small">{(clusterOf(n) && name(clusterOf(n))) || t('Other clusters')}</div></div>, wrap.current) }}
             onClick={() => onSelectOutlet?.(n)}>
             <circle r={graph.r(n.articles) + 4} fill="transparent" />
             <circle r={graph.r(n.articles)} fill={clusterColor(n.rank)} stroke="var(--surface)" strokeWidth={2} />
@@ -134,20 +144,21 @@ export function ClusterLegendTable({ clusters, themes, highlight, setHighlight, 
   const row = (c, label, color, extra) => (
     <tr key={label} onMouseEnter={() => setHighlight?.(c?.rank ?? null)} onMouseLeave={() => setHighlight?.(null)}
       style={highlight != null && c?.rank === highlight ? { background: 'var(--surface-2)' } : undefined}>
-      <td><span className="sw" style={{ display: 'inline-block', width: 12, height: 12, borderRadius: 3, background: color, verticalAlign: -2, marginRight: 6 }} /><b>{label}</b>
+      <td><span className="sw" style={{ display: 'inline-block', width: 12, height: 12, borderRadius: 3, background: color, verticalAlign: -2, marginInlineEnd: 6 }} /><b>{label}</b>
         {extra}</td>
       <td className="num">{c ? c.outlets : d3.sum(other, (x) => x.outlets)}</td>
       <td className="num">{fmt(c ? c.articles : d3.sum(other, (x) => x.articles))}</td>
       <td className="num">{Math.round((c ? c.share : d3.sum(other, (x) => x.share)) * 100)}%</td>
     </tr>)
+  const comma = isAr() ? '، ' : ', '
   return (
     <table className="data">
-      <thead><tr><th>Cluster</th><th className="num">Outlets</th><th className="num">Articles</th><th className="num">Share</th></tr></thead>
+      <thead><tr><th>{t('Cluster')}</th><th className="num">{t('Outlets')}</th><th className="num">{t('Articles')}</th><th className="num">{t('Share')}</th></tr></thead>
       <tbody>
         {named.map((c) => row(c, lang === 'ar' && c.name_ar ? c.name_ar : c.name, clusterColor(c.rank), (
-          <div className="small muted">{c.tags.join(' · ')} · over-covers {c.themes.filter((t) => t.lift >= 1.15).slice(0, 2).map((t) => `${tname.get(t.theme_id)} (×${t.lift})`).join(', ') || '—'}
-            <div>e.g. {c.top_outlets.slice(0, 3).join(', ')}</div></div>)))}
-        {other.length > 0 && row(null, `Other clusters (${other.length})`, 'var(--cat-unknown)', null)}
+          <div className="small muted">{c.tags.map(tagText).join(' · ')} · {t('over-covers {themes}', { themes: c.themes.filter((th) => th.lift >= 1.15).slice(0, 2).map((th) => `${tname.get(th.theme_id)} (×${num(th.lift)})`).join(comma) || '—' })}
+            <div>{t('e.g. {outlets}', { outlets: c.top_outlets.slice(0, 3).join(comma) })}</div></div>)))}
+        {other.length > 0 && row(null, t('Other clusters ({n})', { n: other.length }), 'var(--cat-unknown)', null)}
       </tbody>
     </table>
   )
@@ -167,21 +178,21 @@ export function ClusterDistrictTable({ clusters, districts, regions, lang = 'en'
   return (
     <div className="scroll" style={{ maxHeight: 620 }}>
       <table className="data">
-        <thead><tr><th>District</th>{named.map((c) => (
+        <thead><tr><th>{t('District')}</th>{named.map((c) => (
           <th key={c.id} className="num" style={{ minWidth: 90, maxWidth: 150, whiteSpace: 'normal', verticalAlign: 'bottom', background: highlight === c.rank ? 'var(--surface-2)' : undefined }}>
-            <span className="sw" style={{ display: 'inline-block', width: 10, height: 10, borderRadius: 2, background: clusterColor(c.rank), marginRight: 4 }} />
+            <span className="sw" style={{ display: 'inline-block', width: 10, height: 10, borderRadius: 2, background: clusterColor(c.rank), marginInlineEnd: 4 }} />
             <span style={{ fontSize: 11.5, fontWeight: 600 }}>{lang === 'ar' && c.name_ar ? c.name_ar : c.name}</span></th>))}</tr></thead>
         <tbody>{districts.map((d, i) => {
           const newMacro = i === 0 || districts[i - 1].parent_id !== d.parent_id
           return (
-            <Fragment key={d.id}>{newMacro && <tr><td colSpan={named.length + 1} className="small muted" style={{ fontWeight: 600, paddingTop: 10 }}>{macro.get(d.parent_id)?.name_en}</td></tr>}
+            <Fragment key={d.id}>{newMacro && <tr><td colSpan={named.length + 1} className="small muted" style={{ fontWeight: 600, paddingTop: 10 }}>{pick(macro.get(d.parent_id), 'name')}</td></tr>}
               <tr style={{ cursor: 'pointer' }} onClick={() => onSelectDistrict?.(d.id)}>
-                <td>{lang === 'ar' ? d.name_ar : d.name_en}{!covered(d) && <span className="pill flag" style={{ marginLeft: 6 }}>no cluster covers it</span>}</td>
+                <td>{lang === 'ar' ? d.name_ar : d.name_en}{!covered(d) && <span className="pill flag" style={{ marginInlineStart: 6 }}>{t('no cluster covers it')}</span>}</td>
                 {named.map((c) => {
                   const v = c.district_share[d.id] || 0
                   const bg = shade(v)
                   return <td key={c.id} className="num" style={{ background: bg || undefined, color: v / max > 0.6 ? '#fff' : undefined }}
-                    title={`${c.name}: ${(v * 100).toFixed(1)}% of its articles name ${d.name_en}`}>{v ? `${(v * 100).toFixed(v < 0.01 ? 1 : 0)}%` : <span className="muted">·</span>}</td>
+                    title={t('{cluster}: {pct}% of its articles name {district}', { cluster: lang === 'ar' && c.name_ar ? c.name_ar : c.name, pct: num(v * 100, 1), district: lang === 'ar' ? d.name_ar || d.name_en : d.name_en })}>{v ? `${num(v * 100, v < 0.01 ? 1 : 0)}%` : <span className="muted">·</span>}</td>
                 })}
               </tr></Fragment>)
         })}</tbody>

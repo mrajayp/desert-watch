@@ -4,6 +4,7 @@ import * as d3 from 'd3'
 import { useMemo, useRef, useState } from 'react'
 import { DIMENSIONS, categoryColor, categoryOf, fmt } from './scales'
 import { useSize, useTooltip } from './util'
+import { pick, t } from '../i18n'
 
 export default function ForceGraph({ network, colorBy, show = { similar: true, syndication: true }, onSelectOutlet, svgRef, maxNodes = 60, minReprints = 2 }) {
   const wrap = useRef(null)
@@ -41,12 +42,12 @@ export default function ForceGraph({ network, colorBy, show = { similar: true, s
     return { nodes, links: ls, r, comms }
   }, [network, W, H, show.similar, show.syndication, maxNodes, minReprints])
 
-  if (!graph) return <div ref={wrap} className="viz"><div className="empty">Loading…</div></div>
-  if (!graph.nodes.length) return <div ref={wrap} className="viz"><div className="empty">Not enough shared coverage yet to draw a network.</div></div>
+  if (!graph) return <div ref={wrap} className="viz"><div className="empty">{t('Loading…')}</div></div>
+  if (!graph.nodes.length) return <div ref={wrap} className="viz"><div className="empty">{t('Not enough shared coverage yet to draw a network.')}</div></div>
   const nb = hover ? new Set(graph.links.filter((l) => l.source.id === hover || l.target.id === hover).flatMap((l) => [l.source.id, l.target.id])) : null
   return (
     <div ref={wrap} className="viz" onMouseLeave={() => { tip.hide(); setHover(null) }}>
-      <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Network of outlets linked by similar coverage and reprinted headlines">
+      <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} role="img" aria-label={t('Network of outlets linked by similar coverage and reprinted headlines')}>
         <defs>
           <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
             <path d="M0,0 L10,5 L0,10 z" fill="var(--ink-2)" />
@@ -71,16 +72,16 @@ export default function ForceGraph({ network, colorBy, show = { similar: true, s
           <g key={n.id} transform={`translate(${n.x},${n.y})`} style={{ cursor: 'pointer' }} opacity={nb && !nb.has(n.id) ? 0.25 : 1}
             onMouseMove={(e) => {
               setHover(n.id)
-              tip.show(e, <div><b>{n.name}</b> <span className="muted">{n.domain}</span>
-                <div>{fmt(n.articles)} articles in window</div>
-                <div className="small">{DIMENSIONS[colorBy].label}: {DIMENSIONS[colorBy].values[categoryOf(n, colorBy)]}</div>
-                {n.community != null && <div className="small muted">Coverage cluster {n.community + 1}</div>}</div>, wrap.current)
+              tip.show(e, <div><b dir="auto">{pick(n)}</b> <span className="muted">{n.domain}</span>
+                <div>{t('{count} articles in window', { count: fmt(n.articles) })}</div>
+                <div className="small">{t(DIMENSIONS[colorBy].label)}: {t(DIMENSIONS[colorBy].values[categoryOf(n, colorBy)])}</div>
+                {n.community != null && <div className="small muted">{t('Coverage cluster {n}', { n: n.community + 1 })}</div>}</div>, wrap.current)
             }}
             onClick={() => onSelectOutlet?.(n)}>
             <circle r={graph.r(n.articles) + 5} fill="transparent" />
             <circle r={graph.r(n.articles)} fill={categoryColor(colorBy, categoryOf(n, colorBy))} stroke="var(--surface)" strokeWidth={2} />
             {(graph.r(n.articles) > 9 || hover === n.id) && <text y={graph.r(n.articles) + 12} textAnchor="middle"
-              style={{ fontSize: 10.5, fill: 'var(--ink)', paintOrder: 'stroke', stroke: 'var(--surface)', strokeWidth: 3 }}>{n.name}</text>}
+              style={{ fontSize: 10.5, fill: 'var(--ink)', paintOrder: 'stroke', stroke: 'var(--surface)', strokeWidth: 3 }}>{pick(n)}</text>}
           </g>))}
       </svg>
       {tip.node}

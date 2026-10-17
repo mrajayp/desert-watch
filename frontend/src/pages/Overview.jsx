@@ -10,6 +10,7 @@ import { LanguageBalance } from '../charts/Balance'
 import { INFO_FLAGS, DIMENSIONS, LENS_TEXT, categoryOf, flagText, fmt, gapFill, gapLabel } from '../charts/scales'
 import { ExportMenu } from '../charts/util'
 import SourceHealth from '../components/SourceHealth'
+import { fmtDate, isAr, pick, t } from '../i18n'
 
 let geoCache = null
 async function loadGeo(meta) {
@@ -109,11 +110,17 @@ export default function Overview() {
   const presentCats = useMemo(() => new Set((network?.nodes || []).filter((n) => n.type === 'outlet').map((n) => categoryOf(n, filters.colorBy))), [network, filters.colorBy])
   const heatRegions = [national, ...meta.regions.filter((r) => r.level === 'macro')]
   const feedback = Object.fromEntries(cells.map((c) => [`${c.theme_id}:${c.region_id}`, c.votes]))
-  const themeName = themeId ? meta.themes.find((t) => t.id === themeId)?.name_en : themeGroup ? `All ${themeGroup} themes` : 'All themes'
-  const caption = `Source: Desert Watch monitored coverage (Google News, Google Alerts, GDELT, outlet and YouTube feeds, social posts Google indexes) · ${meta.window_weeks}-week window ending ${filters.week}.\n` +
-    `Lines join outlets to districts their articles name. Monitored coverage only. We see Facebook only through the posts Google indexes, and Telegram not at all.\n${meta.country.boundaries?.attribution || ''}`
+  // theme group codes come from the API (only "gender" today); the catalogue has their Arabic
+  const themeName = themeId ? pick(meta.themes.find((x) => x.id === themeId)) : themeGroup ? t('All {group} themes', { group: t(themeGroup) }) : t('All themes')
+  // English keeps the ISO week as before; Arabic gets a written date
+  const week = isAr() ? fmtDate(filters.week) : filters.week
+  const windowText = t('{n}-week window', { n: meta.window_weeks })
+  const country = pick(meta.country)
+  const caption = t('Source: Desert Watch monitored coverage (Google News, Google Alerts, GDELT, outlet and YouTube feeds, social posts Google indexes) · {window} ending {week}.', { window: windowText, week }) + '\n' +
+    t('Lines join outlets to districts their articles name. Monitored coverage only. We see Facebook only through the posts Google indexes, and Telegram not at all.') + '\n' + pick(meta.country.boundaries, 'attribution')
   const unplacedShare = nationalCells.length ? d3.sum(nationalCells, (c) => c.breakdown?.unplaced || 0) / Math.max(1, d3.sum(nationalCells, (c) => c.coverage)) : null
   const lensInfo = LENS_TEXT[filters.lens]
+  const lens = t(lensInfo.label)
 
   return (
     <>
@@ -123,21 +130,21 @@ export default function Overview() {
         <section className="card">
             <div className="card-head">
               <div>
-                <h2>Who covers where · {themeName}</h2>
+                <h2>{t('Who covers where · {theme}', { theme: themeName })}</h2>
                 <p className="sub">{mode === 'gap'
-                  ? `Districts shaded by under-coverage on the ${lensInfo.label} lens${themeId ? '' : ', worst theme per district'}.`
-                  : `The ${lensInfo.label} lens only has national figures, so districts show how many monitored articles name them. Pale districts with no lines are the deserts.`}
-                  {unplacedShare != null && ` ${Math.round(unplacedShare * 100)}% of articles name no district.`}</p>
+                  ? (themeId ? t('Districts shaded by under-coverage on the {lens} lens.', { lens }) : t('Districts shaded by under-coverage on the {lens} lens, worst theme per district.', { lens }))
+                  : t('The {lens} lens only has national figures, so districts show how many monitored articles name them. Pale districts with no lines are the deserts.', { lens })}
+                  {unplacedShare != null && ` ${t('{pct}% of articles name no district.', { pct: Math.round(unplacedShare * 100) })}`}</p>
               </div>
               <div className="row">
-                <span className="seg" role="group" aria-label="Map view">
-                  <button aria-pressed={mapView === 'region'} onClick={() => pickView('region')}>Sources by country</button>
-                  <button aria-pressed={mapView === 'libya'} onClick={() => pickView('libya')}>Libya detail</button>
+                <span className="seg" role="group" aria-label={t('Map view')}>
+                  <button aria-pressed={mapView === 'region'} onClick={() => pickView('region')}>{t('Sources by country')}</button>
+                  <button aria-pressed={mapView === 'libya'} onClick={() => pickView('libya')}>{t('Libya detail')}</button>
                 </span>
-                <label className="small row">Hide links under
-                  <select value={minEdge} onChange={(e) => setMinEdge(+e.target.value)} aria-label="Minimum articles per link">
-                    {[1, 2, 3, 5, 10].map((n) => <option key={n} value={n}>{n}</option>)}</select> articles</label>
-                <ExportMenu svgRef={mapSvg} title={`Who covers where in ${meta.country.name_en} — ${themeName}`} caption={caption} filename="who-covers-where" />
+                <label className="small row">{t('Hide links under')}
+                  <select value={minEdge} onChange={(e) => setMinEdge(+e.target.value)} aria-label={t('Minimum articles per link')}>
+                    {[1, 2, 3, 5, 10].map((n) => <option key={n} value={n}>{n}</option>)}</select> {t('articles', { n: minEdge })}</label>
+                <ExportMenu svgRef={mapSvg} title={t('Who covers where in {country} — {theme}', { country, theme: themeName })} caption={caption} filename="who-covers-where" />
               </div>
             </div>
             {mapView === 'region' ? (
@@ -154,27 +161,27 @@ export default function Overview() {
           </section>
         <div className="grid halves" style={{ marginTop: 16 }}>
           <section className="card">
-            <h2>{fallback ? 'Least covered this week' : 'Biggest gaps this week'}</h2>
-            <p className="sub">{lensInfo.blurb}. Click to review, vote and comment.</p>
-            {fallback && <p className="small muted">No theme is clearly falling behind its need signal this week; these are the least covered relative to it.</p>}
-            {ranked.length === 0 && <div className="empty">No cells with enough evidence for this lens and week.</div>}
+            <h2>{fallback ? t('Least covered this week') : t('Biggest gaps this week')}</h2>
+            <p className="sub">{t('{blurb}. Click to review, vote and comment.', { blurb: t(lensInfo.blurb) })}</p>
+            {fallback && <p className="small muted">{t('No theme is clearly falling behind its need signal this week; these are the least covered relative to it.')}</p>}
+            {ranked.length === 0 && <div className="empty">{t('No cells with enough evidence for this lens and week.')}</div>}
             {ranked.map((c, i) => {
-              const t = meta.themes.find((x) => x.id === c.theme_id)
+              const th = meta.themes.find((x) => x.id === c.theme_id)
               const r = regionsById.get(c.region_id)
               return (
                 <div key={`${c.theme_id}:${c.region_id}`} className="gapcard" role="button" tabIndex={0}
                   onClick={() => openGap(c.theme_id, c.region_id, { position: i, explore: !!c.explore, list: 'top_gaps' })}
                   onKeyDown={(e) => e.key === 'Enter' && openGap(c.theme_id, c.region_id, { position: i })}>
                   <div>
-                    <div className="t">{lang === 'ar' ? t?.name_ar : t?.name_en} · <span style={{ fontWeight: 400 }}>{lang === 'ar' ? r?.name_ar : r?.name_en}</span></div>
-                    <div className="small muted">{fmt(c.coverage)} articles vs {fmt(c.need)} {lensInfo.unit} · {gapLabel(c.gap)}</div>
+                    <div className="t">{pick(th)} · <span style={{ fontWeight: 400 }}>{pick(r)}</span></div>
+                    <div className="small muted">{t('{coverage} articles vs {need} {unit} · {gap}', { coverage: fmt(c.coverage), need: fmt(c.need), unit: t(lensInfo.unit), gap: gapLabel(c.gap) })}</div>
                     <div className="row" style={{ marginTop: 4 }}>
-                      {c.explore && <span className="pill" title="Shown to check the ranking isn't only reinforcing itself">exploring</span>}
+                      {c.explore && <span className="pill" title={t("Shown to check the ranking isn't only reinforcing itself")}>{t('exploring')}</span>}
                       {(c.flags || []).map((f) => <span key={f} className={INFO_FLAGS.has(f) ? "pill" : "pill flag"}>{flagText(f)}</span>)}
-                      {c.votes?.real > 0 && <span className="pill">✓ {c.votes.real} real</span>}
-                      {c.votes?.covered > 0 && <span className="pill">{c.votes.covered} covered</span>}
+                      {c.votes?.real > 0 && <span className="pill">{t('✓ {n} real', { n: c.votes.real })}</span>}
+                      {c.votes?.covered > 0 && <span className="pill">{t('{n} covered', { n: c.votes.covered })}</span>}
                       {c.comments > 0 && <span className="pill">💬 {c.comments}</span>}
-                      {c.claims?.working > 0 && <span className="pill ok">someone is on it</span>}
+                      {c.claims?.working > 0 && <span className="pill ok">{t('someone is on it')}</span>}
                     </div>
                   </div>
                   <span className="dot" style={{ width: 14, height: 14, borderRadius: 4, background: gapFill(c) || 'var(--surface-2)' }} aria-hidden="true" />
@@ -183,24 +190,26 @@ export default function Overview() {
           </section>
           <section className="card">
             <div className="card-head">
-              <div><h2>Arabic vs English coverage</h2><p className="sub">Monitored articles nationally, {meta.window_weeks} weeks ending {filters.week}.</p></div>
-              <ExportMenu svgRef={langSvg} title={`Arabic vs English coverage of ${meta.country.name_en}`} caption={caption} filename="language-balance" />
+              <div><h2>{t('Arabic vs English coverage')}</h2><p className="sub">{t('Monitored articles nationally, {n} weeks ending {week}.', { n: meta.window_weeks, week })}</p></div>
+              <ExportMenu svgRef={langSvg} title={t('Arabic vs English coverage of {country}', { country })} caption={caption} filename="language-balance" />
             </div>
             <LanguageBalance themes={meta.themes.filter((t) => inScope(t.id))} cells={nationalCells} lang={lang} svgRef={langSvg} />
           </section>
         </div>
         <section className="card" style={{ marginTop: 16 }}>
           <div className="card-head">
-            <div><h2>Gap by theme and region</h2>
-              <p className="sub">{lensInfo.label} lens · {meta.window_weeks}-week window ending {filters.week}. Hatched cells are not judged, because the week is still coming in or there is too little data{nationalOnly ? ` (this lens is national only, so regional columns show coverage counts until regional need data arrives)` : ''}.</p></div>
-            <ExportMenu svgRef={heatSvg} title={`Coverage gaps by theme and region — ${meta.country.name_en}`} caption={caption} filename="gap-heatmap" />
+            <div><h2>{t('Gap by theme and region')}</h2>
+              <p className="sub">{t('{lens} lens · {window} ending {week}.', { lens, window: windowText, week })} {nationalOnly
+                ? t('Hatched cells are not judged, because the week is still coming in or there is too little data (this lens is national only, so regional columns show coverage counts until regional need data arrives).')
+                : t('Hatched cells are not judged, because the week is still coming in or there is too little data.')}</p></div>
+            <ExportMenu svgRef={heatSvg} title={t('Coverage gaps by theme and region — {country}', { country })} caption={caption} filename="gap-heatmap" />
           </div>
           <Heatmap themes={meta.themes.filter((t) => inScope(t.id))} regions={heatRegions} cells={[...cells, ...regionalContext]} svgRef={heatSvg} unit={lensInfo.unit} lang={lang}
             feedback={feedback} onSelect={(t, r) => openGap(t, r, { from: 'heatmap' })} />
         </section>
         <section className="card" style={{ marginTop: 16 }}>
-          <h2>Outlets in this view</h2>
-          <p className="sub">Click an outlet to see and suggest its categories. Categories need evidence; contested labels show their confidence.</p>
+          <h2>{t('Outlets in this view')}</h2>
+          <p className="sub">{t('Click an outlet to see and suggest its categories. Categories need evidence; contested labels show their confidence.')}</p>
           <OutletStrip network={network} colorBy={filters.colorBy} onOpen={(id) => openOutlet(id)} />
         </section>
       </main>
@@ -215,9 +224,9 @@ function OutletStrip({ network, colorBy, onOpen }) {
   return (
     <div className="chips">
       {outlets.map((o) => (
-        <button key={o.id} className="chip" onClick={() => onOpen(+o.id.slice(2))} title={dim.values[categoryOf(o, colorBy)]}>
-          <span className="dot" style={{ background: `var(--${dim.colors[categoryOf(o, colorBy)] || 'cat-unknown'})`, marginRight: 5 }} />
-          {o.name} <span className="muted num">{fmt(o.articles)}</span>
+        <button key={o.id} className="chip" onClick={() => onOpen(+o.id.slice(2))} title={t(dim.values[categoryOf(o, colorBy)])}>
+          <span className="dot" style={{ background: `var(--${dim.colors[categoryOf(o, colorBy)] || 'cat-unknown'})`, marginInlineEnd: 5 }} />
+          <span dir="auto">{pick(o)}</span> <span className="muted num">{fmt(o.articles)}</span>
         </button>))}
     </div>
   )

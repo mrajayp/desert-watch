@@ -6,8 +6,12 @@ import * as d3 from 'd3'
 import { useMemo, useRef, useState } from 'react'
 import { INFO_FLAGS, DIMENSIONS, categoryColor, categoryOf, covFill, flagText, fmt, gapFill, gapLabel } from './scales'
 import { HatchDefs, useSize, useTooltip } from './util'
+import { countryName } from './RegionalNetwork'
+import { isAr, pick, t, tn } from '../i18n'
 
 const MARGIN_COL = 0.24
+// confidence codes from the API
+const confText = (c) => ({ reported: t('reported'), likely: t('likely'), disputed: t('disputed'), unverified: t('unverified') })[c] || c
 
 export default function GeoNetwork({ geo, macroGeo, meta, network, cellsByRegion, colorBy, mode, lang = 'en',
   selectedRegion, onSelectRegion, onSelectOutlet, svgRef, minEdge = 1 }) {
@@ -82,14 +86,14 @@ export default function GeoNetwork({ geo, macroGeo, meta, network, cellsByRegion
       macro: macroGeo ? macroGeo.features : [] }
   }, [geo, macroGeo, meta, network, W, H, narrow, colorBy, minEdge])
 
-  if (!layout) return <div ref={wrap} className="viz"><div className="empty">Loading map…</div></div>
+  if (!layout) return <div ref={wrap} className="viz"><div className="empty">{t('Loading map…')}</div></div>
   const { mapW, mapH, path, districts, inside, out, un, edges, rScale, wScale, incoming } = layout
   const maxCov = d3.max(districts, (d) => cellsByRegion.get(d.id)?.coverage || 0) || 1
   const related = hover ? new Set(edges.filter((e) => e.source === hover || `r:${e.t.id}` === hover)
     .flatMap((e) => [e.source, `r:${e.t.id}`])) : null
   const fillFor = (d) => {
     const cell = cellsByRegion.get(d.id)
-    if (mode === 'gap') return gapFill(cell) || 'url(#hatch)'
+    if (mode === 'gap') return gapFill(cell) || 'url(#hatch)' // i18n-ok: SVG pattern reference, not shown
     return covFill(cell?.coverage || 0, maxCov)
   }
   const districtTip = (evt, d) => {
@@ -97,22 +101,24 @@ export default function GeoNetwork({ geo, macroGeo, meta, network, cellsByRegion
     const inc = incoming.get(d.id)
     tip.show(evt, (
       <div>
-        <b>{d.name_en}</b> <span className="ar" dir="rtl">{d.name_ar}</span>
-        <div className="muted small">{layout.regionById.get(d.parent_id)?.name_en}</div>
-        <div style={{ marginTop: 4 }}>{fmt(cell?.coverage || 0)} articles name this district (4 weeks)</div>
-        {mode === 'gap' && <div>{cell ? gapLabel(cell.insufficient ? null : cell.gap) : 'no need data'}</div>}
-        <div>{inc ? `${inc.n} outlet${inc.n > 1 ? 's' : ''} shown covering it` : (cell?.coverage ? 'Links below the minimum are hidden' : 'No monitored outlet covers this district')}</div>
+        {isAr()
+          ? <><b>{pick(d)}</b> <span className="muted" dir="ltr">{d.name_en}</span></>
+          : <><b>{d.name_en}</b> <span className="ar" dir="rtl">{d.name_ar}</span></>}
+        <div className="muted small">{pick(layout.regionById.get(d.parent_id))}</div>
+        <div style={{ marginTop: 4 }}>{t('{count} articles name this district (4 weeks)', { count: fmt(cell?.coverage || 0) })}</div>
+        {mode === 'gap' && <div>{cell ? gapLabel(cell.insufficient ? null : cell.gap) : t('no need data')}</div>}
+        <div>{inc ? tn(inc.n, '{n} outlet shown covering it', '{n} outlets shown covering it') : (cell?.coverage ? t('Links below the minimum are hidden') : t('No monitored outlet covers this district'))}</div>
         {(cell?.flags || []).map((f) => <div key={f} className={INFO_FLAGS.has(f) ? "pill" : "pill flag"} style={{ marginTop: 3 }}>{flagText(f)}</div>)}
       </div>), wrap.current)
   }
   const outletTip = (evt, o) => tip.show(evt, (
     <div>
-      <b>{o.name}</b> <span className="muted">{o.domain}</span>
-      <div className="small">{o.base_city || o.base_country || 'Base not set'}</div>
+      <b dir="auto">{pick(o)}</b> <span className="muted">{o.domain}</span>
+      <div className="small">{pick(o, 'base_city') || countryName(pick(o, 'base_country')) || t('Base not set')}</div>
       {Object.entries(o.categories || {}).map(([k, v]) => (
-        <div key={k} className="small">{DIMENSIONS[k]?.label || k}: {DIMENSIONS[k]?.values?.[v] || v}
-          {o.confidence?.[k] && <span className="muted"> ({o.confidence[k]})</span>}</div>))}
-      <div style={{ marginTop: 4 }}>{fmt(o.articles)} articles on this selection</div>
+        <div key={k} className="small">{t(DIMENSIONS[k]?.label || k)}: {t(DIMENSIONS[k]?.values?.[v] || v)}
+          {o.confidence?.[k] && <span className="muted"> ({confText(o.confidence[k])})</span>}</div>))}
+      <div style={{ marginTop: 4 }}>{t('{count} articles on this selection', { count: fmt(o.articles) })}</div>
     </div>), wrap.current)
 
   const curve = (e) => {
@@ -128,7 +134,7 @@ export default function GeoNetwork({ geo, macroGeo, meta, network, cellsByRegion
   return (
     <div ref={wrap} className="viz" onMouseLeave={() => { tip.hide(); setHover(null) }}>
       <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} role="img"
-        aria-label="Map of Libya's districts with lines from news outlets to the districts their articles name">
+        aria-label={t("Map of Libya's districts with lines from news outlets to the districts their articles name")}>
         <HatchDefs />
         <g>
           {districts.map((d) => d.feature && (
@@ -159,12 +165,12 @@ export default function GeoNetwork({ geo, macroGeo, meta, network, cellsByRegion
               <g key={d.id} transform={`translate(${d.x},${d.y})`} pointerEvents="none">
                 {!inc && <circle r={3} fill="none" stroke="var(--gap-5)" strokeWidth={1.5} />}
                 {!narrow && <text y={inc ? -6 : -7} textAnchor="middle" style={{ fontSize: 10, fill: 'var(--ink-2)', paintOrder: 'stroke', stroke: 'var(--surface)', strokeWidth: 3 }}>
-                  {lang === 'ar' ? d.name_ar : d.name_en}</text>}
+                  {pick(d)}</text>}
               </g>)
           })}
         </g>
-        {!narrow && out.length > 0 && <text x={layout.colX} y={14} style={{ fontSize: 11, fontWeight: 600 }}>Based outside Libya</text>}
-        {un.length > 0 && <text x={12} y={layout.stripY - 18} style={{ fontSize: 11, fontWeight: 600 }}>Base not set yet — hover to see their links; open an outlet to set it</text>}
+        {!narrow && out.length > 0 && <text x={layout.colX} y={14} style={{ fontSize: 11, fontWeight: 600 }}>{t('Based outside Libya')}</text>}
+        {un.length > 0 && <text x={12} y={layout.stripY - 18} style={{ fontSize: 11, fontWeight: 600 }}>{t('Base not set yet — hover to see their links; open an outlet to set it')}</text>}
         <g>
           {[...inside, ...out, ...un].map((o) => {
             const dim = related && !related.has(o.id)
@@ -180,7 +186,7 @@ export default function GeoNetwork({ geo, macroGeo, meta, network, cellsByRegion
                   <text x={right ? rScale(o.articles) + 5 : 0} y={right ? 4 : rScale(o.articles) + 12}
                     textAnchor={right ? 'start' : 'middle'}
                     style={{ fontSize: 10.5, fill: 'var(--ink)', paintOrder: 'stroke', stroke: 'var(--surface)', strokeWidth: 3 }}>
-                    {o.name.length > 26 ? o.name.slice(0, 25) + '…' : o.name}</text>)}
+                    {pick(o).length > 26 ? pick(o).slice(0, 25) + '…' : pick(o)}</text>)}
               </g>)
           })}
         </g>
@@ -194,17 +200,17 @@ export function GeoLegend({ mode, colorBy, present }) {
   const dim = DIMENSIONS[colorBy]
   const values = Object.keys(dim.values).filter((v) => present?.has(v))
   return (
-    <div className="legend" aria-label="Legend">
+    <div className="legend" aria-label={t('Legend')}>
       {mode === 'gap' ? (
-        <span>District: under-coverage <span className="ramp">{[1, 2, 3, 4, 5, 6].map((i) => <span key={i} style={{ background: `var(--gap-${i})` }} />)}</span>
-          <span className="muted"> more →</span></span>
+        <span>{t('District: under-coverage')} <span className="ramp">{[1, 2, 3, 4, 5, 6].map((i) => <span key={i} style={{ background: `var(--gap-${i})` }} />)}</span>
+          <span className="muted"> {t('more →')}</span></span>
       ) : (
-        <span>District: articles naming it <span className="ramp">{[1, 2, 3, 4, 5].map((i) => <span key={i} style={{ background: `var(--cov-${i})` }} />)}</span></span>
+        <span>{t('District: articles naming it')} <span className="ramp">{[1, 2, 3, 4, 5].map((i) => <span key={i} style={{ background: `var(--cov-${i})` }} />)}</span></span>
       )}
-      {mode === 'gap' && <span><svg width="14" height="12" style={{ verticalAlign: -2, marginRight: 5 }}><HatchDefs id="lh" /><rect width="14" height="12" fill="url(#lh)" rx="2" /></svg>insufficient evidence</span>}
-      <span><svg width="10" height="10" style={{ verticalAlign: -1, marginRight: 5 }}><circle cx="5" cy="5" r="3.5" fill="none" stroke="var(--gap-5)" strokeWidth="1.5" /></svg>no outlet covers it</span>
-      <span className="muted">· Outlets by {dim.label.toLowerCase()}:</span>
-      {values.map((v) => <span key={v}><span className="sw" style={{ background: categoryColor(colorBy, v), borderRadius: '50%' }} />{dim.values[v]}</span>)}
+      {mode === 'gap' && <span><svg width="14" height="12" style={{ verticalAlign: -2, marginInlineEnd: 5 }}><HatchDefs id="lh" /><rect width="14" height="12" fill="url(#lh)" rx="2" /></svg>{t('insufficient evidence')}</span>}
+      <span><svg width="10" height="10" style={{ verticalAlign: -1, marginInlineEnd: 5 }}><circle cx="5" cy="5" r="3.5" fill="none" stroke="var(--gap-5)" strokeWidth="1.5" /></svg>{t('no outlet covers it')}</span>
+      <span className="muted">{t('· Outlets by {dimension}:', { dimension: t(dim.label).toLowerCase() })}</span>
+      {values.map((v) => <span key={v}><span className="sw" style={{ background: categoryColor(colorBy, v), borderRadius: '50%' }} />{t(dim.values[v])}</span>)}
     </div>
   )
 }

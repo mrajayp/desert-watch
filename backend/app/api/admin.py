@@ -11,6 +11,7 @@ from ..classify import ThemeRule, classify_item, clean_snippet
 from ..db import SessionLocal, get_db
 from ..models import (Event, GapVote, Invite, Item, Label, Suggestion, Theme, User, utcnow)
 from ..textnorm import normalise
+from ..i18n import tr
 
 router = APIRouter(prefix="/api")
 
@@ -100,7 +101,7 @@ def _retag_theme(theme_id: int, recompute: bool = True, classify: bool | None = 
 def create_theme(body: ThemeIn, bg: BackgroundTasks, s: Session = Depends(get_db), u: User = Depends(auth.require_admin)):
     slug = normalise(body.name_en).strip().replace(" ", "_")[:60]
     if s.scalar(select(Theme).where(Theme.slug == slug)):
-        raise HTTPException(400, "A theme with that name exists")
+        raise HTTPException(400, tr("A theme with that name exists"))
     t = Theme(slug=slug, **body.model_dump(exclude_none=True))
     s.add(t)
     s.commit()
@@ -113,7 +114,7 @@ def update_theme(tid: int, body: ThemeIn, bg: BackgroundTasks, s: Session = Depe
                  u: User = Depends(auth.require_admin)):
     t = s.get(Theme, tid)
     if not t:
-        raise HTTPException(404, "Unknown theme")
+        raise HTTPException(404, tr("Unknown theme"))
     # fields the form does not send (cooc, strict, group, veto, mask) keep their stored values
     for k, v in body.model_dump(exclude_unset=True).items():
         if v is not None or k not in ("veto", "mask"):
@@ -134,7 +135,7 @@ class InviteIn(BaseModel):
 @router.post("/admin/invites")
 def invite(body: InviteIn, s: Session = Depends(get_db), u: User = Depends(auth.require_admin)):
     if body.role not in ("journalist", "admin"):
-        raise HTTPException(400, "Unknown role")
+        raise HTTPException(400, tr("Unknown role"))
     token = auth.create_invite(s, body.email, body.role, u.id)
     s.commit()
     return {"invite_path": f"/invite/{token}", "expires_days": 7}
@@ -166,18 +167,18 @@ def patch_user(uid: int, body: UserPatch, s: Session = Depends(get_db), me: User
     from sqlalchemy import delete
     u = s.get(User, uid)
     if not u:
-        raise HTTPException(404, "Unknown user")
+        raise HTTPException(404, tr("Unknown user"))
     if body.role is not None:
         if body.role not in auth.ROLES:
-            raise HTTPException(400, "Role must be admin, journalist or viewer")
+            raise HTTPException(400, tr("Role must be admin, journalist or viewer"))
         if u.id == me.id and body.role != "admin":
-            raise HTTPException(400, "You cannot remove your own admin role")
+            raise HTTPException(400, tr("You cannot remove your own admin role"))
         u.role = body.role
     if body.status is not None:
         if body.status not in ("active", "rejected", "disabled"):
-            raise HTTPException(400, "Status must be active, rejected or disabled")
+            raise HTTPException(400, tr("Status must be active, rejected or disabled"))
         if u.id == me.id and body.status != "active":
-            raise HTTPException(400, "You cannot disable your own account")
+            raise HTTPException(400, tr("You cannot disable your own account"))
         if body.status == "active" and (u.status or "active") == "pending":
             u.approved_by = me.id
         u.status = body.status
@@ -206,7 +207,7 @@ class ReviewIn(BaseModel):
 def review_suggestion(sid: int, body: ReviewIn, s: Session = Depends(get_db), u: User = Depends(auth.require_admin)):
     g = s.get(Suggestion, sid)
     if not g:
-        raise HTTPException(404, "Unknown suggestion")
+        raise HTTPException(404, tr("Unknown suggestion"))
     g.status, g.reviewed_by = ("accepted" if body.accept else "rejected"), u.id
     if body.accept and g.kind == "keyword":
         t = s.get(Theme, int(g.payload.get("theme_id", 0)))
@@ -224,7 +225,7 @@ def review_suggestion(sid: int, body: ReviewIn, s: Session = Depends(get_db), u:
 def run_job(job: str, bg: BackgroundTasks, _: User = Depends(auth.require_admin)):
     from ..jobs import JOBS
     if job not in JOBS:
-        raise HTTPException(404, "Unknown job")
+        raise HTTPException(404, tr("Unknown job"))
     bg.add_task(JOBS[job])
     return {"queued": job}
 
@@ -268,7 +269,7 @@ def learning(s: Session = Depends(get_db), _: User = Depends(auth.require_admin)
             "vote_agreement": {"gaps_with_multiple_votes": len(multi), "unanimous": agree},
             "labels_per_week": [{"week": w, "n": n} for w, n in weekly],
             "thresholds": THRESHOLDS, "rule_confirmation": confirm,
-            "models": models, "note": None if any(m["active"] for m in models) else "No theme model is live yet."}
+            "models": models, "note": None if any(m["active"] for m in models) else tr("No theme model is live yet.")}
 
 
 # ---------------------------------------------------------------- Google Alerts
@@ -281,7 +282,7 @@ def list_alerts(s: Session = Depends(get_db), _: User = Depends(auth.require_adm
     from ..alerts import SETTINGS
     from ..models import AlertFeed
     rows = s.scalars(select(AlertFeed).order_by(AlertFeed.key)).all()
-    return {"settings": SETTINGS, "alerts": [
+    return {"settings": {tr(k): tr(v) for k, v in SETTINGS.items()}, "alerts": [
         {"key": a.key, "label": a.label, "lang": a.lang, "query": a.query, "feed_url": a.feed_url, "active": a.active,
          "last_ok_at": a.last_ok_at.isoformat() if a.last_ok_at else None, "last_items": a.last_items,
          "last_error": a.last_error} for a in rows]}
@@ -316,10 +317,10 @@ def answer_feedback(fid: int, body: FeedbackReply, s: Session = Depends(get_db),
     from ..models import Feedback
     f = s.get(Feedback, fid)
     if not f:
-        raise HTTPException(404, "Unknown feedback")
+        raise HTTPException(404, tr("Unknown feedback"))
     if body.status:
         if body.status not in ("new", "answered", "planned", "done", "closed"):
-            raise HTTPException(400, "Unknown status")
+            raise HTTPException(400, tr("Unknown status"))
         f.status = body.status
     if body.reply is not None:
         f.reply, f.replied_by = body.reply.strip() or None, me.id
@@ -334,4 +335,5 @@ def answer_feedback(fid: int, body: FeedbackReply, s: Session = Depends(get_db),
 def methods(_: User = Depends(auth.require_admin)):
     """'How the numbers work': plain-language description of every calculation, for admins."""
     from pathlib import Path
-    return {"markdown": (Path(__file__).resolve().parent.parent / "content" / "how_the_numbers_work.md").read_text(encoding="utf-8")}
+    from ..i18n import content_path
+    return {"markdown": content_path(Path(__file__).resolve().parent.parent / "content", "how_the_numbers_work").read_text(encoding="utf-8")}

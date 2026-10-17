@@ -1,12 +1,12 @@
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import func, select
 
-from . import settings
+from . import i18n, settings
 from .api import account, admin, contribute, gaps, items, labelling, outlets, signals, social
 from .db import SessionLocal, init_db
 from .models import SourceRun
@@ -34,6 +34,18 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Desert Watch", lifespan=lifespan, docs_url=None, redoc_url=None)
+
+
+@app.middleware("http")
+async def interface_language(request: Request, call_next):
+    """X-Lang from the browser decides the language of API text (?lang= is taken: it filters articles)."""
+    token = i18n.set_lang(request.headers.get("x-lang"))
+    try:
+        return await call_next(request)
+    finally:
+        i18n.LANG.reset(token)
+
+
 for r in (account.router, gaps.router, items.router, social.router, outlets.router, admin.router, contribute.router,
           labelling.router, signals.router):
     app.include_router(r)

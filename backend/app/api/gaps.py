@@ -1,3 +1,4 @@
+import re
 from collections import Counter, defaultdict
 from datetime import date, datetime, timedelta
 
@@ -15,6 +16,7 @@ from ..scoring import LENSES, TREND_WEEKS, latest_complete_week, need_floor, tre
 from .social import counted
 from .common import (country_or_404, descendants, hydrate_items, items_query, region_or_404, theme_or_404,
                      window_bounds)
+from ..i18n import lang, tr
 
 router = APIRouter(prefix="/api")
 
@@ -117,10 +119,15 @@ def sources_health(s: Session = Depends(get_db), _: User = Depends(auth.current_
         last_ok = s.scalar(select(SourceRun).where(SourceRun.source_key == key, SourceRun.status.in_(("ok", "partial")))
                            .order_by(SourceRun.id.desc()).limit(1))
         stale = last_ok is None or (utcnow() - (last_ok.finished_at or last_ok.started_at)).total_seconds() > STALE_HOURS.get(key, 48) * 3600
-        out.append({"key": key, "label": label, "status": last.status if last else "never_run",
+        error = (last.error or "")[:300] if last else None
+        if last and last.status == "awaiting_key" and lang() == "ar":   # the stored hint is English; keep its key names
+            keys = ", ".join(k for k in re.findall(r"\b[A-Z][A-Z0-9_]{3,}\b", error) if "_" in k)
+            error = (tr("Starts when an admin sets its access key ({keys}).", keys=keys) if keys
+                     else tr("Starts when an admin sets its access key."))
+        out.append({"key": key, "label": tr(label), "status": last.status if last else "never_run",
                     "last_run": last.started_at.isoformat() if last else None,
                     "last_ok": (last_ok.finished_at or last_ok.started_at).isoformat() if last_ok else None,
-                    "rows": last.rows if last else 0, "error": (last.error or "")[:300] if last else None,
+                    "rows": last.rows if last else 0, "error": error,
                     "stale": stale})
     return out
 
@@ -150,7 +157,7 @@ def cells(country: str = "LY", lens: str = "audience", week: date | None = None,
           s: Session = Depends(get_db), _: User = Depends(auth.current_user)):
     c = country_or_404(s, country)
     if lens not in LENSES:
-        raise HTTPException(400, "Unknown lens")
+        raise HTTPException(400, tr("Unknown lens"))
     week = week or latest_complete_week(s, c.id) or s.scalar(
         select(func.max(CellWeek.week_start)).where(CellWeek.country_id == c.id))
     if not week:
@@ -188,7 +195,7 @@ def all_series(country: str = "LY", lens: str = "audience", region_id: int | Non
     articles_4w. They match again after the recompute (the pairs are cached until then too)."""
     c = country_or_404(s, country)
     if lens not in LENSES:
-        raise HTTPException(400, "Unknown lens")
+        raise HTTPException(400, tr("Unknown lens"))
     region = region_or_404(s, region_id) if region_id else s.scalar(
         select(Region).where(Region.country_id == c.id, Region.level == "national"))
     themes = s.scalars(select(Theme).where(Theme.active.is_(True)).order_by(Theme.id)).all()
@@ -330,12 +337,12 @@ class VoteIn(BaseModel):
 @router.post("/gap/vote")
 def vote(body: VoteIn, s: Session = Depends(get_db), u: User = Depends(auth.require_contributor)):
     if body.vote not in VOTES:
-        raise HTTPException(400, "vote must be real, covered or not_newsworthy")
+        raise HTTPException(400, tr("vote must be real, covered or not_newsworthy"))
     theme, region = theme_or_404(s, body.theme_id), region_or_404(s, body.region_id)
     covered_item_id = None
     if body.vote == "covered":
         if not body.covered_url:
-            raise HTTPException(400, "Paste the link to the coverage.")
+            raise HTTPException(400, tr("Paste the link to the coverage."))
         from .items import add_article_core
         item = add_article_core(s, u, region.country_id, body.covered_url, theme_ids=[theme.id],
                                 region_ids=[region.id] if region.level != "national" else [])
@@ -361,7 +368,7 @@ class ClaimIn(BaseModel):
 @router.post("/gap/claim")
 def claim(body: ClaimIn, s: Session = Depends(get_db), u: User = Depends(auth.require_contributor)):
     if body.status not in ("working", "published", "dropped"):
-        raise HTTPException(400, "Unknown status")
+        raise HTTPException(400, tr("Unknown status"))
     region = region_or_404(s, body.region_id)
     theme_or_404(s, body.theme_id)
     c = s.scalar(select(GapClaim).where(GapClaim.user_id == u.id, GapClaim.theme_id == body.theme_id,
@@ -386,7 +393,7 @@ class SuggestIn(BaseModel):
 @router.post("/suggestions")
 def suggest(body: SuggestIn, s: Session = Depends(get_db), u: User = Depends(auth.require_contributor)):
     if body.kind not in ("gap", "keyword", "source", "alias", "outlet_category"):
-        raise HTTPException(400, "Unknown suggestion kind")
+        raise HTTPException(400, tr("Unknown suggestion kind"))
     sug = Suggestion(user_id=u.id, kind=body.kind, payload=body.payload)
     s.add(sug)
     if body.kind == "gap":
@@ -458,10 +465,12 @@ def get_digest(did: int, s: Session = Depends(get_db), _: User = Depends(auth.cu
     from ..models import Digest
     d = s.get(Digest, did)
     if not d:
-        raise HTTPException(404, "Unknown digest")
+        raise HTTPException(404, tr("Unknown digest"))
+    # the brief in the interface language; briefs written before Arabic was added stay English
+    arabic = lang() == "ar" and bool(d.content_md_ar)
     return {"id": d.id, "week_start": d.week_start.isoformat(), "status": d.status, "model": d.model,
-            "created_at": d.created_at.isoformat(), "content_md": d.content_md, "facts": d.facts,
-            "usage": d.usage, "error": d.error}
+            "created_at": d.created_at.isoformat(), "content_md": d.content_md_ar if arabic else d.content_md,
+            "lang": "ar" if arabic else "en", "facts": d.facts, "usage": d.usage, "error": d.error}
 
 
 # ---------------------------------------------------------------- timeline
@@ -494,7 +503,7 @@ def timeline(country: str = "LY", s: Session = Depends(get_db), u: User = Depend
         themes[tid][idx[m]] += n
     for m, kind, n in streams:
         official[kind][idx[m]] += n
-    events = [{"id": e.id, "day": e.day.isoformat(), "label": e.label, "theme_id": e.theme_id, "source_url": e.source_url,
+    events = [{"id": e.id, "day": e.day.isoformat(), "label": e.label, "label_ar": e.label_ar, "theme_id": e.theme_id, "source_url": e.source_url,
                "origin": e.origin, "mine": e.added_by is not None and e.added_by == u.id}
               for e in s.scalars(select(KeyEvent).where(KeyEvent.country_id == c.id).order_by(KeyEvent.day))]
     return {"months": months, "themes": themes, "statements": official["statement"], "reports": official["report"],
@@ -526,7 +535,7 @@ def add_key_event(body: KeyEventIn, country: str = "LY", s: Session = Depends(ge
     from ..models import KeyEvent
     c = country_or_404(s, country)
     if not body.source_url.startswith(("http://", "https://")):
-        raise HTTPException(400, "Add a source link for the event.")
+        raise HTTPException(400, tr("Add a source link for the event."))
     if body.theme_id:
         theme_or_404(s, body.theme_id)
     e = KeyEvent(country_id=c.id, day=body.day, label=body.label.strip(), theme_id=body.theme_id,
@@ -541,9 +550,9 @@ def delete_key_event(eid: int, s: Session = Depends(get_db), u: User = Depends(a
     from ..models import KeyEvent
     e = s.get(KeyEvent, eid)
     if not e:
-        raise HTTPException(404, "Unknown event")
+        raise HTTPException(404, tr("Unknown event"))
     if u.role != "admin" and e.added_by != u.id:
-        raise HTTPException(403, "Only the person who added it, or an admin, can remove it")
+        raise HTTPException(403, tr("Only the person who added it, or an admin, can remove it"))
     s.delete(e)
     s.commit()
     return {"ok": True}

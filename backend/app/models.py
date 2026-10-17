@@ -384,6 +384,7 @@ class KeyEvent(Base):
     country_id: Mapped[int] = mapped_column(ForeignKey("country.id"))
     day: Mapped[date] = mapped_column(Date, index=True)
     label: Mapped[str] = mapped_column(String(200))
+    label_ar: Mapped[str | None] = mapped_column(String(300))   # config events carry an Arabic label
     theme_id: Mapped[int | None] = mapped_column(ForeignKey("theme.id"))
     source_url: Mapped[str] = mapped_column(String(500))
     origin: Mapped[str] = mapped_column(String(8), default="config")  # config | user
@@ -403,6 +404,7 @@ class Digest(Base):
     model: Mapped[str] = mapped_column(String(60))
     status: Mapped[str] = mapped_column(String(12))  # ok | refused | error
     content_md: Mapped[str | None] = mapped_column(Text)
+    content_md_ar: Mapped[str | None] = mapped_column(Text)   # the same brief in Arabic (from 2026-10-17)
     facts: Mapped[dict] = mapped_column(JSON, default=dict)
     usage: Mapped[dict] = mapped_column(JSON, default=dict)
     error: Mapped[str | None] = mapped_column(Text)

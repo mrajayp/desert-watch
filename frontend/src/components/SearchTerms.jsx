@@ -1,17 +1,20 @@
 // Search lens only: the words behind the number. The word list sets its size, so it is shown with every gap.
+import { isAr, t } from '../i18n.js'
+
 // "the week of A" or "the weeks of A, B and C"
 function weeksOf(weeks) {
   const w = [...weeks].sort()
-  return w.length === 1 ? `the week of ${w[0]}` : `the weeks of ${w.slice(0, -1).join(', ')} and ${w[w.length - 1]}`
+  return w.length === 1 ? t('the week of {week}', { week: w[0] })
+    : t('the weeks of {weeks} and {last}', { weeks: w.slice(0, -1).join(isAr() ? '، ' : ', '), last: w[w.length - 1] })
 }
 
 export default function SearchTerms({ search, missing }) {
   if (!search) return null
   return (
     <>
-      <h3>Search words</h3>
+      <h3>{t('Search words')}</h3>
       {!search.measured ? (
-        <p className="small muted">{search.unmeasured_reason || 'Too few people in Libya search for this theme for Google to report it, so there is nothing to compare its coverage with.'}</p>
+        <p className="small muted">{search.unmeasured_reason || t('Too few people in Libya search for this theme for Google to report it, so there is nothing to compare its coverage with.')}</p>
       ) : (
         <>
           <ul className="list small">
@@ -19,16 +22,14 @@ export default function SearchTerms({ search, missing }) {
               <li key={t.ar}><span className="ar" dir="rtl" lang="ar">{t.ar}</span>{t.en && <span className="muted"> · {t.en}</span>}</li>))}
           </ul>
           <p className="small muted">
-            We count Google searches from people in Libya that contain any of these words. The word list sets the size
-            of the number. Other words would give another number, so we only compare a theme with its own past.
-            Each week is measured against searches for an everyday word, <span className="ar" dir="rtl" lang="ar">{search.anchor.ar}</span>
-            {search.anchor.en && <> ({search.anchor.en})</>}. Data source: Google Trends.
+            {t('We count Google searches from people in Libya that contain any of these words. The word list sets the size of the number. Other words would give another number, so we only compare a theme with its own past.')}
+            {' '}{t('Each week is measured against searches for an everyday word,')} <span className="ar" dir="rtl" lang="ar">{search.anchor.ar}</span>
+            {search.anchor.en && <> ({search.anchor.en})</>}. {t('Data source: Google Trends.')}
           </p>
         </>)}
       {search.measured && missing?.length > 0 && (
         <p className="small muted">
-          This window is not scored because there is no search data for {weeksOf(missing)}. Google holds back weeks
-          with too few searches, and a week only gets data at the first import after it ends.
+          {t('This window is not scored because there is no search data for {weeks}. Google holds back weeks with too few searches, and a week only gets data at the first import after it ends.', { weeks: weeksOf(missing) })}
         </p>)}
     </>
   )

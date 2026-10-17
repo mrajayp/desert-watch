@@ -12,6 +12,7 @@ from ..ingest import domain_of, load_rules, store_article
 from ..models import ArticleAssessment, Comment, Event, Item, ItemRegion, ItemTheme, User, utcnow
 from .social import counted
 from .common import country_or_404, duplicate_cluster, hydrate_items, items_query, region_or_404, theme_or_404
+from ..i18n import tr
 
 router = APIRouter(prefix="/api")
 
@@ -38,7 +39,7 @@ def add_article_core(s: Session, u: User, country_id: int, url: str, *, theme_id
         except FetchError as e:
             raise HTTPException(400, str(e))
         except Exception:  # noqa: BLE001
-            raise HTTPException(400, "Could not read that page. Add a title manually.")
+            raise HTTPException(400, tr("Could not read that page. Add a title manually."))
     rules = load_rules(s, country_id)
     item, created = store_article(
         s, country_id, rules, url=meta.get("final_url") or url, title=title or meta.get("title") or url,
@@ -71,7 +72,7 @@ def preview(body: PreviewIn, _: User = Depends(auth.current_user)):
     except FetchError as e:
         raise HTTPException(400, str(e))
     except Exception:  # noqa: BLE001
-        raise HTTPException(400, "Could not read that page.")
+        raise HTTPException(400, tr("Could not read that page."))
     return {**m, "domain": domain_of(m["final_url"])}
 
 
@@ -110,7 +111,7 @@ def list_items(country: str = "LY", theme_id: int | None = None, region_id: int 
         from ..scoring import trend_basis
         pairs = trend_basis(s, c.id)[1]
     elif basis:
-        raise HTTPException(400, "Unknown basis")
+        raise HTTPException(400, tr("Unknown basis"))
     region = region_or_404(s, region_id) if region_id else None
     # an explicit date range (inclusive, e.g. one month of a chart) wins over `days`
     if start or end:
@@ -130,7 +131,7 @@ def list_items(country: str = "LY", theme_id: int | None = None, region_id: int 
 def item_detail(item_id: int, s: Session = Depends(get_db), u: User = Depends(auth.current_user)):
     it = s.get(Item, item_id)
     if not it:
-        raise HTTPException(404, "Unknown item")
+        raise HTTPException(404, tr("Unknown item"))
     out = hydrate_items(s, [it])[0]
     rows = s.scalars(select(ArticleAssessment).where(ArticleAssessment.item_id == item_id)).all()
     mine = next((a for a in rows if a.user_id == u.id), None)
@@ -156,7 +157,7 @@ class CorrectionIn(BaseModel):
 def correct(item_id: int, body: CorrectionIn, s: Session = Depends(get_db), u: User = Depends(auth.require_contributor)):
     it = s.get(Item, item_id)
     if not it:
-        raise HTTPException(404, "Unknown item")
+        raise HTTPException(404, tr("Unknown item"))
     ctx = body.model_dump(exclude_none=True)
     cluster = duplicate_cluster(s, it)  # one correction covers every copy of the story
     if body.theme_id is not None and body.theme_relevant is not None:
@@ -199,7 +200,7 @@ class AssessIn(BaseModel):
 @router.post("/items/{item_id}/assessment")
 def assess(item_id: int, body: AssessIn, s: Session = Depends(get_db), u: User = Depends(auth.require_contributor)):
     if not s.get(Item, item_id):
-        raise HTTPException(404, "Unknown item")
+        raise HTTPException(404, tr("Unknown item"))
     a = s.scalar(select(ArticleAssessment).where(ArticleAssessment.item_id == item_id,
                                                  ArticleAssessment.user_id == u.id))
     if not a:

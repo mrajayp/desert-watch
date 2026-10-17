@@ -3,15 +3,16 @@
 import { useEffect, useState } from 'react'
 import { api, qs } from '../api'
 import { fmt } from '../charts/scales'
+import { fmtDate, t } from '../i18n.js'
 
-const dayLabel = (d) => new Date(d + 'T00:00:00Z').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' })
+const dayLabel = (d) => fmtDate(d, { weekday: 'short', day: 'numeric', month: 'short' })
 
 export default function WikiReading({ days = 30 }) {
   const [data, setData] = useState(null)
   const [all, setAll] = useState(false)
   useEffect(() => { api('/api/wiki-reading' + qs({ days: all ? 365 : days })).then(setData).catch(() => setData({ days: [] })) }, [all, days])
-  if (!data) return <div className="empty small">Loading…</div>
-  if (!data.days.length) return <div className="empty small">No days collected yet.</div>
+  if (!data) return <div className="empty small">{t('Loading…')}</div>
+  if (!data.days.length) return <div className="empty small">{t('No days collected yet.')}</div>
   const busiest = Math.max(...data.days.map((d) => d.pages.length))
   return (
     <>
@@ -22,15 +23,15 @@ export default function WikiReading({ days = 30 }) {
             <span style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
               {d.pages.length ? d.pages.map((p) => (
                 <a key={p.project + p.title} className="pill" href={p.url || undefined} target="_blank" rel="noreferrer"
-                  dir="auto" title={`${p.project}, about ${fmt(p.views)} views from Libya that day`}>
+                  dir="auto" title={t('{project}, about {views} views from Libya that day', { project: p.project, views: fmt(p.views), n: p.views })}>
                   {p.title} <span className="muted">· {fmt(p.views)}</span></a>))
-                : <span className="muted">No Libya page above the threshold</span>}
+                : <span className="muted">{t('No Libya page above the threshold')}</span>}
             </span>
           </li>))}
       </ul>
       <div className="row" style={{ justifyContent: 'space-between', marginTop: 8 }}>
         <span className="small muted">{data.note}</span>
-        <button type="button" className="linkish small" onClick={() => setAll(!all)}>{all ? 'Last 30 days' : 'The last year'}</button>
+        <button type="button" className="linkish small" onClick={() => setAll(!all)}>{all ? t('Last 30 days') : t('The last year')}</button>
       </div>
     </>
   )

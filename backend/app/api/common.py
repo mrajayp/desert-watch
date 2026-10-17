@@ -6,26 +6,27 @@ from sqlalchemy.orm import Session
 
 from ..engagement import attach_engagement, by_pickup
 from ..models import Country, Item, ItemRegion, ItemTheme, Outlet, OutletCategory, Region, Theme
+from ..i18n import tr
 
 
 def country_or_404(s: Session, iso2: str) -> Country:
     c = s.scalar(select(Country).where(Country.iso2 == iso2.upper()))
     if not c:
-        raise HTTPException(404, "Unknown country")
+        raise HTTPException(404, tr("Unknown country"))
     return c
 
 
 def theme_or_404(s: Session, theme_id: int) -> Theme:
     t = s.get(Theme, theme_id)
     if not t:
-        raise HTTPException(404, "Unknown theme")
+        raise HTTPException(404, tr("Unknown theme"))
     return t
 
 
 def region_or_404(s: Session, region_id: int) -> Region:
     r = s.get(Region, region_id)
     if not r:
-        raise HTTPException(404, "Unknown region")
+        raise HTTPException(404, tr("Unknown region"))
     return r
 
 

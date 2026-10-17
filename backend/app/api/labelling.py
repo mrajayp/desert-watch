@@ -17,6 +17,7 @@ from ..ml import registry
 from ..models import Event, Item, ItemTheme, Label, ModelRegistry, Theme, User, utcnow
 from ..textnorm import normalise, term_variants
 from .common import country_or_404, duplicate_cluster, hydrate_items
+from ..i18n import tr
 
 router = APIRouter(prefix="/api")
 
@@ -47,11 +48,11 @@ def _set_link(s: Session, item_id: int, theme: Theme, on: bool) -> None:
 def label_item(item_id: int, body: LabelsIn, s: Session = Depends(get_db), u: User = Depends(auth.require_contributor)):
     it = s.get(Item, item_id)
     if not it:
-        raise HTTPException(404, "Unknown item")
+        raise HTTPException(404, tr("Unknown item"))
     active = s.scalars(select(Theme).where(Theme.active.is_(True)).order_by(Theme.id)).all()
     by_id = {t.id: t for t in active}
     if any(t not in by_id for t in body.themes):
-        raise HTTPException(400, "Unknown or switched-off theme")
+        raise HTTPException(400, tr("Unknown or switched-off theme"))
     chosen = set(body.themes) if body.libya else set()  # not about the country: no theme counts
     cluster = duplicate_cluster(s, it)
     for x in cluster:
@@ -184,9 +185,9 @@ def activate_model(version: str, bg: BackgroundTasks, pin: bool = True, s: Sessi
     try:
         row = registry.activate(s, version, by_hand=pin)
     except ValueError:
-        raise HTTPException(404, "Unknown model version")
+        raise HTTPException(404, tr("Unknown model version"))
     except FileNotFoundError:
-        raise HTTPException(409, "This version's file was removed to save space. Pick a newer one.")
+        raise HTTPException(409, tr("This version's file was removed to save space. Pick a newer one."))
     s.commit()
     if not (was and was.id == row.id):
         bg.add_task(JOBS["classify_all"])

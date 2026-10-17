@@ -13,32 +13,36 @@ from .. import auth
 from ..db import get_db
 from ..models import Indicator, User, WikiReading
 from .common import country_or_404
+from ..i18n import N_, pick, tr
 
 router = APIRouter(prefix="/api")
 
 # indicators that do not come from the country config (collectors/fxrate.py). Keys sharing a chart are
 # drawn together on one axis (same unit). style: main = the headline line, alt = a variant, ref = the reference.
-FX_NOTE = ("The parallel rate is Al-Mashhad al-Libi's daily figure for Tripoli's market, the evening close where there is one "
+FX_NOTE = N_("The parallel rate is Al-Mashhad al-Libi's daily figure for Tripoli's market, the evening close where there is one "
            "and the midday price otherwise. Before late 2023 it comes from the rate box on the Libya Observer, as the Internet "
            "Archive saved it. The official rate is the Central Bank of Libya's average of buy and sell. From 18 January 2026 the "
            "official rate includes the 15% tax on buying foreign currency, so it jumps that week.")
 FIXED = {
-    "usd_lyd_parallel": {"label": "Parallel market, cash", "unit": "dinars", "theme": "economy", "chart": "usd", "style": "main", "note": FX_NOTE},
-    "usd_lyd_parallel_cheque": {"label": "Parallel market, by bank cheque", "unit": "dinars", "theme": "economy", "chart": "usd", "style": "alt", "note": FX_NOTE},
-    "usd_lyd_official": {"label": "Official rate", "unit": "dinars", "theme": "economy", "chart": "usd", "style": "ref", "note": FX_NOTE},
+    "usd_lyd_parallel": {"label": N_("Parallel market, cash"), "unit": N_("dinars"), "theme": "economy", "chart": "usd", "style": "main", "note": FX_NOTE},
+    "usd_lyd_parallel_cheque": {"label": N_("Parallel market, by bank cheque"), "unit": "dinars", "theme": "economy", "chart": "usd", "style": "alt", "note": FX_NOTE},
+    "usd_lyd_official": {"label": N_("Official rate"), "unit": "dinars", "theme": "economy", "chart": "usd", "style": "ref", "note": FX_NOTE},
     "eur_lyd_parallel": {"label": "Parallel market, cash", "unit": "dinars", "theme": "economy", "chart": "eur", "style": "main", "note": FX_NOTE},
     "eur_lyd_official": {"label": "Official rate", "unit": "dinars", "theme": "economy", "chart": "eur", "style": "ref", "note": FX_NOTE},
 }
-CHARTS = {"usd": "One US dollar in Libyan dinars", "eur": "One euro in Libyan dinars"}
-WIKI_NOTE = ("Wikimedia only publishes a page for a country on days it has more than about 90 views from there, "
+CHARTS = {"usd": N_("One US dollar in Libyan dinars"), "eur": N_("One euro in Libyan dinars")}
+WIKI_NOTE = N_("Wikimedia only publishes a page for a country on days it has more than about 90 views from there, "
              "and adds noise of about 35 views. A gap means fewer than about 90 views that day.")
 
 
 def _meta(config: dict) -> dict:
-    out = {k: dict(v, source="exchange") for k, v in FIXED.items()}
+    """Labels, units and notes in the request's language. `unit_key` stays English: the page tests it."""
+    out = {k: dict(v, source="exchange", label=tr(v["label"]), unit=tr(v["unit"]), unit_key=v["unit"], note=tr(v["note"]))
+           for k, v in FIXED.items()}
     for k, v in (config.get("wiki_indicators") or {}).items():
-        out[k] = {"label": v.get("label", k), "label_ar": v.get("label_ar"), "unit": v.get("unit", "views a day"),
-                  "theme": v.get("theme"), "source": "wikimedia_dp", "note": WIKI_NOTE}
+        unit = v.get("unit", N_("views a day"))
+        out[k] = {"label": pick(v, "label") or k, "label_ar": v.get("label_ar"), "unit": tr(unit), "unit_key": unit,
+                  "theme": v.get("theme"), "source": "wikimedia_dp", "note": tr(WIKI_NOTE)}
     return out
 
 
@@ -53,7 +57,7 @@ def indicators(country: str = "LY", days: int = 400, theme: str | None = None,
                                      .where(Indicator.country_id == c.id, Indicator.day >= start)
                                      .order_by(Indicator.day)):
         rows[key].append({"day": day.isoformat(), "value": value})
-    return {"charts": CHARTS,
+    return {"charts": {k: tr(v) for k, v in CHARTS.items()},
             "indicators": [{"key": k, **m, "rows": rows.get(k, [])} for k, m in meta.items()
                            if rows.get(k) and (theme is None or m.get("theme") == theme)]}
 
@@ -73,4 +77,4 @@ def wiki_reading(country: str = "LY", days: int = 30, s: Session = Depends(get_d
                               "url": _url(r.project, r.page_title)})
     checked = sorted(set(s.scalars(select(Indicator.day).where(Indicator.country_id == c.id, Indicator.source == "wikimedia_dp",
                                                                Indicator.day >= start)).all()), reverse=True)
-    return {"note": WIKI_NOTE, "days": [{"day": d.isoformat(), "pages": by_day.get(d, [])} for d in checked]}
+    return {"note": tr(WIKI_NOTE), "days": [{"day": d.isoformat(), "pages": by_day.get(d, [])} for d in checked]}

@@ -1,8 +1,9 @@
 """Weekly AI digest: one short brief per country per week, written from facts computed here.
 
 The model only sees the facts dict (counts, flags, theme and district names; no headlines since 2026-10-17), never raw articles or user
-data, and the facts are stored with the text so any claim can be checked. One call per week;
-without credentials the job records "awaiting_key" and the rest of the app is unaffected."""
+data, and the facts are stored with the text so any claim can be checked. One call per week writes
+the brief in English and then in Arabic (split at ARABIC_MARKER); without credentials the job
+records "awaiting_key" and the rest of the app is unaffected."""
 import json
 import logging
 from collections import Counter, defaultdict
@@ -36,7 +37,25 @@ whole brief under 450 words:
   ## Silent places
   ## What the team is doing
   ## Caveats
-- If a section has nothing to report, write one sentence saying so."""
+- If a section has nothing to report, write one sentence saying so.
+- Then write a line containing only {marker} and, after it, the same brief in Arabic: the same facts, \
+numbers and rules, in Modern Standard Arabic for Libyan journalists, with Western digits (0-9). Address \
+no reader as male or female (use impersonal forms). Use exactly these headings, in this order:
+  ## الأسبوع باختصار
+  ## أكبر الفجوات
+  ## النوع الاجتماعي
+  ## أماكن صامتة
+  ## ما يعمل عليه الفريق
+  ## تنبيهات"""
+ARABIC_MARKER = "===ARABIC==="
+
+
+def split_brief(text: str) -> tuple[str, str | None]:
+    """(English, Arabic) from the model's one answer; Arabic is None when the marker is missing."""
+    if ARABIC_MARKER not in text:
+        return text.strip(), None
+    en, ar = text.split(ARABIC_MARKER, 1)
+    return en.strip(), ar.strip() or None
 
 
 def _client():
@@ -175,24 +194,27 @@ def generate(s: Session, country: Country, week: date | None = None, force: bool
         resp = _client().messages.create(
             model=settings.DIGEST_MODEL,
             max_tokens=4000,
-            system=SYSTEM.format(country=country.name_en),
+            system=SYSTEM.format(country=country.name_en, marker=ARABIC_MARKER),
             messages=[{"role": "user", "content": "Facts for this week's brief (JSON):\n\n"
                        + json.dumps(facts, ensure_ascii=False, sort_keys=True)}],
         )
     except Exception as e:  # noqa: BLE001 - recorded, never raised into the scheduler
-        d.status, d.error, d.content_md = "error", f"{type(e).__name__}: {e}"[:1000], None
+        d.status, d.error, d.content_md, d.content_md_ar = "error", f"{type(e).__name__}: {e}"[:1000], None, None
         s.commit()
         log.warning("digest failed: %s", d.error)
         return d
     d.usage = {"input_tokens": resp.usage.input_tokens, "output_tokens": resp.usage.output_tokens}
     if resp.stop_reason == "refusal":
-        d.status, d.content_md = "refused", None
+        d.status, d.content_md, d.content_md_ar = "refused", None, None
         d.error = f"Model declined ({getattr(resp.stop_details, 'category', None)})"
     else:
         d.status, d.error = "ok", None
-        d.content_md = "\n".join(b.text for b in resp.content if b.type == "text").strip()
+        d.content_md, d.content_md_ar = split_brief("\n".join(b.text for b in resp.content if b.type == "text"))
         if resp.stop_reason == "max_tokens":
-            d.content_md += "\n\n*(Brief was cut off at the length limit.)*"
+            if d.content_md_ar:
+                d.content_md_ar += "\n\n*(توقف الموجز عند حد الطول.)*"
+            else:
+                d.content_md += "\n\n*(Brief was cut off at the length limit.)*"
     s.commit()
     return d
 

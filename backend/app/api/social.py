@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from .. import auth
 from ..db import get_db
 from ..models import Comment, Event, User
+from ..i18n import tr
 
 router = APIRouter(prefix="/api")
 OBJECT_TYPES = {"gap", "item", "theme", "outlet"}
@@ -72,12 +73,12 @@ def list_comments(object_type: str, object_key: str, s: Session = Depends(get_db
 @router.post("/comments")
 def add_comment(body: CommentIn, s: Session = Depends(get_db), u: User = Depends(auth.require_contributor)):
     if body.object_type not in OBJECT_TYPES or body.tag not in TAGS:
-        raise HTTPException(400, "Unknown object type or tag")
+        raise HTTPException(400, tr("Unknown object type or tag"))
     if body.parent_id:
         p = s.get(Comment, body.parent_id)
         thread = {x.id: x for x in s.scalars(select(Comment).where(Comment.object_key == body.object_key))}
         if not p or p.object_key != body.object_key or not can_see(p, u, thread):
-            raise HTTPException(400, "Bad parent")
+            raise HTTPException(400, tr("Bad parent"))
     c = Comment(user_id=u.id, object_type=body.object_type, object_key=body.object_key, body=body.body.strip(),
                 parent_id=body.parent_id, tag=body.tag)
     s.add(c)
@@ -92,14 +93,14 @@ def add_comment(body: CommentIn, s: Session = Depends(get_db), u: User = Depends
 def patch_comment(cid: int, body: CommentPatch, s: Session = Depends(get_db), u: User = Depends(auth.current_user)):
     c = s.get(Comment, cid)
     if not c:
-        raise HTTPException(404, "Unknown comment")
+        raise HTTPException(404, tr("Unknown comment"))
     if body.body is not None:
         if c.user_id != u.id:
-            raise HTTPException(403, "Only the author can edit")
+            raise HTTPException(403, tr("Only the author can edit"))
         c.body = body.body
     if body.resolved is not None:
         if c.user_id != u.id and u.role != "admin":
-            raise HTTPException(403, "Only the author or an admin can resolve a comment")
+            raise HTTPException(403, tr("Only the author or an admin can resolve a comment"))
         c.resolved = body.resolved
     s.commit()
     return _json(c, {u.id: u.display_name}, u)
@@ -109,9 +110,9 @@ def patch_comment(cid: int, body: CommentPatch, s: Session = Depends(get_db), u:
 def delete_comment(cid: int, s: Session = Depends(get_db), u: User = Depends(auth.current_user)):
     c = s.get(Comment, cid)
     if not c:
-        raise HTTPException(404, "Unknown comment")
+        raise HTTPException(404, tr("Unknown comment"))
     if c.user_id != u.id and u.role != "admin":
-        raise HTTPException(403, "Not allowed")
+        raise HTTPException(403, tr("Not allowed"))
     c.deleted, c.body = True, ""
     s.commit()
     return {"ok": True}
@@ -128,7 +129,7 @@ class FeedbackIn(BaseModel):
 def leave_feedback(body: FeedbackIn, s: Session = Depends(get_db), u: User = Depends(auth.current_user)):
     from ..models import Feedback
     if body.kind not in ("suggestion", "question", "problem"):
-        raise HTTPException(400, "Kind must be suggestion, question or problem")
+        raise HTTPException(400, tr("Kind must be suggestion, question or problem"))
     f = Feedback(user_id=u.id, page=body.page, kind=body.kind, body=body.body.strip())
     s.add(f)
     s.commit()

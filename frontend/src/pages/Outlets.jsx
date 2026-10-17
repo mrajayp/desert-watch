@@ -8,6 +8,16 @@ import { ClusterMultiples, ClusterSummary } from '../charts/ClusterViews'
 import { MixBar } from '../charts/Balance'
 import { DIMENSIONS, categoryColor, fmt } from '../charts/scales'
 import { ExportMenu } from '../charts/util'
+import { fmtNum, pick, t } from '../i18n'
+import { countryName } from '../charts/RegionalNetwork'
+
+const N_ = (s) => s // marks English for the catalogue; translated with t() when shown
+// a decimal as the API sends it (4.2), with the interface language's decimal mark
+const num = (v) => fmtNum(v, { useGrouping: false })
+
+// confidence codes from the API, shown as they are in English. DIMENSIONS labels are already
+// in the interface language (charts/scales.js).
+const CONFIDENCE = { reported: N_('reported'), likely: N_('likely'), disputed: N_('disputed'), unverified: N_('unverified') }
 
 export default function Outlets() {
   const { meta, filters, openOutlet, openGap, version, lang } = useApp()
@@ -31,9 +41,9 @@ export default function Outlets() {
     for (const r of rows) { const v = r.categories[dim]?.value || 'unknown'; m[v] = (m[v] || 0) + r.articles }
     return m
   }, [rows, dim])
-  const caption = `Source: Desert Watch, ${rows.length} monitored outlets, 12 weeks to ${filters.week}. Not a census of ${meta.country.name_en} media.
-` +
-    'Position = similarity of theme specialisation (assessed); clusters = Louvain communities (assessed); reprint arrows = headline overlap >= 75% within 48h, 2+ times (observed).'
+  const country = pick(meta.country, 'name')
+  const caption = t('Source: Desert Watch, {n} monitored outlets, 12 weeks to {week}. Not a census of {country} media.', { n: rows.length, week: filters.week ?? '', country }) + '\n' +
+    t('Position = similarity of theme specialisation (assessed); clusters = Louvain communities (assessed); reprint arrows = headline overlap >= 75% within 48h, 2+ times (observed).')
   const shown = rows.filter((r) => (!q || r.name.toLowerCase().includes(q.toLowerCase()) || r.domain.includes(q.toLowerCase()))
     && (!onlyUnclassified || !r.categories.scope))
   return (
@@ -43,22 +53,22 @@ export default function Outlets() {
         <div className="grid two">
           <section className="card" style={view === 'time' ? { gridColumn: '1 / -1' } : undefined}>
             <div className="card-head">
-              <div><h2>Coverage clusters</h2>
+              <div><h2>{t('Coverage clusters')}</h2>
                 <p className="sub">{{
-                  summary: 'One circle per cluster of outlets that over-cover the same themes; arrows show whose headlines get republished by whom.',
-                  outlets: 'Outlets sit near outlets that over-cover the same themes; colour and tag = cluster. Arrows: another outlet published a near-identical headline later, 2+ times.',
-                  time: 'The same outlets in the same places, in consecutive 4-week periods. Watch which clusters grow, shrink or fall silent.',
-                }[view]} 12 weeks.</p></div>
+                  summary: t('One circle per cluster of outlets that over-cover the same themes; arrows show whose headlines get republished by whom.'),
+                  outlets: t('Outlets sit near outlets that over-cover the same themes; colour and tag = cluster. Arrows: another outlet published a near-identical headline later, 2+ times.'),
+                  time: t('The same outlets in the same places, in consecutive 4-week periods. Watch which clusters grow, shrink or fall silent.'),
+                }[view]} {t('12 weeks.')}</p></div>
               <div className="row">
-                <span className="seg" role="group" aria-label="Cluster view">
-                  {[['summary', 'Summary'], ['outlets', 'Outlets'], ['time', 'Over time']].map(([k, l]) =>
+                <span className="seg" role="group" aria-label={t('Cluster view')}>
+                  {[['summary', t('Summary')], ['outlets', t('Outlets')], ['time', t('Over time')]].map(([k, l]) =>
                     <button key={k} aria-pressed={view === k} onClick={() => setView(k)}>{l}</button>)}
                 </span>
                 {view === 'outlets' && <>
-                  <button className="btn small" aria-pressed={show.syndication} onClick={() => setShow({ ...show, syndication: !show.syndication })}>Reprints</button>
-                  <button className="btn small" aria-pressed={show.similar} onClick={() => setShow({ ...show, similar: !show.similar })}>Similarity links</button>
+                  <button className="btn small" aria-pressed={show.syndication} onClick={() => setShow({ ...show, syndication: !show.syndication })}>{t('Reprints')}</button>
+                  <button className="btn small" aria-pressed={show.similar} onClick={() => setShow({ ...show, similar: !show.similar })}>{t('Similarity links')}</button>
                 </>}
-                <ExportMenu svgRef={svg} title={`Coverage clusters among outlets covering ${meta.country.name_en}${view === 'time' ? ' — 4-week periods' : ''}`} filename={`coverage-clusters-${view}`} caption={caption} />
+                <ExportMenu svgRef={svg} title={view === 'time' ? t('Coverage clusters among outlets covering {country} — 4-week periods', { country }) : t('Coverage clusters among outlets covering {country}', { country })} filename={`coverage-clusters-${view}`} caption={caption} />
               </div>
             </div>
             {view === 'summary' && <ClusterSummary network={network} clusters={clusters?.clusters || []} themes={meta.themes} lang={lang} svgRef={svg}
@@ -68,18 +78,18 @@ export default function Outlets() {
             {view === 'time' && <ClusterMultiples network={network} clusters={clusters?.clusters || []} periods={periods} lang={lang} svgRef={svg} />}
           </section>
           <section className="card">
-            <h2>Clusters</h2>
-            <p className="sub">Hover a row to highlight it on the map. Names are generated from each cluster’s most over-covered themes, compared with all monitored outlets.</p>
+            <h2>{t('Clusters')}</h2>
+            <p className="sub">{t('Hover a row to highlight it on the map. Names are generated from each cluster’s most over-covered themes, compared with all monitored outlets.')}</p>
             {clusters && <ClusterLegendTable clusters={clusters.clusters} themes={meta.themes} highlight={highlight} setHighlight={setHighlight} lang={lang} />}
-            <h3>Share of coverage by {DIMENSIONS[dim].label.toLowerCase()}</h3>
+            <h3>{t('Share of coverage by {dimension}', { dimension: DIMENSIONS[dim].label.toLowerCase() })}</h3>
             <MixBar parts={mix} labels={DIMENSIONS[dim].values}
               colors={Object.fromEntries(Object.keys(DIMENSIONS[dim].values).map((v) => [v, categoryColor(dim, v)]))} height={14} />
           </section>
         </div>
         <section className="card" style={{ marginTop: 16 }}>
           <div className="card-head">
-            <div><h2>Which clusters cover which districts</h2>
-              <p className="sub">Share of each cluster’s articles that name the district. Rows of dots are districts no cluster writes about — candidate deserts. Click a district to open it.</p></div>
+            <div><h2>{t('Which clusters cover which districts')}</h2>
+              <p className="sub">{t('Share of each cluster’s articles that name the district. Rows of dots are districts no cluster writes about — candidate deserts. Click a district to open it.')}</p></div>
           </div>
           {clusters && <ClusterDistrictTable clusters={clusters.clusters} districts={clusters.districts} regions={meta.regions} lang={lang} highlight={highlight}
             onSelectDistrict={(rid) => openGap(meta.themes[0].id, rid, { from: 'cluster_table' })} />}
@@ -87,30 +97,30 @@ export default function Outlets() {
         <BlindSpots />
         <section className="card" style={{ marginTop: 16 }}>
           <div className="card-head">
-            <h2>Outlets ({shown.length})</h2>
+            <h2>{t('Outlets ({n})', { n: shown.length })}</h2>
             <div className="row">
-              <input type="text" placeholder="Search name or domain" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search outlets" />
-              <label className="small row"><input type="checkbox" checked={onlyUnclassified} onChange={(e) => setOnlyUnclassified(e.target.checked)} />unclassified only</label>
+              <input type="text" placeholder={t('Search name or domain')} value={q} onChange={(e) => setQ(e.target.value)} aria-label={t('Search outlets')} />
+              <label className="small row"><input type="checkbox" checked={onlyUnclassified} onChange={(e) => setOnlyUnclassified(e.target.checked)} />{t('unclassified only')}</label>
             </div>
           </div>
           <div className="scroll">
             <table className="data">
-              <thead><tr><th>Outlet</th><th className="num">Articles (12 wk)</th><th>Arabic share</th><th>Base</th><th>Scope</th><th>Alignment</th><th title="Social Media scraped data, Oct 2023 to Aug 2024">Scrape 2023–24</th><th>Quality</th><th /></tr></thead>
+              <thead><tr><th>{t('Outlet')}</th><th className="num">{t('Articles (12 wk)')}</th><th>{t('Arabic share')}</th><th>{t('Base')}</th><th>{t('Scope')}</th><th>{t('Alignment')}</th><th title={t('Social Media scraped data, Oct 2023 to Aug 2024')}>{t('Scrape 2023–24')}</th><th>{t('Quality')}</th><th /></tr></thead>
               <tbody>{shown.map((r) => {
                 const total = Object.values(r.lang_mix).reduce((a, b) => a + b, 0) || 1
                 return (
                   <tr key={r.id}>
-                    <td><b>{r.name}</b><div className="small muted">{r.domain}</div></td>
+                    <td><b dir="auto">{r.name}</b><div className="small muted">{r.domain}</div></td>
                     <td className="num">{fmt(r.articles)}</td>
                     <td className="num">{Math.round(((r.lang_mix.ar || 0) / total) * 100)}%</td>
-                    <td>{r.base_city || r.base_country || <span className="muted">–</span>}</td>
+                    <td>{r.base_city || countryName(r.base_country) || <span className="muted">–</span>}</td>
                     <td>{r.categories.scope ? DIMENSIONS.scope.values[r.categories.scope.value] : <span className="muted">–</span>}</td>
-                    <td>{r.categories.alignment ? <>{DIMENSIONS.alignment.values[r.categories.alignment.value]} <span className="pill">{r.categories.alignment.confidence}</span></> : <span className="muted">–</span>}</td>
+                    <td>{r.categories.alignment ? <>{DIMENSIONS.alignment.values[r.categories.alignment.value]} <span className="pill">{CONFIDENCE[r.categories.alignment.confidence] ? t(CONFIDENCE[r.categories.alignment.confidence]) : r.categories.alignment.confidence}</span></> : <span className="muted">–</span>}</td>
                     <td className="small">{r.external?.social_media_scrape ? <>
-                      {fmt(r.external.social_media_scrape.articles)} art. · {fmt(r.external.social_media_scrape.fb_engagement)} FB eng.
-                      {r.categories.scrape_affiliation && <div className="muted">labelled {r.categories.scrape_affiliation.value} <span className="pill">disputed</span></div>}</> : '–'}</td>
-                    <td className="small">{r.quality ? `${r.quality.accuracy}/${r.quality.depth}/${r.quality.local_sourcing} (n=${r.quality.n})` : '–'}</td>
-                    <td><button className="btn small" onClick={() => openOutlet(r.id)}>Open{r.pending_changes ? ` · ${r.pending_changes} pending` : ''}</button></td>
+                      {t('{articles} art. · {engagement} FB eng.', { articles: fmt(r.external.social_media_scrape.articles), engagement: fmt(r.external.social_media_scrape.fb_engagement) })}
+                      {r.categories.scrape_affiliation && <div className="muted">{t('labelled {label}', { label: r.categories.scrape_affiliation.value })} <span className="pill">{t('disputed')}</span></div>}</> : '–'}</td>
+                    <td className="small">{r.quality ? `${num(r.quality.accuracy)}/${num(r.quality.depth)}/${num(r.quality.local_sourcing)} (n=${r.quality.n})` : '–'}</td>
+                    <td><button className="btn small" onClick={() => openOutlet(r.id)}>{r.pending_changes ? t('Open · {n} pending', { n: r.pending_changes }) : t('Open')}</button></td>
                   </tr>)
               })}</tbody>
             </table>

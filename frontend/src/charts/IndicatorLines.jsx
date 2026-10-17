@@ -6,6 +6,7 @@ import * as d3 from 'd3'
 import { useRef } from 'react'
 import { fmt } from './scales'
 import { useSize, useTooltip } from './util'
+import { pick, t, utcFormat } from '../i18n.js'
 
 const iso = (d) => d.toISOString().slice(0, 10)
 const STYLE = {
@@ -21,7 +22,7 @@ export function chartGroups(indicators, titles = {}) {
   for (const ind of indicators) {
     const key = ind.chart || ind.key
     let g = out.find((x) => x.key === key)
-    if (!g) out.push((g = { key, title: titles[ind.chart] || ind.label, unit: ind.unit, lines: [] }))
+    if (!g) out.push((g = { key, title: titles[ind.chart] || pick(ind, 'label'), unit: ind.unit, lines: [] }))
     g.lines.push(ind)
   }
   return out
@@ -34,9 +35,10 @@ function Chart({ group, width, onPickDay }) {
   const series = group.lines.map((ind) => ({ ind, rows: ind.rows.map((r) => ({ date: new Date(r.day + 'T00:00:00Z'), v: r.value })) }))
   const all = series.flatMap((x) => x.rows)
   const shown = all.filter((r) => r.v != null)
-  if (shown.length < 2) return <div className="empty small">Not enough days yet.</div>
+  if (shown.length < 2) return <div className="empty small">{t('Not enough days yet.')}</div>
   const x = d3.scaleUtc().domain(d3.extent(all, (r) => r.date)).range([L, width - R])
-  const money = group.unit === 'dinars'
+  // the unit arrives in the interface language; the exchange-rate source says the same in any language
+  const money = group.unit === 'dinars' || group.lines.every((ind) => ind.source === 'exchange')
   const [lo, hi] = d3.extent(shown, (r) => r.v)
   const y = d3.scaleLinear().domain([money ? lo * 0.95 : 0, hi]).nice().range([H - B, T])
   const line = d3.line().defined((r) => r.v != null).x((r) => x(r.date)).y((r) => y(r.v))
@@ -50,20 +52,20 @@ function Chart({ group, width, onPickDay }) {
   const say = (s, day) => {
     const v = valueOn(s, day)
     if (v != null) return `${money ? v.toFixed(2) : fmt(v)} ${s.ind.unit}`
-    return s.ind.source === 'wikimedia_dp' ? 'fewer than about 90 views' : 'no figure that day'
+    return s.ind.source === 'wikimedia_dp' ? t('fewer than about 90 views') : t('no figure that day')
   }
   return (
     <div ref={wrap} className="viz" onMouseLeave={tip.hide}>
-      <svg viewBox={`0 0 ${width} ${H}`} role="img" aria-label={`${group.title}, daily`} style={{ cursor: onPickDay ? 'pointer' : undefined }}
+      <svg viewBox={`0 0 ${width} ${H}`} role="img" aria-label={t('{title}, daily', { title: group.title })} style={{ cursor: onPickDay ? 'pointer' : undefined }}
         onMouseMove={(e) => {
           const day = near(e)
-          tip.show(e, <div><b>{day}</b>{series.map((s) => <div key={s.ind.key}>{group.lines.length > 1 ? `${s.ind.label}: ` : ''}{say(s, day)}</div>)}
-            {onPickDay && <div className="small muted">click for the economy articles that week</div>}</div>, wrap.current)
+          tip.show(e, <div><b>{day}</b>{series.map((s) => <div key={s.ind.key}>{group.lines.length > 1 ? `${pick(s.ind, 'label')}: ` : ''}{say(s, day)}</div>)}
+            {onPickDay && <div className="small muted">{t('click for the economy articles that week')}</div>}</div>, wrap.current)
         }}
         onClick={(e) => onPickDay?.(near(e))}>
         {y.ticks(3).map((v) => <g key={v}><line x1={L} x2={width - R} y1={y(v)} y2={y(v)} stroke="var(--grid)" />
           <text x={L - 4} y={y(v) + 3} textAnchor="end" style={{ fontSize: 9 }}>{money ? v.toFixed(1) : fmt(v)}</text></g>)}
-        {x.ticks(width < 420 ? 3 : 6).map((t) => <text key={+t} x={x(t)} y={H - 5} textAnchor="middle" style={{ fontSize: 9 }}>{d3.utcFormat('%b %y')(t)}</text>)}
+        {x.ticks(width < 420 ? 3 : 6).map((d) => <text key={+d} x={x(d)} y={H - 5} textAnchor="middle" style={{ fontSize: 9 }}>{utcFormat('%b %y')(d)}</text>)}
         <text x={L} y={T - 2} style={{ fontSize: 9, fill: 'var(--muted)' }}>{group.unit}</text>
         {series.map((s) => {
           const st = styleOf(s.ind)
@@ -78,8 +80,8 @@ function Chart({ group, width, onPickDay }) {
         <div className="legend" style={{ marginTop: 2 }}>
           {group.lines.map((ind) => {
             const st = styleOf(ind)
-            return <span key={ind.key}><svg width="18" height="8" style={{ verticalAlign: 1, marginRight: 4 }}>
-              <line x1="0" x2="18" y1="4" y2="4" stroke={st.stroke} strokeWidth={st.width + 0.4} strokeDasharray={st.dash || undefined} /></svg>{ind.label}</span>
+            return <span key={ind.key}><svg width="18" height="8" style={{ verticalAlign: 1, marginInlineEnd: 4 }}>
+              <line x1="0" x2="18" y1="4" y2="4" stroke={st.stroke} strokeWidth={st.width + 0.4} strokeDasharray={st.dash || undefined} /></svg>{pick(ind, 'label')}</span>
           })}
         </div>)}
       {tip.node}
@@ -92,7 +94,7 @@ export default function IndicatorLines({ indicators, charts, onPickDay }) {
   const W = useSize(wrap, 900)
   const cols = W < 640 ? 1 : 2
   const width = Math.max(240, Math.floor((W - 16 * (cols - 1)) / cols) - 4)
-  if (!indicators?.length) return <div ref={wrap} className="empty small">No signals collected yet.</div>
+  if (!indicators?.length) return <div ref={wrap} className="empty small">{t('No signals collected yet.')}</div>
   const groups = chartGroups(indicators, charts)
   const notes = [...new Set(indicators.map((i) => i.note).filter(Boolean))]   // one note per source, not per chart
   return (

@@ -24,6 +24,7 @@ boundaries:
   macro_geojson: libya_macro.geojson           # ADM1 East / West / South
   macro_geo_names: {tripolitania: West, cyrenaica: East, fezzan: South}
   attribution: "Boundaries: UNITAR-UNOSAT, Libyan Bureau of Statistics, WFP, IOM via HDX / geoBoundaries (CC BY 3.0 IGO)"
+  attribution_ar: "الحدود: يونيتار-يونوسات، مصلحة الإحصاء والتعداد الليبية، برنامج الأغذية العالمي، المنظمة الدولية للهجرة، عبر HDX / geoBoundaries (CC BY 3.0 IGO)"
 
 # Regions: macro (historic) regions -> districts (shabiyat, 2007 system).
 # Jufra placed in Fezzan and Sirte in Tripolitania by convention; both are
@@ -198,22 +199,22 @@ extra_alerts:
 # Dated reference events: annotate trend charts and validate that coverage spikes appear.
 # Sources: docs/research/gender_libya.md. "verified: false" = not confirmed from a primary page.
 events:
-  - {date: 2014-06-25, theme: gender_political_participation, label: "Salwa Bughaighis killed (Benghazi)", source: "https://www.amnesty.org/en/latest/news/2018/06/libya-women-human-rights-defenders-still-under-attack-four-years-after-activists-assassination/"}
-  - {date: 2019-07-17, theme: gender_political_participation, label: "MP Seham Sergiwa abducted (Benghazi)", source: "https://edition.cnn.com/2019/07/20/africa/libya-sergewa-intl"}
-  - {date: 2020-11-10, theme: gender_violence, label: "Lawyer Hanan al-Barassi killed (Benghazi)", source: "https://dppa.dfs.un.org/en/unsmil-statement-killing-of-lawyer-hanan-al-barassi"}
-  - {date: 2021-11-22, theme: gender_political_participation, label: "Leila Ben Khalifa: first woman presidential candidate", source: "https://gulfnews.com/world/africa/libya-leila-bin-khalifa-becomes-first-woman-to-run-for-presidency-1.1637609131473"}
-  - {date: 2022-10-28, theme: gender_legal_status, label: "Decree on children of Libyan mothers (HRW critique)", source: "https://www.hrw.org/ar/news/2022/10/28/decree-libyan-womens-non-citizen-children-fails-discrimination-test"}
-  - {date: 2022-12-23, theme: gender_violence, label: "UN Special Rapporteur on VAW visit ends", source: "https://documents.un.org/doc/undoc/gen/g23/084/92/pdf/g2308492.pdf"}
-  - {date: 2023-03-27, theme: gender_migrant_detained_women, label: "UN Fact-Finding Mission: sexual slavery of migrants", source: "https://news.un.org/en/node/1135052"}
-  - {date: 2023-05-01, theme: gender_mobility_morality, label: "ISA travel form for women (Mitiga), approx. date", source: "https://www.libyanjustice.org/news/crushing-liberty-relentless-restrictions-on-libyan-women-and-enforced-male-guardianship"}
-  - {date: 2023-07-15, theme: gender_mobility_morality, label: "UN experts condemn travel restrictions", source: "https://news.un.org/en/story/2023/07/1138932"}
-  - {date: 2023-08-27, theme: gender_political_participation, label: "FM Najla El Mangoush suspended", source: "https://www.al-monitor.com/originals/2023/08/libyan-foreign-minister-suspended-over-talks-israeli-counterpart"}
-  - {date: 2023-09-10, theme: null, label: "Storm Daniel / Derna floods", source: "https://reliefweb.int/report/libya/unfpa-libya-flood-response-situation-report-1-15-september-2023"}
-  - {date: 2023-12-28, theme: gender_lgbtq, label: "ISA 'confession' videos (14 people)", source: "https://www.amnesty.org/en/latest/news/2024/02/libya-internal-security-agency-must-end-abuses-in-name-of-guarding-virtue/"}
-  - {date: 2024-04-15, theme: gender_violence, label: "Amnesty report: VAW law, Article 424", source: "https://www.amnesty.org/en/wp-content/uploads/2024/04/MDE1978582024ENGLISH.pdf"}
-  - {date: 2024-11-06, theme: gender_mobility_morality, label: "Interior Minister: hijab, guardian consent, morality police", source: "https://www.hrw.org/news/2024/11/13/libyan-ministers-morality-measures-would-violate-womens-rights"}
-  - {date: 2024-11-16, theme: gender_political_participation, label: "Municipal elections phase 1 (29% women voters)", source: "https://www.idea.int/democracytracker/report/libya/november-2024"}
-  - {date: 2025-11-21, theme: gender_violence, label: "Blogger Khansa Mujahid killed (Janzour)", source: "https://aawsat.com/node/5211624"}
+  - {date: 2014-06-25, theme: gender_political_participation, label: "Salwa Bughaighis killed (Benghazi)", label_ar: "مقتل سلوى بوقعيقيص (بنغازي)", source: "https://www.amnesty.org/en/latest/news/2018/06/libya-women-human-rights-defenders-still-under-attack-four-years-after-activists-assassination/"}
+  - {date: 2019-07-17, theme: gender_political_participation, label: "MP Seham Sergiwa abducted (Benghazi)", label_ar: "اختطاف النائبة سهام سرقيوة (بنغازي)", source: "https://edition.cnn.com/2019/07/20/africa/libya-sergewa-intl"}
+  - {date: 2020-11-10, theme: gender_violence, label: "Lawyer Hanan al-Barassi killed (Benghazi)", label_ar: "مقتل المحامية حنان البرعصي (بنغازي)", source: "https://dppa.dfs.un.org/en/unsmil-statement-killing-of-lawyer-hanan-al-barassi"}
+  - {date: 2021-11-22, theme: gender_political_participation, label: "Leila Ben Khalifa: first woman presidential candidate", label_ar: "ليلى بن خليفة: أول امرأة تترشح للرئاسة", source: "https://gulfnews.com/world/africa/libya-leila-bin-khalifa-becomes-first-woman-to-run-for-presidency-1.1637609131473"}
+  - {date: 2022-10-28, theme: gender_legal_status, label: "Decree on children of Libyan mothers (HRW critique)", label_ar: "قرار بشأن أبناء الأمهات الليبيات (انتقاد هيومن رايتس ووتش)", source: "https://www.hrw.org/ar/news/2022/10/28/decree-libyan-womens-non-citizen-children-fails-discrimination-test"}
+  - {date: 2022-12-23, theme: gender_violence, label: "UN Special Rapporteur on VAW visit ends", label_ar: "انتهاء زيارة المقررة الخاصة للأمم المتحدة المعنية بالعنف ضد المرأة", source: "https://documents.un.org/doc/undoc/gen/g23/084/92/pdf/g2308492.pdf"}
+  - {date: 2023-03-27, theme: gender_migrant_detained_women, label: "UN Fact-Finding Mission: sexual slavery of migrants", label_ar: "بعثة الأمم المتحدة لتقصي الحقائق: الاستعباد الجنسي للمهاجرين", source: "https://news.un.org/en/node/1135052"}
+  - {date: 2023-05-01, theme: gender_mobility_morality, label: "ISA travel form for women (Mitiga), approx. date", label_ar: "استمارة جهاز الأمن الداخلي لسفر النساء (معيتيقة)، تاريخ تقريبي", source: "https://www.libyanjustice.org/news/crushing-liberty-relentless-restrictions-on-libyan-women-and-enforced-male-guardianship"}
+  - {date: 2023-07-15, theme: gender_mobility_morality, label: "UN experts condemn travel restrictions", label_ar: "خبراء الأمم المتحدة يدينون قيود السفر", source: "https://news.un.org/en/story/2023/07/1138932"}
+  - {date: 2023-08-27, theme: gender_political_participation, label: "FM Najla El Mangoush suspended", label_ar: "إيقاف وزيرة الخارجية نجلاء المنقوش", source: "https://www.al-monitor.com/originals/2023/08/libyan-foreign-minister-suspended-over-talks-israeli-counterpart"}
+  - {date: 2023-09-10, theme: null, label: "Storm Daniel / Derna floods", label_ar: "العاصفة دانيال / فيضانات درنة", source: "https://reliefweb.int/report/libya/unfpa-libya-flood-response-situation-report-1-15-september-2023"}
+  - {date: 2023-12-28, theme: gender_lgbtq, label: "ISA 'confession' videos (14 people)", label_ar: "مقاطع «اعترافات» جهاز الأمن الداخلي (14 شخصًا)", source: "https://www.amnesty.org/en/latest/news/2024/02/libya-internal-security-agency-must-end-abuses-in-name-of-guarding-virtue/"}
+  - {date: 2024-04-15, theme: gender_violence, label: "Amnesty report: VAW law, Article 424", label_ar: "تقرير منظمة العفو الدولية: قانون العنف ضد المرأة، المادة 424", source: "https://www.amnesty.org/en/wp-content/uploads/2024/04/MDE1978582024ENGLISH.pdf"}
+  - {date: 2024-11-06, theme: gender_mobility_morality, label: "Interior Minister: hijab, guardian consent, morality police", label_ar: "وزير الداخلية: الحجاب وموافقة ولي الأمر وشرطة الآداب", source: "https://www.hrw.org/news/2024/11/13/libyan-ministers-morality-measures-would-violate-womens-rights"}
+  - {date: 2024-11-16, theme: gender_political_participation, label: "Municipal elections phase 1 (29% women voters)", label_ar: "المرحلة الأولى من الانتخابات البلدية (29% من الناخبين نساء)", source: "https://www.idea.int/democracytracker/report/libya/november-2024"}
+  - {date: 2025-11-21, theme: gender_violence, label: "Blogger Khansa Mujahid killed (Janzour)", label_ar: "مقتل المدوّنة خنساء مجاهد (جنزور)", source: "https://aawsat.com/node/5211624"}
 
 # Scope for outlets auto-discovered via search (uncontested: where the outlet is based/focused).
 # Applied with confidence "likely" and the homepage as evidence; never overrides an existing
@@ -411,3 +412,13 @@ gtrends:
     environment: Not checked yet.
     reconstruction: Not checked yet.
     political_process: Not checked yet.
+  unmeasured_ar:
+    security: نادرًا ما يُبحث عن الكلمات الأمنية الليبية بما يكفي لإظهار الاهتمام، وأغلب الكلمات العامة يتبع الأخبار القادمة من الخارج.
+    migration: عدد من يبحثون عن هذه الكلمات في ليبيا أقل من أن يعرضه غوغل.
+    gender: عدد من يبحثون عن هذه الكلمات في ليبيا أقل من أن يعرضه غوغل.
+    fuel_supply: لم يُفحص بعد. كلمات البحث الخاصة به مدرجة حاليًا ضمن قائمة الخدمات.
+    cash_salaries_prices: لم يُفحص بعد. كلمات البحث الخاصة به مدرجة حاليًا ضمن قائمة الاقتصاد.
+    education: لم يُفحص بعد.
+    environment: لم يُفحص بعد.
+    reconstruction: لم يُفحص بعد.
+    political_process: لم يُفحص بعد.

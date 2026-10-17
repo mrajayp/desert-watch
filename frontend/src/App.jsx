@@ -1,6 +1,8 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import { NavLink, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { api, setTracking, track } from './api'
+import { getLang, pick, saveLang, setLang as applyLang, t } from './i18n'
+import LangSwitch from './components/LangSwitch'
 import { lensWeek } from './lensWeek'
 import GapPanel from './components/GapPanel'
 import ItemPanel from './components/ItemPanel'
@@ -28,26 +30,28 @@ function writePref(k, v) { try { localStorage.setItem(k, v) } catch { /* storage
 
 export default function App() {
   const [me, setMe] = useState(undefined)
+  const [lang, setLangState] = useState(getLang())
+  // switching language remounts the screens below, so every t() and every API text is fetched again
+  const setLang = useCallback((l) => { applyLang(l); saveLang(l); setLangState(l) }, [])
   const loc = useLocation()
   useEffect(() => { api('/api/me').then(setMe).catch(() => setMe(null)) }, [])
   useEffect(() => { setTracking(!!me) }, [me])
   useEffect(() => { if (me) track('view', 'page', loc.pathname) }, [loc.pathname, me])
 
-  if (me === undefined) return <div className="center-page muted">Loading…</div>
+  if (me === undefined) return <div className="center-page muted">{t('Loading…')}</div>
   if (!me) {
     return (
-      <Routes>
-        <Route path="/invite/:token" element={<Invite onDone={setMe} />} />
-        <Route path="*" element={<Login onDone={setMe} />} />
+      <Routes key={lang}>
+        <Route path="/invite/:token" element={<Invite onDone={setMe} lang={lang} setLang={setLang} />} />
+        <Route path="*" element={<Login onDone={setMe} lang={lang} setLang={setLang} />} />
       </Routes>
     )
   }
-  return <Shell me={me} setMe={setMe} />
+  return <Shell key={lang} me={me} setMe={setMe} lang={lang} setLang={setLang} />
 }
 
-function Shell({ me, setMe }) {
+function Shell({ me, setMe, lang, setLang }) {
   const [meta, setMeta] = useState(null)
-  const [lang, setLangState] = useState(readPref('dw_lang', 'en'))
   const [filters, setFiltersState] = useState({ lens: readPref('dw_lens', 'audience'), week: null, themeId: '', colorBy: readPref('dw_color', 'scope') })
   const [panel, setPanel] = useState(null) // {kind, ...}
   const [version, setVersion] = useState(0) // bump to refetch after feedback
@@ -76,8 +80,6 @@ function Shell({ me, setMe }) {
       return n
     })
   }, [])
-  const setLang = (l) => { setLangState(l); writePref('dw_lang', l) }
-
   const value = useMemo(() => ({
     me, setMe, meta, lang, setLang, filters, setFilters, version, refresh: () => setVersion((v) => v + 1),
     openGap: (theme_id, region_id, ctx = {}) => { track('click', 'gap', `${theme_id}:${region_id}`, ctx); setPanel({ kind: 'gap', theme_id, region_id, week: ctx.week, lens: ctx.lens }) },
@@ -86,7 +88,7 @@ function Shell({ me, setMe }) {
     openOutlet: (id) => { track('click', 'outlet', id); setPanel({ kind: 'outlet', id }) },
     openAdd: (preset = {}) => setPanel({ kind: 'add', preset }),
     closePanel: () => setPanel(null),
-  }), [me, meta, lang, filters, version, setFilters, setMe])
+  }), [me, meta, lang, setLang, filters, version, setFilters, setMe])
 
   const logout = async () => { await api('/api/auth/logout', { method: 'POST' }); setMe(null); nav('/') }
 
@@ -95,30 +97,27 @@ function Shell({ me, setMe }) {
       <div className="shell">
         <header className="topbar">
           <div className="brand"><span className="brand-mark" aria-hidden="true" />Desert Watch
-            <span className="muted small" style={{ fontWeight: 400 }}>{meta?.country?.name_en}</span></div>
-          <nav className="nav" aria-label="Main">
-            <NavLink to="/" end>Map</NavLink>
-            <NavLink to="/trends">Trends</NavLink>
-            <NavLink to="/timeline">Timeline</NavLink>
-            <NavLink to="/articles">Articles</NavLink>
-            <NavLink to="/outlets">Outlets</NavLink>
-            <NavLink to="/digest">Digest</NavLink>
-            <NavLink to="/contribute">Contribute</NavLink>
-            {me.role === 'admin' && <NavLink to="/admin">Admin{pending > 0 && <span className="pill flag" style={{ marginLeft: 4 }}>{pending}</span>}</NavLink>}
-            <NavLink to="/me">Privacy</NavLink>
+            <span className="muted small" style={{ fontWeight: 400 }}>{pick(meta?.country, 'name')}</span></div>
+          <nav className="nav" aria-label={t('Main')}>
+            <NavLink to="/" end>{t('Map')}</NavLink>
+            <NavLink to="/trends">{t('Trends')}</NavLink>
+            <NavLink to="/timeline">{t('Timeline')}</NavLink>
+            <NavLink to="/articles">{t('Articles')}</NavLink>
+            <NavLink to="/outlets">{t('Outlets')}</NavLink>
+            <NavLink to="/digest">{t('Digest')}</NavLink>
+            <NavLink to="/contribute">{t('Contribute')}</NavLink>
+            {me.role === 'admin' && <NavLink to="/admin">{t('Admin')}{pending > 0 && <span className="pill flag" style={{ marginInlineStart: 4 }}>{pending}</span>}</NavLink>}
+            <NavLink to="/me">{t('Privacy')}</NavLink>
           </nav>
           <div className="who">
-            {me.role !== 'viewer' && <button className="btn small primary" onClick={() => value.openAdd()}>+ Add article</button>}
-            {me.role === 'viewer' && <span className="pill" title="Read-only account: an admin can give you contributor access">read-only</span>}
-            <div className="seg" role="group" aria-label="Label language">
-              <button aria-pressed={lang === 'en'} onClick={() => setLang('en')}>EN</button>
-              <button aria-pressed={lang === 'ar'} onClick={() => setLang('ar')}>عربي</button>
-            </div>
-            <span>{me.display_name}</span>
-            <button className="btn small ghost" onClick={logout}>Sign out</button>
+            {me.role !== 'viewer' && <button className="btn small primary" onClick={() => value.openAdd()}>{t('+ Add article')}</button>}
+            {me.role === 'viewer' && <span className="pill" title={t('Read-only account: an admin can give you contributor access')}>{t('read-only')}</span>}
+            <LangSwitch lang={lang} setLang={setLang} />
+            <span dir="auto">{me.display_name}</span>
+            <button className="btn small ghost" onClick={logout}>{t('Sign out')}</button>
           </div>
         </header>
-        {!meta ? <div className="empty">Loading…</div> : (
+        {!meta ? <div className="empty">{t('Loading…')}</div> : (
           <Routes>
             <Route path="/" element={<Overview />} />
             <Route path="/trends" element={<Trends />} />

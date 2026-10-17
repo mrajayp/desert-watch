@@ -1,4 +1,6 @@
 // Thin fetch wrapper + the behaviour tracker (batched, first-party only).
+// Every request says which interface language is on (X-Lang), so the server answers in it.
+import { getLang } from './i18n'
 
 export class ApiError extends Error {
   constructor(status, message) { super(message); this.status = status }
@@ -7,7 +9,7 @@ export class ApiError extends Error {
 export async function api(path, { method = 'GET', body, signal } = {}) {
   const r = await fetch(path, {
     method, signal, credentials: 'same-origin',
-    headers: body ? { 'Content-Type': 'application/json' } : undefined,
+    headers: body ? { 'Content-Type': 'application/json', 'X-Lang': getLang() } : { 'X-Lang': getLang() },
     body: body ? JSON.stringify(body) : undefined,
   })
   if (!r.ok) {
@@ -21,8 +23,8 @@ export async function api(path, { method = 'GET', body, signal } = {}) {
 export const qs = (o) => '?' + new URLSearchParams(Object.entries(o).filter(([, v]) => v !== undefined && v !== null && v !== '')).toString()
 
 // ---- tracker -------------------------------------------------------------
-// Implicit events are sent only when the user has not opted out (the server
-// enforces this too). Explicit actions are logged server-side by the endpoints.
+// Implicit events (views, clicks, dwell) are sent for every user; there is no opt-out
+// (owner decision 2026-10-13). Explicit actions are logged server-side by the endpoints.
 const SESSION = (() => {
   try {
     let s = sessionStorage.getItem('dw_sid')

@@ -19,7 +19,7 @@ class FakeMessages:
             stop_reason=self.stop_reason, stop_details=SimpleNamespace(category="cyber"),
             usage=SimpleNamespace(input_tokens=1200, output_tokens=300),
             content=[SimpleNamespace(type="thinking", thinking=""),
-                     SimpleNamespace(type="text", text="## This week in brief\nFacts only.")])
+                     SimpleNamespace(type="text", text="## This week in brief\nFacts only.\n===ARABIC===\n## الأسبوع باختصار\nوقائع فقط.")])
 
 
 def test_digest_builds_facts_and_stores_text(db, monkeypatch):
@@ -38,7 +38,9 @@ def test_digest_builds_facts_and_stores_text(db, monkeypatch):
     gv = next(c for c in f["coverage_by_theme"] if c["theme"].startswith("Gender: violence"))
     assert gv["articles"] == 1 and gv["arabic"] == 1
     assert "Sabha" not in f["districts_with_no_monitored_articles"]
-    assert fake.last["model"] == "claude-haiku-5-5" and "Never name private individuals" in fake.last["system"]
+    assert fake.last["model"] == "claude-haiku-5-5" and "Never name any person" in fake.last["system"]
+    assert d.content_md == "## This week in brief\nFacts only." and d.content_md_ar == "## الأسبوع باختصار\nوقائع فقط."
+    assert "===ARABIC===" in fake.last["system"] and "## الأسبوع باختصار" in fake.last["system"]
     # cached: a second call does not re-run the model
     fake.last = None
     assert digest.generate(db, country, week=date(2026, 10, 5)).id == d.id and fake.last is None
@@ -64,3 +66,18 @@ def test_digest_job_without_key(db, monkeypatch):
     monkeypatch.delenv("ANTHROPIC_AUTH_TOKEN", raising=False)
     from app.jobs import weekly_digest
     assert weekly_digest() == "awaiting_key"
+
+
+def test_digest_page_gets_the_brief_in_the_interface_language(client, users, db, monkeypatch):
+    from tests.conftest import login
+    country = db.scalar(select(Country))
+    monkeypatch.setattr(digest, "_client", lambda: SimpleNamespace(messages=FakeMessages()))
+    d = digest.generate(db, country, week=date(2026, 10, 5))
+    old = Digest(country_id=country.id, week_start=date(2026, 9, 28), model="m", status="ok", content_md="## Old")
+    db.add(old)
+    db.commit()
+    login(client, "j@example.org", "journo-password-1")
+    ar = client.get(f"/api/digests/{d.id}", headers={"X-Lang": "ar"}).json()
+    assert ar["lang"] == "ar" and ar["content_md"].startswith("## الأسبوع باختصار")
+    assert client.get(f"/api/digests/{d.id}").json()["content_md"].startswith("## This week in brief")
+    assert client.get(f"/api/digests/{old.id}", headers={"X-Lang": "ar"}).json()["lang"] == "en"   # written before Arabic briefs

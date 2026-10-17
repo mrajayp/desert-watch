@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from . import settings
 from .db import get_db
 from .models import AuthSession, Invite, User, utcnow
+from .i18n import tr
 
 COOKIE = "dw_session"
 SESSION_DAYS = 14
@@ -37,7 +38,7 @@ def sha(token: str) -> str:
 
 def create_user(s: Session, email: str, password: str, display_name: str, role: str = "journalist") -> User:
     if len(password) < 10:
-        raise ValueError("Password must be at least 10 characters.")
+        raise ValueError(tr("Password must be at least 10 characters."))
     u = User(email=email.strip().lower(), display_name=display_name.strip()[:100] or email.split("@")[0],
              pw_hash=hash_password(password), role=role, pseudo_id=secrets.token_hex(8))
     s.add(u)
@@ -72,13 +73,13 @@ def end_session(s: Session, token: str | None, response: Response) -> None:
 
 def current_user(dw_session: str | None = Cookie(default=None), s: Session = Depends(get_db)) -> User:
     if not dw_session:
-        raise HTTPException(401, "Not signed in")
+        raise HTTPException(401, tr("Not signed in"))
     sess = s.get(AuthSession, sha(dw_session))
     if not sess or sess.expires_at < utcnow():
-        raise HTTPException(401, "Session expired")
+        raise HTTPException(401, tr("Session expired"))
     u = s.get(User, sess.user_id)
     if not u or not u.active or (u.status or "active") != "active":
-        raise HTTPException(401, "Account not active")
+        raise HTTPException(401, tr("Account not active"))
     return u
 
 
@@ -87,22 +88,22 @@ ROLES = ("admin", "journalist", "viewer")
 
 def require_contributor(u: User = Depends(current_user)) -> User:
     if u.role == "viewer":
-        raise HTTPException(403, "Your role is read-only. Ask an admin for contributor access.")
+        raise HTTPException(403, tr("Your role is read-only. Ask an admin for contributor access."))
     return u
 
 
 def require_admin(u: User = Depends(current_user)) -> User:
     if u.role != "admin":
-        raise HTTPException(403, "Admins only")
+        raise HTTPException(403, tr("Admins only"))
     return u
 
 
 def accept_invite(s: Session, token: str, password: str, display_name: str) -> User:
     inv = s.scalar(select(Invite).where(Invite.token_hash == sha(token)))
     if not inv or inv.used_at or inv.expires_at < utcnow():
-        raise ValueError("Invite is invalid or expired.")
+        raise ValueError(tr("Invite is invalid or expired."))
     if s.scalar(select(User).where(User.email == inv.email)):
-        raise ValueError("An account with this email already exists.")
+        raise ValueError(tr("An account with this email already exists."))
     u = create_user(s, inv.email, password, display_name, inv.role)
     inv.used_at = utcnow()
     return u

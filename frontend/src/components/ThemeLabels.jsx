@@ -1,21 +1,25 @@
 import { useState } from 'react'
 import { api } from '../api'
 import { useApp } from '../App'
+import { fmtNum, isAr, pick, t, tn } from '../i18n'
+
+const N_ = (s) => s // marks English for the catalogue; translated with t() when read
 
 // Why each theme link exists, and the full theme-set label (POST /api/items/{id}/labels).
 // item.theme_detail evidence: rule/query links {field: title|snippet|query, terms, query},
 // model links {model, was}, a rule link the model turned off {veto}.
 
 const words = (slug) => (slug || '').replace(/_/g, ' ')
-const p2 = (x) => (x == null ? '' : Number(x).toFixed(2))
+const p2 = (x) => (x == null ? '' : fmtNum(Number(x), { minimumFractionDigits: 2, maximumFractionDigits: 2, useGrouping: false }))
+const sep = () => (isAr() ? '، ' : ', ')
 // the field a rule matched, in the words the help page uses
-const FIELD = { title: 'title', snippet: 'summary' }
+const FIELD = { title: N_('title'), snippet: N_('summary') }
 
 // "gnews:governance" -> search: governance, "theme:gender_violence:en" -> alert: gender violence
 function queryText(q) {
-  if (!q) return 'found by a search'
+  if (!q) return t('found by a search')
   const [kind, slug] = q.split(':')
-  return `${kind === 'theme' ? 'alert' : 'search'}: ${words(slug)}`
+  return kind === 'theme' ? t('alert: {what}', { what: words(slug) }) : t('search: {what}', { what: words(slug) })
 }
 
 // {text, title}: a few words for the row, more for the hover
@@ -23,58 +27,58 @@ export function why(d) {
   const ev = d.evidence || {}
   const more = []
   let text
-  if (d.method === 'user') text = 'labelled by a person'
+  if (d.method === 'user') text = t('labelled by a person')
   else if (d.method === 'model') {
-    text = `model ${p2(d.score ?? ev.model)}`
-    if (ev.was) more.push(`first linked by ${ev.was === 'query' ? 'a search' : 'a word list'}`)
+    text = t('model {score}', { score: p2(d.score ?? ev.model) })
+    if (ev.was) more.push(ev.was === 'query' ? t('first linked by a search') : t('first linked by a word list'))
   } else if (ev.field && ev.field !== 'query' && ev.terms?.length) {
-    const field = FIELD[ev.field] || ev.field
-    text = `${field}: ${ev.terms.length === 1 ? ev.terms[0] : `${ev.terms.length} words`}`
-    more.push(`words in the ${field}: ${ev.terms.join(', ')}`)
+    const field = FIELD[ev.field] ? t(FIELD[ev.field]) : ev.field
+    text = `${field}: ${ev.terms.length === 1 ? ev.terms[0] : tn(ev.terms.length, '{n} word', '{n} words')}`
+    more.push(t('words in the {field}: {terms}', { field, terms: ev.terms.join(sep()) }))
   } else if (d.method === 'query' || ev.field === 'query') text = queryText(ev.query)
-  else text = 'word list'
-  if (ev.query && d.method !== 'query') more.push(`also returned by ${queryText(ev.query)}`)
-  if (d.score != null && d.method !== 'model') more.push(`model ${p2(d.score)}`)
-  if (ev.veto != null) more.push(`the model said no (${p2(ev.veto)})`)
+  else text = t('word list')
+  if (ev.query && d.method !== 'query') more.push(t('also returned by {query}', { query: queryText(ev.query) }))
+  if (d.score != null && d.method !== 'model') more.push(t('model {score}', { score: p2(d.score) }))
+  if (ev.veto != null) more.push(t('the model said no ({score})', { score: p2(ev.veto) }))
   return { text, title: [text, ...more].join('\n') }
 }
 
-const themeName = (t, lang) => (lang === 'ar' ? t.name_ar : t.name_en)
+const themeName = (th) => pick(th, 'name')
 
 // The item's counted themes, each with why it is there
 export function ThemePills({ item }) {
-  const { meta, lang } = useApp()
-  const themes = new Map(meta.themes.map((t) => [t.id, t]))
+  const { meta } = useApp()
+  const themes = new Map(meta.themes.map((th) => [th.id, th]))
   const detail = new Map((item.theme_detail || []).map((d) => [d.theme_id, d]))
-  return item.theme_ids.filter((t) => themes.has(t)).map((t) => {
-    const w = detail.has(t) ? why(detail.get(t)) : null
+  return item.theme_ids.filter((id) => themes.has(id)).map((id) => {
+    const w = detail.has(id) ? why(detail.get(id)) : null
     return (
-      <span key={t} className="pill" title={w?.title}>
-        {themeName(themes.get(t), lang)}{w && <span className="muted">{w.text}</span>}
+      <span key={id} className="pill" title={w?.title}>
+        {themeName(themes.get(id))}{w && <span className="muted">{w.text}</span>}
       </span>)
   })
 }
 
 // Links kept but not counted: a search that the rules did not confirm, or a rule link the model vetoed
 export function NotCounted({ item }) {
-  const { meta, lang } = useApp()
-  const themes = new Map(meta.themes.map((t) => [t.id, t]))
+  const { meta } = useApp()
+  const themes = new Map(meta.themes.map((th) => [th.id, th]))
   const off = (item.theme_detail || []).filter((d) => !d.active && d.method !== 'user' && themes.has(d.theme_id))
   if (!off.length) return null
   return (
     <div className="small muted">
-      Not counted: {off.map((d) => {
+      {t('Not counted:')} {off.map((d) => {
         const w = why(d)
-        return <span key={d.theme_id} title={w.title}>{themeName(themes.get(d.theme_id), lang)} ({d.evidence?.veto != null ? `model said no ${p2(d.evidence.veto)}` : w.text})</span>
+        return <span key={d.theme_id} title={w.title}>{themeName(themes.get(d.theme_id))} ({d.evidence?.veto != null ? t('model said no {score}', { score: p2(d.evidence.veto) }) : w.text})</span>
       }).reduce((a, x) => (a.length ? [...a, ' · ', x] : [x]), [])}
     </div>)
 }
 
 // One checkbox per active theme, ticked with the themes counted now. Unticked themes count as "no".
-export function LabelForm({ item, onSaved, onSkip, onCancel, saveText = 'Save' }) {
-  const { meta, lang } = useApp()
-  const ids = new Set(meta.themes.map((t) => t.id))
-  const [on, setOn] = useState(() => new Set(item.theme_ids.filter((t) => ids.has(t))))
+export function LabelForm({ item, onSaved, onSkip, onCancel, saveText = N_('Save') }) {
+  const { meta } = useApp()
+  const ids = new Set(meta.themes.map((th) => th.id))
+  const [on, setOn] = useState(() => new Set(item.theme_ids.filter((id) => ids.has(id))))
   const [off, setOff] = useState(false)  // not about the country at all
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState(null)
@@ -86,26 +90,26 @@ export function LabelForm({ item, onSaved, onSkip, onCancel, saveText = 'Save' }
       onSaved?.(r, { off })
     } catch (e) { setErr(e.message) } finally { setBusy(false) }
   }
-  const groups = [['Topics', meta.themes.filter((t) => t.group !== 'gender')], ['Gender', meta.themes.filter((t) => t.group === 'gender')]]
+  const groups = [[N_('Topics'), meta.themes.filter((th) => th.group !== 'gender')], [N_('Gender'), meta.themes.filter((th) => th.group === 'gender')]]
   return (
     <div>
       {groups.map(([label, ts]) => ts.length > 0 && (
         <fieldset key={label} disabled={off} style={{ border: 0, padding: 0, margin: '0 0 8px', opacity: off ? 0.5 : 1 }}>
-          <legend className="small muted" style={{ padding: 0, marginBottom: 4 }}>{label}</legend>
-          <div className="chips">{ts.map((t) => (
-            <label key={t.id} className="chip row" style={{ gap: 5, flexWrap: 'nowrap' }}>
-              <input type="checkbox" checked={on.has(t.id)} onChange={() => flip(t.id)} style={{ margin: 0 }} />
-              {label === 'Gender' ? themeName(t, lang).replace(/^Gender:\s*/, '') : themeName(t, lang)}
+          <legend className="small muted" style={{ padding: 0, marginBottom: 4 }}>{t(label)}</legend>
+          <div className="chips">{ts.map((th) => (
+            <label key={th.id} className="chip row" style={{ gap: 5, flexWrap: 'nowrap' }}>
+              <input type="checkbox" checked={on.has(th.id)} onChange={() => flip(th.id)} style={{ margin: 0 }} />
+              {label === 'Gender' ? themeName(th).replace(/^(Gender|النوع الاجتماعي):\s*/, '') : themeName(th)}
             </label>))}</div>
         </fieldset>))}
       <label className="row small" style={{ gap: 6, margin: '2px 0 10px' }}>
         <input type="checkbox" checked={off} onChange={(e) => setOff(e.target.checked)} style={{ margin: 0 }} />
-        Not about {meta.country.name_en}
+        {t('Not about {country}', { country: pick(meta.country, 'name') })}
       </label>
       <div className="row">
-        <button className="btn small primary" disabled={busy} onClick={save}>{busy ? 'Saving…' : saveText}</button>
-        {onSkip && <button className="btn small" disabled={busy} onClick={onSkip}>Skip</button>}
-        {onCancel && <button className="btn small ghost" disabled={busy} onClick={onCancel}>Cancel</button>}
+        <button className="btn small primary" disabled={busy} onClick={save}>{busy ? t('Saving…') : t(saveText)}</button>
+        {onSkip && <button className="btn small" disabled={busy} onClick={onSkip}>{t('Skip')}</button>}
+        {onCancel && <button className="btn small ghost" disabled={busy} onClick={onCancel}>{t('Cancel')}</button>}
         {err && <span className="err">{err}</span>}
       </div>
     </div>)

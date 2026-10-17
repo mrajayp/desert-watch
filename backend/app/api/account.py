@@ -10,6 +10,7 @@ from ..db import get_db
 from ..learning import record_events
 from ..models import (ArticleAssessment, AuthSession, Comment, Event, Feedback, GapClaim, GapVote, Item, KeyEvent, Label,
                       OutletCategory, Suggestion, User, utcnow)
+from ..i18n import tr
 
 router = APIRouter(prefix="/api")
 
@@ -63,12 +64,12 @@ def me_json(u: User) -> dict:
 def login(body: LoginIn, response: Response, s: Session = Depends(get_db)):
     u = s.scalar(select(User).where(User.email == body.email.strip().lower()))
     if not u or not auth.verify_password(body.password, u.pw_hash):
-        raise HTTPException(401, "Email or password is wrong.")
+        raise HTTPException(401, tr("Email or password is wrong."))
     status = u.status or "active"
     if status == "pending":
-        raise HTTPException(403, "Your access request is waiting for an admin to approve it.")
+        raise HTTPException(403, tr("Your access request is waiting for an admin to approve it."))
     if status == "rejected" or status == "disabled" or not u.active:
-        raise HTTPException(403, "This account is not active. Contact an admin.")
+        raise HTTPException(403, tr("This account is not active. Contact an admin."))
     auth.start_session(s, u, response)
     return me_json(u)
 
@@ -79,13 +80,13 @@ def signup(body: SignupIn, request: Request, s: Session = Depends(get_db)):
     the role. No session is started until approval."""
     ip = request.client.host if request.client else "?"
     if _rate_limited(ip):
-        raise HTTPException(429, "Too many requests from this address. Try again later.")
+        raise HTTPException(429, tr("Too many requests from this address. Try again later."))
     email = body.email.strip().lower()
     if "@" not in email or "." not in email.split("@")[-1] or len(email) > 200:
-        raise HTTPException(400, "Enter a valid email address.")
+        raise HTTPException(400, tr("Enter a valid email address."))
     if s.scalar(select(User).where(User.email == email)):
         # same answer whether or not the email exists, so the form can't be used to probe accounts
-        return {"ok": True, "message": "Request received. An admin will review it."}
+        return {"ok": True, "message": tr("Request received. An admin will review it.")}
     try:
         u = auth.create_user(s, email, body.password, body.display_name, role="viewer")
     except ValueError as e:
@@ -94,7 +95,7 @@ def signup(body: SignupIn, request: Request, s: Session = Depends(get_db)):
     u.organisation = (body.organisation or "").strip()[:200] or None
     u.signup_note = (body.note or "").strip()[:2000] or None
     s.commit()
-    return {"ok": True, "message": "Request received. An admin will review it."}
+    return {"ok": True, "message": tr("Request received. An admin will review it.")}
 
 
 @router.post("/auth/logout")

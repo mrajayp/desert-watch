@@ -69,6 +69,13 @@ a:hover { text-decoration: underline; }
 button, input, select, textarea { font: inherit; color: inherit; }
 :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 [dir="rtl"], .ar { font-family: var(--sans); }
+/* Arabic interface: the page mirrors (flex rows, logical margins), charts keep their left-to-right
+   geometry (time runs left to right, as in Arabic news graphics) while their Arabic labels still shape. */
+[dir="rtl"] body { line-height: 1.6; }
+svg { direction: ltr; }
+[dir="rtl"] .drawer { box-shadow: 8px 0 24px rgba(0,0,0,.15); }
+[dir="rtl"] .mono, [dir="rtl"] code, [dir="rtl"] input[type="email"], [dir="rtl"] input[type="url"],
+[dir="rtl"] input[type="password"] { direction: ltr; text-align: start; unicode-bidi: plaintext; }
 
 /* ---- shell */
 .shell { display: grid; grid-template-rows: auto auto 1fr; grid-template-columns: minmax(0, 1fr); min-height: 100vh; }
@@ -91,7 +98,7 @@ select, input[type=text], input[type=email], input[type=password], input[type=ur
 textarea { width: 100%; min-height: 70px; resize: vertical; }
 .seg { display: inline-flex; border: 1px solid var(--axis); border-radius: 6px; overflow: hidden; }
 .seg button { border: 0; background: var(--surface); padding: 4px 10px; cursor: pointer; color: var(--ink-2); }
-.seg button + button { border-left: 1px solid var(--axis); }
+.seg button + button { border-inline-start: 1px solid var(--axis); }
 .seg button[aria-pressed=true] { background: var(--ink); color: var(--surface); }
 .seg button:disabled { color: var(--muted); cursor: not-allowed; }
 
@@ -108,6 +115,8 @@ main.page { padding: 20px; max-width: 1500px; width: 100%; margin: 0 auto; }
 .sub { color: var(--muted); font-size: 12.5px; margin: 0 0 12px; }
 .card-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; }
 .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.row { min-width: 0; max-width: 100%; }  /* a long option (theme names) must not push a row past a phone screen */
+.row > select { min-width: 0; }
 .spacer { flex: 1; }
 .muted { color: var(--muted); }
 .small { font-size: 12px; }
@@ -127,11 +136,11 @@ main.page { padding: 20px; max-width: 1500px; width: 100%; margin: 0 auto; }
 .pill.ok { background: color-mix(in srgb, var(--good) 16%, transparent); }
 .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex: none; }
 
-.banner { border: 1px solid var(--line); border-left: 3px solid var(--warning); background: var(--surface); padding: 10px 14px; border-radius: 6px; margin-bottom: 14px; }
-.banner.info { border-left-color: var(--accent); }
+.banner { border: 1px solid var(--line); border-inline-start: 3px solid var(--warning); background: var(--surface); padding: 10px 14px; border-radius: 6px; margin-bottom: 14px; }
+.banner.info { border-inline-start-color: var(--accent); }
 
 table.data { width: 100%; border-collapse: collapse; font-size: 13px; }
-table.data th { text-align: left; font-weight: 600; color: var(--ink-2); border-bottom: 1px solid var(--axis); padding: 6px 8px; position: sticky; top: 0; background: var(--surface); }
+table.data th { text-align: start; font-weight: 600; color: var(--ink-2); border-bottom: 1px solid var(--axis); padding: 6px 8px; position: sticky; top: 0; background: var(--surface); }
 table.data td { border-bottom: 1px solid var(--grid); padding: 6px 8px; vertical-align: top; }
 table.data tr:hover td { background: var(--surface-2); }
 .scroll { overflow: auto; max-height: 520px; }
@@ -148,7 +157,7 @@ table.data tr:hover td { background: var(--surface-2); }
 .tooltip { position: absolute; pointer-events: none; background: var(--surface); color: var(--ink); border: 1px solid var(--line); box-shadow: var(--shadow); border-radius: 6px; padding: 8px 10px; font-size: 12px; max-width: 280px; z-index: 30; }
 .tooltip b { font-weight: 600; }
 .legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12px; color: var(--ink-2); align-items: center; }
-.legend .sw { width: 12px; height: 12px; border-radius: 3px; display: inline-block; vertical-align: -2px; margin-right: 5px; }
+.legend .sw { width: 12px; height: 12px; border-radius: 3px; display: inline-block; vertical-align: -2px; margin-inline-end: 5px; }
 .legend .ramp { display: inline-flex; border-radius: 3px; overflow: hidden; vertical-align: -2px; }
 .legend .ramp span { width: 16px; height: 10px; }
 
@@ -160,7 +169,7 @@ table.data tr:hover td { background: var(--surface-2); }
 .stat .l { font-size: 12px; color: var(--muted); }
 
 .drawer-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.25); z-index: 40; }
-.drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(560px, 100vw); background: var(--surface); z-index: 41; overflow: auto; padding: 18px; box-shadow: -8px 0 24px rgba(0,0,0,.15); }
+.drawer { position: fixed; top: 0; inset-inline-end: 0; bottom: 0; width: min(560px, 100vw); background: var(--surface); z-index: 41; overflow: auto; padding: 18px; box-shadow: -8px 0 24px rgba(0,0,0,.15); }
 .modal { position: fixed; left: 50%; top: 8vh; transform: translateX(-50%); width: min(560px, calc(100vw - 32px)); max-height: 84vh; overflow: auto; background: var(--surface); z-index: 41; border-radius: 10px; padding: 18px; box-shadow: var(--shadow); }
 .form { display: grid; gap: 10px; }
 .form label { display: grid; gap: 4px; font-size: 13px; color: var(--ink-2); }
@@ -168,9 +177,9 @@ table.data tr:hover td { background: var(--surface-2); }
 .chip { border: 1px solid var(--axis); background: var(--surface); padding: 2px 9px; border-radius: 999px; cursor: pointer; font-size: 12.5px; }
 .chip[aria-pressed=true] { background: var(--ink); color: var(--surface); border-color: var(--ink); }
 .err { color: var(--critical); font-size: 13px; }
-.comment { border-left: 2px solid var(--grid); padding: 4px 0 4px 10px; margin: 8px 0; }
+.comment { border-inline-start: 2px solid var(--grid); padding-block: 4px; padding-inline: 10px 0; margin: 8px 0; }
 .comment .meta { font-size: 12px; color: var(--muted); }
-.reply { margin-left: 18px; }
+.reply { margin-inline-start: 18px; }
 .center-page { min-height: 100vh; display: grid; place-items: center; padding: 16px; }
 .auth-card { width: min(380px, 100%); }
 .empty { color: var(--muted); padding: 24px; text-align: center; }

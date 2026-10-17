@@ -23,6 +23,7 @@ from datetime import date, datetime, timedelta, timezone
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+from .i18n import lang
 
 SOURCE = "gtrends"
 MAX_SLOTS = 5               # Trends compares at most five items per request
@@ -214,6 +215,8 @@ def search_terms(s: Session, country_id: int, theme_slug: str, theme_group: str 
     gloss = g.get("glosses") or {}
     terms = (g.get("baskets") or {}).get(theme_slug) or []
     why = g.get("unmeasured") or {}
+    if lang() == "ar":   # Arabic reasons where the config has them, English otherwise
+        why = {**why, **(g.get("unmeasured_ar") or {})}
     return {"measured": bool(terms), "version": g.get("version"),
             "terms": [{"ar": t, "en": gloss.get(t)} for t in terms],
             "anchor": {"ar": g["anchor"], "en": gloss.get(g["anchor"])},

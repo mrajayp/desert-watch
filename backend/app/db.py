@@ -63,6 +63,8 @@ ADDED_COLUMNS = {
     "item_theme": {"evidence": "JSON", "score": "FLOAT", "model_version": "VARCHAR(40)"},
     "user": {"status": "VARCHAR(10) DEFAULT 'active'", "organisation": "VARCHAR(200)", "signup_note": "TEXT",
              "approved_by": "INTEGER"},
+    "key_event": {"label_ar": "VARCHAR(300)"},
+    "digest": {"content_md_ar": "TEXT"},
 }
 
 
