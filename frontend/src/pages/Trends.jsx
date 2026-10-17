@@ -3,6 +3,7 @@ import { api, qs } from '../api'
 import { useApp } from '../App'
 import Filters from '../components/Filters'
 import TrendBars from '../charts/TrendBars'
+import IndicatorLines from '../charts/IndicatorLines'
 import { lensNeed, weekEnd, weekRange } from '../charts/trendText'
 import { HistoryLine, MonthlyCoverage } from '../charts/Balance'
 import { LENS_TEXT, sourceLabel } from '../charts/scales'
@@ -43,6 +44,15 @@ export default function Trends() {
   }, [filters.lens, regionId])
   useEffect(() => { api('/api/coverage-history' + qs({ theme_id: themeId })).then(setHistory) }, [themeId])
   const theme = meta.themes.find((t) => t.id === themeId)
+  const [signals, setSignals] = useState(null)
+  useEffect(() => { api('/api/indicators' + qs({ theme: 'economy', days: 400 })).then((r) => setSignals(r.indicators)).catch(() => setSignals([])) }, [])
+  const economy = meta.themes.find((t) => t.slug === 'economy')
+  const pickSignalDay = (day) => {
+    if (!economy) return
+    const end = new Date(day + 'T00:00:00Z'), start = new Date(end.getTime() - 6 * 864e5)
+    openArticles({ title: `${tname(economy)} · ${iso(start)} → ${day}`, subtitle: 'Economy articles for the 7 days to this day',
+      query: { theme_id: economy.id, start: iso(start), end: day } })
+  }
   const tname = (t) => (lang === 'ar' ? t.name_ar : t.name_en)
   const iso = (d) => d.toISOString().slice(0, 10)
   const where = region.level === 'national' ? `All of ${meta.country.name_en}` : region.name_en
@@ -95,6 +105,12 @@ export default function Trends() {
                   The counts cover the {basis.outlets} outlets we collected from all through {longDate(basis.from)} to {longDate(basis.to)}, from {andList(basis.sources.map(basisWord))}. We leave out the backfill and newer feeds so a new source does not look like more coverage.</p>)}
             </>)}
         </section>
+        {signals?.length > 0 && (
+          <section className="card" style={{ marginTop: 16 }}>
+            <h2>Economy signals from outside the news</h2>
+            <p className="sub">Daily numbers that show what people in Libya are dealing with, next to what the outlets write. Each line has its own scale and is never scored. Click a day to see that week's economy articles.</p>
+            <IndicatorLines indicators={signals} onPickDay={pickSignalDay} />
+          </section>)}
         <section className="card" style={{ marginTop: 16 }}>
           <div className="card-head">
             <div><h2>Collected coverage by month · {lang === 'ar' ? theme.name_ar : theme.name_en}</h2>

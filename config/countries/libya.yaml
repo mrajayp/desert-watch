@@ -71,6 +71,31 @@ cities:
   Kufra: [24.180, 23.290]
   Ajdabiya: [30.756, 20.226]
 
+# Pages people in Libya read on Wikipedia (Wikimedia's privacy-protected daily dataset, collector
+# wikireading): keep the day's Libya-related pages (wiki_reading) and turn these pages into daily
+# indicators. Pages are named by project and page_id, which stays the same when a page is renamed.
+wiki_reading: true
+# pages about these count as Libya pages even when the title names no Libyan place (public figures and institutions only)
+wiki_reading_terms: [حفتر, الدبيبة, الككلي, المنفي, عقيلة صالح, تكالة, الناظوري, باشاغا, السراج, القذافي, المشري, الصديق الكبير, ناجي عيسى,
+  جهاز دعم الاستقرار, المؤسسة الوطنية للنفط, مصرف ليبيا المركزي, الجيش الوطني الليبي, حكومة الوحدة الوطنية, مجلس النواب الليبي,
+  المجلس الأعلى للدولة, المفوضية الوطنية العليا للانتخابات, منصة حجز العملة, Haftar, Dbeibah, Kikli, Menfi, Aguila Saleh, Takala,
+  Bashagha, Gaddafi, Qaddafi, National Oil Corporation, Central Bank of Libya, Libyan National Army, Government of National Unity,
+  High National Elections Commission, Stability Support Apparatus]
+wiki_indicators:
+  wiki_fx_platform:
+    label: People in Libya reading the central bank's currency booking page
+    label_ar: القراءات من ليبيا لصفحة منصة حجز العملة الأجنبية
+    theme: economy
+    unit: views a day
+    # منصة حجز العملة الأجنبية للأفراد (the CBL platform for buying foreign currency), renamed twice in 2025-26
+    pages: {ar.wikipedia: [10077606]}
+  wiki_cbl:
+    label: People in Libya reading the Central Bank of Libya page
+    label_ar: القراءات من ليبيا لصفحة مصرف ليبيا المركزي
+    theme: economy
+    unit: views a day
+    pages: {ar.wikipedia: [37451]}
+
 # Wikimedia pageview articles per theme (titles verified 2026-10-12).
 # National-level audience lens only.
 wikipedia:

@@ -6,6 +6,7 @@ import { api } from '../api'
 import { useApp } from '../App'
 import { fmt } from '../charts/scales'
 import { ExportMenu, fitLabel, themeLabel, useSize, useTooltip } from '../charts/util'
+import WikiReading from '../components/WikiReading'
 
 const RANGES = [['all', 'All'], ['24', '24 months'], ['12', '12 months']]
 
@@ -187,6 +188,11 @@ export default function Timeline() {
                 <button className="btn small ghost" onClick={() => removeEvent(e.id)}>remove</button>}</li>))}</ul>
         </section>
       </div>
+      <section className="card" style={{ marginTop: 16 }}>
+        <h2>What people in Libya read on Wikipedia</h2>
+        <p className="sub">Libya pages that people in Libya read each day, from Wikimedia's privacy-protected figures. Most days only a few pages make it. The days with many are days when something happened.</p>
+        <WikiReading />
+      </section>
     </main>
   )
 }

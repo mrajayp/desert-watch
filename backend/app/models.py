@@ -456,6 +456,38 @@ class ItemEngagement(Base):
     raw: Mapped[dict] = mapped_column(JSON, default=dict)
 
 
+class Indicator(Base):
+    """A daily number from outside the news, shown next to coverage and never scored: the dinar's
+    exchange rates, or how often people in Libya looked up a page on Wikipedia. value is None when
+    the day was checked and the source had nothing (a Wikipedia page below the privacy threshold)."""
+    __tablename__ = "indicator"
+    __table_args__ = (UniqueConstraint("country_id", "key", "day"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    country_id: Mapped[int] = mapped_column(ForeignKey("country.id"), index=True)
+    key: Mapped[str] = mapped_column(String(40), index=True)   # wiki_fx_platform | usd_lyd_parallel | usd_lyd_official
+    day: Mapped[date] = mapped_column(Date, index=True)
+    value: Mapped[float | None] = mapped_column(Float)
+    source: Mapped[str] = mapped_column(String(40))
+    extra: Mapped[dict] = mapped_column(JSON, default=dict)
+    fetched_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class WikiReading(Base):
+    """A Wikipedia page that people in the country read on a day, from Wikimedia's privacy-protected
+    daily dataset (only pages above about 90 views from that country, with noise added). We keep only
+    pages that name the country or one of its places, or that a theme or an indicator lists."""
+    __tablename__ = "wiki_reading"
+    __table_args__ = (UniqueConstraint("country_id", "day", "project", "page_id"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    country_id: Mapped[int] = mapped_column(ForeignKey("country.id"), index=True)
+    day: Mapped[date] = mapped_column(Date, index=True)
+    project: Mapped[str] = mapped_column(String(40))
+    page_id: Mapped[int] = mapped_column(Integer)
+    page_title: Mapped[str] = mapped_column(String(300))
+    qid: Mapped[str | None] = mapped_column(String(20))
+    views: Mapped[int] = mapped_column(Integer)
+
+
 class NodeMetric(Base):
     __tablename__ = "node_metric"
     __table_args__ = (UniqueConstraint("country_id", "node", "graph"),)

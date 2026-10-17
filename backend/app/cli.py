@@ -25,6 +25,8 @@
   import-search PATH        load Google Trends search rows (JSONL from scripts/fetch_gtrends.py, or a folder: its newest file)
   collect-search [--provider serpapi|official] [--daily]  fetch search rows with a keyed provider and load them
   repair-wiki-themes        file existing Wikipedia pageview days under every theme that lists the title
+  wiki-reading [--since YYYY-MM-DD] [--until YYYY-MM-DD]  pages read in Libya on Wikipedia + page indicators
+                            (Wikimedia's daily privacy-protected files, about 20 MB a day, days already stored are skipped)
   resolve-links [--days N] [--limit N] [--minutes N]  find the outlet's own link for Google News items
                             (default 14 days, at most 400 site searches and 15 minutes. Probes and post dates come on top of the searches)
   reach-snapshot [--limit N]            Tranco web rank for Libyan outlets + the 100 busiest (outlet.external['reach'])
@@ -213,6 +215,14 @@ def main(argv: list[str]):
         from .imports.alignment_sources import run as run_align
         with SessionLocal() as s:
             print(run_align(s))
+    elif cmd == "wiki-reading":
+        from datetime import date, timedelta
+        from .collectors.wikireading import run as run_reading
+        since = date.fromisoformat(args[args.index("--since") + 1]) if "--since" in args else date.today() - timedelta(days=7)
+        until = date.fromisoformat(args[args.index("--until") + 1]) if "--until" in args else date.today() - timedelta(days=1)
+        with SessionLocal() as s:
+            res = run_reading(s, since, until, out=lambda r: print(r, flush=True))
+        print({k: v for k, v in res.items() if k != "days"})
     elif cmd == "repair-wiki-themes":
         from .collectors.wikipedia import repair_themes
         with SessionLocal() as s:

@@ -175,6 +175,7 @@ def six_hourly():
     collect("gnews")
     collect("gdelt")
     collect("fb_url")   # Facebook readings at ~48 h and ~7 days (awaiting key until the Meta app exists)
+    collect("wikireading")   # Wikimedia publishes each day's file around 02:30-03:00 UTC the next day
 
 
 @_locked

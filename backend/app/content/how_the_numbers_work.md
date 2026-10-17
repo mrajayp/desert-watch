@@ -163,10 +163,18 @@ We never rank outlets against each other by engagement. Raw counts differ hugely
 
 Some things we chose not to collect. Bluesky, Reddit, Hacker News and X either barely carry Libyan news or charge for access. SharedCount sells the same Facebook numbers we can read ourselves. Some outlet sites show view counters, but they are easy to game, and on some sites reading the counter adds a view. We never call those. Telegram views would mean scraping public channel pages, and few Libyan outlet channels link their articles, so we left it for now. There is no engagement score in the gap figures yet. It needs at least eight weeks of Facebook readings to compare against.
 
+## Signals from outside the news
+
+The Trends page shows a few daily numbers next to coverage. We never score them. Each has its own scale, and we never put one on the same axis as articles.
+
+Wikimedia publishes, for each country, the Wikipedia pages read from there on a day. It only lists a page on days it has more than about 90 views from that country, and it adds noise of about 35 views to protect readers. For Libya that leaves 10 to 30 pages a day. Most are the main pages, football and pages we leave out.
+
+We keep two things from it. The first is how often people in Libya read the page on the central bank's currency booking platform, and the page on the central bank itself. These are signs of how much people are dealing with getting foreign currency. The second is the list of Libya pages read from Libya each day, which the Timeline page shows. On most days it holds one or two pages. On days when something happens it fills up, for example with Derna and its dams after the flood, or with Abdel Ghani al-Kikli after the Tripoli clashes. We only keep pages that name Libya or one of its places, public figures and institutions on a short list, and pages a theme follows. A gap in a line means the page had fewer than about 90 views that day.
+
 ## When the numbers update
 
 - Hourly: outlet feeds, YouTube channels, Google Alerts and the theme model on new articles, then scores and the network for the last 12 weeks.
-- Every six hours: Google News, GDELT articles, the official statements and, once the Meta app is set up, Facebook link readings.
+- Every six hours: the Wikipedia pages read in Libya, Google News, GDELT articles, the official statements and, once the Meta app is set up, Facebook link readings.
 - Nightly: Wikipedia page views, the social media posts Google has indexed, the outlets' own links for Google News items and a retrain of the theme model on new labels, then the full history of scores and the network.
 - Mondays: the digest.
 - About once a week, by hand: Google searches for the search lens.

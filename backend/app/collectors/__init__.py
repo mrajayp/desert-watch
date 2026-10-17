@@ -1,4 +1,4 @@
-from . import fb_engagement, galerts, gdelt, gnews, gnews_social, keyed, official, rss, wikipedia
+from . import fb_engagement, galerts, gdelt, gnews, gnews_social, keyed, official, rss, wikipedia, wikireading
 
 # key -> (callable, human description). Order = scheduler order.
 COLLECTORS = {
@@ -11,6 +11,7 @@ COLLECTORS = {
     "gdelt": (gdelt.collect, "GDELT article lists"),
     "gdelt_timeline": (gdelt.collect_timeline, "GDELT coverage history"),
     "wikipedia": (wikipedia.collect, "Wikipedia pageviews"),
+    "wikireading": (wikireading.collect, "Wikipedia pages read in Libya (Wikimedia, privacy-protected)"),
     "acled": (keyed.acled, "ACLED events"),
     "ucdp": (keyed.ucdp, "UCDP events"),
     "reliefweb": (keyed.reliefweb, "ReliefWeb reports"),

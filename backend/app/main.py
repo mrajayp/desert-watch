@@ -7,7 +7,7 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy import func, select
 
 from . import settings
-from .api import account, admin, contribute, gaps, items, labelling, outlets, social
+from .api import account, admin, contribute, gaps, items, labelling, outlets, signals, social
 from .db import SessionLocal, init_db
 from .models import SourceRun
 from .seed import seed_all
@@ -35,7 +35,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Desert Watch", lifespan=lifespan, docs_url=None, redoc_url=None)
 for r in (account.router, gaps.router, items.router, social.router, outlets.router, admin.router, contribute.router,
-          labelling.router):
+          labelling.router, signals.router):
     app.include_router(r)
 
 
