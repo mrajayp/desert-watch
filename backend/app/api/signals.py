@@ -18,8 +18,10 @@ router = APIRouter(prefix="/api")
 
 # indicators that do not come from the country config (collectors/fxrate.py). Keys sharing a chart are
 # drawn together on one axis (same unit). style: main = the headline line, alt = a variant, ref = the reference.
-FX_NOTE = ("The parallel rate is Al-Mashhad al-Libi's daily closing figure for Tripoli's market. The official rate is the "
-           "Central Bank of Libya's average of buy and sell.")
+FX_NOTE = ("The parallel rate is Al-Mashhad al-Libi's daily figure for Tripoli's market, the evening close where there is one "
+           "and the midday price otherwise. Before late 2023 it comes from the rate box on the Libya Observer, as the Internet "
+           "Archive saved it. The official rate is the Central Bank of Libya's average of buy and sell. From 18 January 2026 the "
+           "official rate includes the 15% tax on buying foreign currency, so it jumps that week.")
 FIXED = {
     "usd_lyd_parallel": {"label": "Parallel market, cash", "unit": "dinars", "theme": "economy", "chart": "usd", "style": "main", "note": FX_NOTE},
     "usd_lyd_parallel_cheque": {"label": "Parallel market, by bank cheque", "unit": "dinars", "theme": "economy", "chart": "usd", "style": "alt", "note": FX_NOTE},

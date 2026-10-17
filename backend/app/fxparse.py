@@ -180,7 +180,8 @@ def classify_almashhad(title: str) -> str | None:
         return 'close'
     if 'أسبوعي' in t or 'أسبوع' in t:
         return 'weekly'
-    if t.startswith('تغيير جديد') or (t.startswith('قفزة جديدة..') and 'السوق الموازي (' in t):
+    # midday posts name the parallel market (a "تغيير جديد" post about bank-card deposits is not one)
+    if (t.startswith('تغيير جديد') or t.startswith('قفزة جديدة..')) and 'السوق الموازي' in t:
         return 'midday'
     return None
 
@@ -220,25 +221,47 @@ def parse_almashhad_post(post: dict) -> tuple[str | None, list[Row]]:
     return kind, rows
 
 
+RANK = {'close': 3, 'weekly': 2, 'midday': 1}
+TYPO_TOL = 0.03   # a quote more than 3% from the same day's other quotes is a typo ("10.8" for 10.08)
+
+
 def parse_almashhad_posts(posts: list[dict], kind: str = 'close') -> list[Row]:
-    """Daily rows from Al-Mashhad posts. kind='close' (evening close series, preferred),
-    'midday' (the "تغيير جديد" series), or 'best' (close > midday > any other rate story, per
-    day and currency). Within a rank the latest-published post wins (closest to the close)."""
+    """Daily rows from Al-Mashhad posts. kind='close' (evening close series), 'midday' (the "تغيير جديد"
+    series) or 'best' (close > weekly Thursday close > midday, per day and currency; within a rank the
+    latest-published post wins). Free-text stories are never used (they mix cash, cheque and official
+    figures). Corrections from the 2026-10-17 check:
+    - a close post that repeats a day another close post already gave is dated by its publish time
+      minus 6 hours instead (stale dates in titles or bodies overwrote real closes);
+    - a dollar quote more than 3% from the median of the same day's other quotes is dropped."""
     best: dict[tuple, tuple] = {}
+    quotes: dict[dt.date, list[float]] = {}
+    close_days: dict[dt.date, int] = {}
     for p in sorted(posts, key=lambda p: p['date']):
         k, rows = parse_almashhad_post(p)
-        if not k and kind == 'best':
-            k = 'other'
-            rows = parse_generic_post(_html.unescape(p['title']['rendered']), html_to_text(p['content']['rendered']),
-                                      _local(p['date']), p['link'])
         if not k or (kind != 'best' and k != kind):
             continue
-        rank = {'close': 2, 'weekly': 2, 'midday': 1}.get(k, 0)
+        if k == 'close' and rows:
+            day = rows[0][0]
+            if day in close_days and close_days[day] != p['id']:
+                moved = (_local(p['date']) - dt.timedelta(hours=6)).date()
+                rows = [(moved, *r[1:]) for r in rows]
+                day = moved
+            close_days.setdefault(day, p['id'])
         for r in rows:
+            if r[1] == 'USD':
+                quotes.setdefault(r[0], []).append(r[2])
             key = (r[0], r[1])
-            if key not in best or rank >= best[key][0]:
-                best[key] = (rank, r)
-    return sorted((v[1] for v in best.values()), key=lambda r: (r[0], r[1]))
+            if key not in best or RANK[k] >= best[key][0]:
+                best[key] = (RANK[k], r)
+    out = []
+    for (day, cur), (_, r) in best.items():
+        others = [q for q in quotes.get(day, []) if q != r[2]]
+        if cur == 'USD' and len(others) >= 2:
+            mid = sorted(others)[len(others) // 2]
+            if abs(r[2] - mid) / mid > TYPO_TOL:
+                continue
+        out.append(r)
+    return sorted(out, key=lambda r: (r[0], r[1]))
 
 
 # ---------------------------------------------------------------- 2. CBL official

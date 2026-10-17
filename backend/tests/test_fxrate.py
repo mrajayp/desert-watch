@@ -108,3 +108,13 @@ def test_archive_fills_only_days_the_daily_sources_do_not_have(db, tmp_path):
     assert res["updates"] == 3 and v[("usd_lyd_parallel", date(2019, 7, 15))] == 4.51
     assert v[("usd_lyd_official", date(2019, 7, 15))] == 1.3991       # the pre-2021 official rate is kept
     assert v[("usd_lyd_parallel", date(2026, 10, 15))] == 10.19          # the daily source wins
+
+
+def test_midday_needs_the_market_name_and_close_beats_the_weekly_summary(db):
+    from app import fxparse
+    assert fxparse.classify_almashhad("تغيير جديد.. السوق الموازي (الأربعاء 14 أكتوبر 2026)") == "midday"
+    assert fxparse.classify_almashhad("تغيير جديد في سعر إيداع البطاقات المصرفية") is None
+    weekly = {"id": 9, "date": "2026-10-16T18:00:00", "link": "https://almashhadlibya.com/p/9",
+              "title": {"rendered": "حصاد أسبوعي للسوق الموازي"}, "content": {"rendered": "<p>لينهي الأسبوع عند 10.40 دنانير</p>"}}
+    rows = {(r[0], r[1]): r[2] for r in fxparse.parse_almashhad_posts([CLOSE, weekly], "best")}
+    assert rows[(date(2026, 10, 15), "USD")] == 10.19          # Thursday 15 Oct: the close post wins over the weekly summary

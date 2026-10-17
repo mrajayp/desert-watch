@@ -10,10 +10,10 @@ of buy and sell. GET gives the latest day. Its own date filter (a form POST) giv
 
 Parsing lives in app/fxparse.py (no network there). Each source keeps only (day, currency, value,
 link): no author names, no comments. One Indicator row per key and day, replaced on each run."""
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 import httpx
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from .. import fxparse
@@ -23,6 +23,7 @@ from .base import RunResult, http_client, polite_get, refused
 MASHHAD_API = "https://almashhadlibya.com/wp-json/wp/v2/posts"
 MASHHAD_CATEGORY = 8              # أسعار العملات
 MASHHAD_SEARCH = "ختام السوق الموازي"
+MIDDAY_SEARCH = "تغيير جديد"     # the midday post, every day; the evening close stopped in Oct 2026
 # the same posts, reposted with the same text by Libya Akhbar (tag اسعار الدولار), if Al-Mashhad's Cloudflare says no
 MIRROR_API, MIRROR_TAG = "https://www.libyaakhbar.com/wp-json/wp/v2/posts", 98
 CBL_URL = "https://cbl.gov.ly/currency-exchange-rates/"
@@ -58,17 +59,19 @@ def recent_posts(client: httpx.Client, days: int = 3) -> tuple[list[dict], str]:
         return _posts(client, MIRROR_API, {"tags": MIRROR_TAG, "after": after, "per_page": 50})[0], "libyaakhbar"
 
 
-def close_history(client: httpx.Client, max_pages: int = 20) -> list[dict]:
-    """All closing posts, newest first, page by page (about 13 pages of 100 since Nov 2023)."""
-    posts, page, total = [], 1, 1
-    while page <= min(total, max_pages):
-        more, total = _posts(client, MASHHAD_API, {"categories": MASHHAD_CATEGORY, "search": MASHHAD_SEARCH,
-                                                    "per_page": 100, "page": page, "orderby": "date", "order": "desc"})
-        if not more:
-            break
-        posts += more
-        page += 1
-    return posts
+def history_posts(client: httpx.Client, max_pages: int = 30) -> list[dict]:
+    """All closing and midday posts, page by page (about 13 + 10 pages of 100 since Nov 2023)."""
+    seen = {}
+    for q in (MASHHAD_SEARCH, MIDDAY_SEARCH):
+        page, total = 1, 1
+        while page <= min(total, max_pages):
+            more, total = _posts(client, MASHHAD_API, {"categories": MASHHAD_CATEGORY, "search": q,
+                                                        "per_page": 100, "page": page, "orderby": "date", "order": "desc"})
+            if not more:
+                break
+            seen.update({p["id"]: p for p in more})
+            page += 1
+    return list(seen.values())
 
 
 def cbl_page(client: httpx.Client, start: date | None = None, end: date | None = None) -> str:
@@ -131,15 +134,17 @@ def run(s: Session, *, history: bool = False, cbl_since: date | None = None, cli
             out["errors"].append(f"cbl: {e}"[:200])
         try:
             if history:
-                posts, out["source"] = close_history(client), "almashhad"
-                rows = fxparse.parse_almashhad_posts(posts, "close")
+                posts, out["source"] = history_posts(client), "almashhad"
+                # a rebuild: earlier rows may hold values the parser no longer gives (stale dates, typos)
+                s.execute(delete(Indicator).where(Indicator.country_id == c.id, Indicator.source.in_(("almashhad", "libyaakhbar")),
+                                                  Indicator.key.in_([k for (_, m), k in KEYS.items() if m == "parallel"])))
             else:
                 posts, out["source"] = recent_posts(client)
-                rows = fxparse.parse_almashhad_posts(posts, "best")
-                newest = max((p for p in posts if fxparse.classify_almashhad(p["title"]["rendered"]) == "close"),
-                             key=lambda p: p["date"], default=None)
-                if newest and not any(r[1] == "USD" for r in fxparse.parse_almashhad_post(newest)[1]):
-                    out["warnings"].append(f"newest closing post has no dollar figure we can read: {newest['link']}")
+            rows = fxparse.parse_almashhad_posts(posts, "best")
+            rated = [p["date"] for p in posts if fxparse.classify_almashhad(p["title"]["rendered"]) in ("close", "midday")]
+            now = datetime.now(fxparse.TRIPOLI).replace(tzinfo=None)
+            if not history and (not rated or now - fxparse._local(max(rated)) > timedelta(hours=36)):
+                out["warnings"].append("no closing or midday rate post in the last 36 hours")
             kept, dropped = fxparse.clean_series(rows, official_by_day(s, c.id))
             out["parallel"] = store(s, c.id, kept, "parallel", out["source"])
             out["dropped"] = len(dropped)
