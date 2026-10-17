@@ -26,6 +26,8 @@
   collect-search [--provider serpapi|official] [--daily]  fetch search rows with a keyed provider and load them
   repair-wiki-themes        file existing Wikipedia pageview days under every theme that lists the title
   wiki-reading [--since YYYY-MM-DD] [--until YYYY-MM-DD]  pages read in Libya on Wikipedia + page indicators
+  fx-rates [--history] [--cbl-since YYYY-MM-DD]  dinar rates: parallel (Al-Mashhad) and official (central bank)
+  import-fx-archive PATH    Libya Observer's rate box over time (Internet Archive JSONL), fills days with no value only
                             (Wikimedia's daily privacy-protected files, about 20 MB a day, days already stored are skipped)
   resolve-links [--days N] [--limit N] [--minutes N]  find the outlet's own link for Google News items
                             (default 14 days, at most 400 site searches and 15 minutes. Probes and post dates come on top of the searches)
@@ -215,6 +217,16 @@ def main(argv: list[str]):
         from .imports.alignment_sources import run as run_align
         with SessionLocal() as s:
             print(run_align(s))
+    elif cmd == "import-fx-archive":
+        from .collectors.fxrate import import_archive
+        with SessionLocal() as s:
+            print(import_archive(s, args[0]))
+    elif cmd == "fx-rates":
+        from datetime import date
+        from .collectors.fxrate import run as run_fx
+        since = date.fromisoformat(args[args.index("--cbl-since") + 1]) if "--cbl-since" in args else None
+        with SessionLocal() as s:
+            print(run_fx(s, history="--history" in args, cbl_since=since))
     elif cmd == "wiki-reading":
         from datetime import date, timedelta
         from .collectors.wikireading import run as run_reading

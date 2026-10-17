@@ -45,7 +45,8 @@ export default function Trends() {
   useEffect(() => { api('/api/coverage-history' + qs({ theme_id: themeId })).then(setHistory) }, [themeId])
   const theme = meta.themes.find((t) => t.id === themeId)
   const [signals, setSignals] = useState(null)
-  useEffect(() => { api('/api/indicators' + qs({ theme: 'economy', days: 400 })).then((r) => setSignals(r.indicators)).catch(() => setSignals([])) }, [])
+  const [signalDays, setSignalDays] = useState(400)
+  useEffect(() => { api('/api/indicators' + qs({ theme: 'economy', days: signalDays })).then(setSignals).catch(() => setSignals({ indicators: [] })) }, [signalDays])
   const economy = meta.themes.find((t) => t.slug === 'economy')
   const pickSignalDay = (day) => {
     if (!economy) return
@@ -105,11 +106,16 @@ export default function Trends() {
                   The counts cover the {basis.outlets} outlets we collected from all through {longDate(basis.from)} to {longDate(basis.to)}, from {andList(basis.sources.map(basisWord))}. We leave out the backfill and newer feeds so a new source does not look like more coverage.</p>)}
             </>)}
         </section>
-        {signals?.length > 0 && (
+        {signals?.indicators?.length > 0 && (
           <section className="card" style={{ marginTop: 16 }}>
-            <h2>Economy signals from outside the news</h2>
+            <div className="card-head">
+              <h2>Economy signals from outside the news</h2>
+              <span className="seg" role="group" aria-label="Range">
+                {[[400, 'Last year'], [4000, 'Since 2016']].map(([d, l]) =>
+                  <button key={d} aria-pressed={signalDays === d} onClick={() => setSignalDays(d)}>{l}</button>)}</span>
+            </div>
             <p className="sub">Daily numbers that show what people in Libya are dealing with, next to what the outlets write. Each line has its own scale and is never scored. Click a day to see that week's economy articles.</p>
-            <IndicatorLines indicators={signals} onPickDay={pickSignalDay} />
+            <IndicatorLines indicators={signals.indicators} charts={signals.charts} onPickDay={pickSignalDay} />
           </section>)}
         <section className="card" style={{ marginTop: 16 }}>
           <div className="card-head">
