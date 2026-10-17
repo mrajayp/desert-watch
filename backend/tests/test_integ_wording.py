@@ -44,15 +44,16 @@ def test_md_queue_without_model():
 
 
 def test_theme_reasons_plain_words():
+    # wrapped for translation since 2026-10-17 (t(), N_(), tn()); the English words are unchanged
     s = _src("components/ThemeLabels.jsx")
-    assert "snippet: 'summary'" in s and "words`" in s and "terms`" not in s
-    assert "'found by a search'" in s and "text = 'word list'" in s
-    assert not re.search(r"return 'search'|text = 'rule'", s)
+    assert "snippet: N_('summary')" in s and "'{n} words'" in s and "terms'" not in s
+    assert "t('found by a search')" in s and "text = t('word list')" in s
+    assert not re.search(r"return t?\(?'search'|text = t?\(?'rule'", s)
 
 
 def test_outlet_reach_unranked():
     s = _src("components/OutletReach.jsx")
-    assert "Not in the Tranco list of the busiest websites, as of ${t.as_of}." in s
+    assert "Not in the Tranco list of the busiest websites, as of {date}." in s
     assert ": 'none'" not in s
 
 
@@ -67,5 +68,5 @@ def test_gap_panel_expected_and_rounding():
     s = _src("components/GapPanel.jsx")
     assert "import { about } from '../charts/trendText'" in s
     assert "meta.lenses.find((l) => l.key === filters.lens)" in s
-    assert "{about(b.expected_4w)} {reference === 'pooled' ? 'expected' : 'usual'}" in s
+    assert "against {expected} expected." in s and "against {expected} usual." in s and "expected: about(b.expected_4w)" in s
     assert "fmt(b.expected_4w)" not in s and "minimum need" not in s
