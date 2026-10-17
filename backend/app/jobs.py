@@ -106,6 +106,7 @@ def model_job(source_key: str, *args: str) -> dict | None:
 def nightly():
     with SessionLocal() as s:
         learning.purge_old_events(s)
+        learning.purge_account_leftovers(s)
     for key in ("wikipedia", "acled", "ucdp", "reliefweb"):
         collect(key)
     collect("gnews_social")   # yesterday and the day before, one fixed day each (Google indexes late)

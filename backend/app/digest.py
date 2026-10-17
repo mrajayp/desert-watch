@@ -1,6 +1,6 @@
 """Weekly AI digest: one short brief per country per week, written from facts computed here.
 
-The model only sees the facts dict (counts, flags, a few headlines), never raw articles or user
+The model only sees the facts dict (counts, flags, theme and district names; no headlines since 2026-10-17), never raw articles or user
 data, and the facts are stored with the text so any claim can be checked. One call per week;
 without credentials the job records "awaiting_key" and the rest of the app is unaffected."""
 import json
@@ -24,8 +24,7 @@ topics in {country}. Readers are journalists deciding what to cover next.
 Rules:
 - Use only the facts in the JSON you are given. Every number you mention must appear in it. Do not \
 add context from your own knowledge, and do not speculate about causes.
-- Never name private individuals, victims or survivors, even if a headline does. Public officials \
-and institutions may be named when a headline names them.
+- Never name any person. Institutions may be named when the JSON names them.
 - "Coverage" means monitored coverage (news sites and search results the tool can see), not all \
 reporting. Say "monitored" where it matters.
 - Prefer concrete, checkable statements ("14 articles, all in Arabic") over adjectives.
@@ -123,16 +122,6 @@ def build_facts(s: Session, country: Country, week: date) -> dict:
             if f != "mostly_unplaced":
                 flags[f"{themes[cell.theme_id].name_en}: {f}"] += 1
 
-    # a few recent headlines for gender themes (for colour, not names)
-    headlines = []
-    for tid in gender_ids:
-        for title, lang in s.execute(select(Item.title, Item.lang).join(ItemTheme, ItemTheme.item_id == Item.id)
-                                     .where(ItemTheme.theme_id == tid, ItemTheme.active.is_(True),
-                                            Item.relevant.is_(True), Item.duplicate_of.is_(None), Item.kind == "article",
-                                            Item.published_at >= win_start, Item.published_at < win_end)
-                                     .order_by(Item.published_at.desc()).limit(3)):
-            headlines.append({"theme": themes[tid].name_en, "lang": lang, "title": (title or "")[:160]})
-
     # team activity (counts only; no names)
     since = datetime.combine(week, datetime.min.time())
     votes = Counter(v for (v,) in s.execute(select(GapVote.vote).where(GapVote.created_at >= since)))
@@ -146,7 +135,7 @@ def build_facts(s: Session, country: Country, week: date) -> dict:
         "lenses_with_data": sorted({g["lens"] for g in gaps}),
         "districts_with_no_monitored_articles": silent, "districts_total": len(districts),
         "gender_articles_naming_a_district": gender_named,
-        "flags_this_week": dict(flags), "recent_gender_headlines": headlines[:12],
+        "flags_this_week": dict(flags),
         "team_activity_this_week": {"gap_votes": dict(votes), "claims": dict(claims), "comments": comments or 0},
         "known_limits": ["monitored coverage only (Facebook only as the sample of posts Google indexes, no Telegram)",
                          "event and humanitarian need data are pending source keys" if not

@@ -1,8 +1,9 @@
 """Behaviour logging and label building.
 
 Explicit actions (votes, corrections, assessments, added articles) always become
-labels. Implicit events (impressions, clicks, dwell) are only stored for users who
-have not opted out, and only feed 'interest' labels."""
+labels. Implicit events (impressions, clicks, dwell) are stored for every user (there is
+no opt-out since the owner's decision of 2026-10-13; users are told on first login) and
+only feed 'interest' labels."""
 from datetime import timedelta
 
 from sqlalchemy import delete, select
@@ -45,7 +46,7 @@ def _add_label(s: Session, ref: str, **kw) -> bool:
 def build_labels(s: Session) -> int:
     """Idempotent: each source row/event yields at most one label (keyed by source_ref)."""
     n = 0
-    pseudo = {u.id: u.pseudo_id for u in s.scalars(select(User))}
+    pseudo = {u.id: u.pseudo_id for u in s.scalars(select(User).where(User.active.is_(True)))}   # deleted accounts: no pseudo_id
     for v in s.scalars(select(GapVote)):
         n += _add_label(s, f"gap_vote:{v.id}:{v.vote}", label_type="gap_real", object_type="gap",
                         object_key=f"{v.theme_id}:{v.region_id}:{v.week_start.isoformat()}",
@@ -71,6 +72,21 @@ def build_labels(s: Session) -> int:
                             pseudo_id=e.pseudo_id, origin="implicit", weight=0.2)
     s.commit()
     return n
+
+
+def purge_account_leftovers(s: Session) -> dict:
+    """Nightly: expired sign-in sessions, and the organisation and note of applicants rejected more than
+    30 days ago (there is no rejection date, so the sign-up date stands in for it)."""
+    from .models import AuthSession
+    gone = s.execute(delete(AuthSession).where(AuthSession.expires_at < utcnow())).rowcount or 0
+    old = utcnow() - timedelta(days=30)
+    blanked = 0
+    for u in s.scalars(select(User).where(User.status == "rejected", User.created_at < old)):
+        if u.organisation or u.signup_note:
+            u.organisation, u.signup_note = None, None
+            blanked += 1
+    s.commit()
+    return {"sessions": gone, "rejected_blanked": blanked}
 
 
 def purge_old_events(s: Session) -> int:

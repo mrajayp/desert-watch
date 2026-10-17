@@ -52,8 +52,8 @@ def test_implicit_events_recorded_and_filtered(client, users, db):
            {"type": "dwell", "object_type": "gap", "object_key": "1:1", "context": {"seconds": 30}},
            {"type": "evil", "object_key": "x"}]
     assert client.post("/api/events", json={"events": evs}).json()["stored"] == 2
-    client.patch("/api/me", json={"tracking_opt_out": True})
-    assert client.post("/api/events", json={"events": evs}).json()["stored"] == 2  # flag no longer honoured
+    assert "tracking_opt_out" not in client.patch("/api/me", json={"tracking_opt_out": True}).json()  # field gone
+    assert client.post("/api/events", json={"events": evs}).json()["stored"] == 2
     assert client.post("/api/events", json={"events": [{"type": "comment"}]}).json()["stored"] == 1
 
 

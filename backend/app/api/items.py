@@ -10,6 +10,7 @@ from ..db import get_db
 from ..fetch_meta import FetchError, fetch_meta
 from ..ingest import domain_of, load_rules, store_article
 from ..models import ArticleAssessment, Comment, Event, Item, ItemRegion, ItemTheme, User, utcnow
+from .social import counted
 from .common import country_or_404, duplicate_cluster, hydrate_items, items_query, region_or_404, theme_or_404
 
 router = APIRouter(prefix="/api")
@@ -139,7 +140,7 @@ def item_detail(item_id: int, s: Session = Depends(get_db), u: User = Depends(au
                           "mine": {"accuracy": mine.accuracy, "depth": mine.depth, "local_sourcing": mine.local_sourcing,
                                    "note": mine.note} if mine else None}
     out["comment_count"] = s.scalar(select(func.count(Comment.id)).where(
-        Comment.object_type == "item", Comment.object_key == str(item_id), Comment.deleted.is_(False)))
+        Comment.object_type == "item", Comment.object_key == str(item_id), counted()))
     return out
 
 

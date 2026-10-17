@@ -1,3 +1,5 @@
+import secrets
+
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -6,7 +8,8 @@ from sqlalchemy.orm import Session
 from .. import auth
 from ..db import get_db
 from ..learning import record_events
-from ..models import (ArticleAssessment, Comment, Event, GapClaim, GapVote, Label, Suggestion, User, utcnow)
+from ..models import (ArticleAssessment, AuthSession, Comment, Event, Feedback, GapClaim, GapVote, Item, KeyEvent, Label,
+                      OutletCategory, Suggestion, User, utcnow)
 
 router = APIRouter(prefix="/api")
 
@@ -42,7 +45,6 @@ class InviteAcceptIn(BaseModel):
 
 
 class MePatch(BaseModel):
-    tracking_opt_out: bool | None = None
     ack_tracking_notice: bool | None = None
     display_name: str | None = None
 
@@ -54,7 +56,6 @@ class EventsIn(BaseModel):
 
 def me_json(u: User) -> dict:
     return {"id": u.id, "email": u.email, "display_name": u.display_name, "role": u.role, "status": u.status or "active",
-            "tracking_opt_out": u.tracking_opt_out,
             "tracking_notice_ack": u.tracking_notice_ack_at is not None}
 
 
@@ -122,8 +123,6 @@ def me(u: User = Depends(auth.current_user)):
 @router.patch("/me")
 def patch_me(body: MePatch, u: User = Depends(auth.current_user), s: Session = Depends(get_db)):
     u = s.merge(u)
-    if body.tracking_opt_out is not None:
-        u.tracking_opt_out = body.tracking_opt_out
     if body.ack_tracking_notice:
         u.tracking_notice_ack_at = utcnow()
     if body.display_name:
@@ -134,20 +133,30 @@ def patch_me(body: MePatch, u: User = Depends(auth.current_user), s: Session = D
 
 @router.get("/me/export")
 def export_me(u: User = Depends(auth.current_user), s: Session = Depends(get_db)):
-    def rows(model, col):
+    """Everything stored against this account."""
+    def rows(model, col, value=None):
         return [{c.name: getattr(r, c.name) for c in model.__table__.columns}
-                for r in s.scalars(select(model).where(col == (u.pseudo_id if col.key == "pseudo_id" else u.id)))]
-    return {"user": me_json(u), "votes": rows(GapVote, GapVote.user_id), "claims": rows(GapClaim, GapClaim.user_id),
+                for r in s.scalars(select(model).where(col == (u.id if value is None else value)))]
+    added = [{"id": i.id, "kind": i.kind, "url": i.url, "title": i.title, "created_at": i.created_at}
+             for i in s.scalars(select(Item).where(Item.added_by == u.id))]
+    return {"user": {**me_json(u), "organisation": u.organisation, "signup_note": u.signup_note, "created_at": u.created_at},
+            "votes": rows(GapVote, GapVote.user_id), "claims": rows(GapClaim, GapClaim.user_id),
             "comments": rows(Comment, Comment.user_id), "assessments": rows(ArticleAssessment, ArticleAssessment.user_id),
-            "suggestions": rows(Suggestion, Suggestion.user_id), "events": rows(Event, Event.pseudo_id),
-            "labels": rows(Label, Label.pseudo_id)}
+            "suggestions": rows(Suggestion, Suggestion.user_id), "feedback": rows(Feedback, Feedback.user_id),
+            "added_items": added, "key_events": rows(KeyEvent, KeyEvent.added_by),
+            "outlet_labels": rows(OutletCategory, OutletCategory.set_by),
+            "events": rows(Event, Event.pseudo_id, u.pseudo_id), "labels": rows(Label, Label.pseudo_id, u.pseudo_id)}
+
+
+FREE_TEXT = ("note", "notes", "reason", "comment", "why", "body", "text")   # suggestion payload keys holding the user's own words
 
 
 @router.delete("/me")
 def delete_me(response: Response, u: User = Depends(auth.current_user), s: Session = Depends(get_db),
               dw_session: str | None = Cookie(default=None)):
-    """Deletes the account and everything attributable to it. Labels are kept only
-    in anonymised form (pseudo_id removed)."""
+    """Deletes the account and everything attributable to it. What the team still needs (votes, ratings,
+    added articles, outlet labels, key events) is kept without the person or their words; labels are kept
+    without the pseudo_id. Every session of the account ends."""
     u = s.merge(u)
     for e in s.scalars(select(Event).where(Event.pseudo_id == u.pseudo_id)):
         s.delete(e)
@@ -155,8 +164,31 @@ def delete_me(response: Response, u: User = Depends(auth.current_user), s: Sessi
         lb.pseudo_id = None
     for c in s.scalars(select(Comment).where(Comment.user_id == u.id)):
         c.body, c.deleted = "", True
+    for v in s.scalars(select(GapVote).where(GapVote.user_id == u.id)):
+        v.note = None
+    for a in s.scalars(select(ArticleAssessment).where(ArticleAssessment.user_id == u.id)):
+        a.note = None
+    for c in s.scalars(select(GapClaim).where(GapClaim.user_id == u.id)):
+        s.delete(c)
+    for sug in s.scalars(select(Suggestion).where(Suggestion.user_id == u.id)):
+        sug.user_id = None
+        sug.payload = {k: v for k, v in (sug.payload or {}).items() if k not in FREE_TEXT}
+    for f in s.scalars(select(Feedback).where(Feedback.user_id == u.id)):
+        f.user_id, f.body = None, ""
+    for it in s.scalars(select(Item).where(Item.added_by == u.id)):
+        if it.kind == "suggestion":     # a flagged gap: its title was the person's own note
+            it.title = "Gap flagged"
+        it.added_by = None
+    for oc in s.scalars(select(OutletCategory).where(OutletCategory.set_by == u.id)):
+        oc.set_by = None
+    for ke in s.scalars(select(KeyEvent).where(KeyEvent.added_by == u.id)):
+        ke.added_by = None
     auth.end_session(s, dw_session, response)
+    for sess in s.scalars(select(AuthSession).where(AuthSession.user_id == u.id)):
+        s.delete(sess)
     u.active, u.email, u.display_name, u.pw_hash = False, f"deleted-{u.id}@invalid", "Deleted user", "!"
+    u.organisation, u.signup_note, u.status = None, None, "disabled"
+    u.pseudo_id = secrets.token_hex(8)
     s.commit()
     return {"ok": True}
 

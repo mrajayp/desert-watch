@@ -133,7 +133,7 @@ export default function Timeline() {
                     <g key={e.id} transform={`translate(${e.x},${y0 + 6 + e.lane * 16})`} style={{ cursor: 'pointer' }}
                       onMouseEnter={(ev) => { setHoverEv(e.id); tip.show(ev, <div><b>{e.day}</b><div>{e.label}</div>
                         {e.theme_id && <div className="small muted">{themeName(e.theme_id)}</div>}
-                        <div className="small muted">{e.origin === 'user' ? `added by ${e.added_by || 'team'}` : 'reference event'} · click for source</div></div>, wrap.current) }}
+                        <div className="small muted">{e.origin === 'user' ? 'added by the team' : 'reference event'} · click for source</div></div>, wrap.current) }}
                       onClick={() => e.source_url && window.open(e.source_url, '_blank', 'noopener,noreferrer')}>
                       <circle r={4} cy={6} fill={hoverEv === e.id ? 'var(--ink)' : 'var(--surface)'} stroke="var(--ink)" strokeWidth={1.5} />
                       <text x={7} y={10} style={{ fontSize: 11, fill: 'var(--ink)', paintOrder: 'stroke', stroke: 'var(--surface)', strokeWidth: 3 }}>
@@ -183,8 +183,8 @@ export default function Timeline() {
           <ul className="list small scroll" style={{ maxHeight: 360 }}>{[...data.events].reverse().map((e) => (
             <li key={e.id}><b>{e.day}</b> · <span dir="auto">{e.label}</span>{e.theme_id && <span className="muted"> · {themeName(e.theme_id)}</span>}
               {' '}<a href={e.source_url} target="_blank" rel="noreferrer noopener">source</a>
-              {e.origin === 'user' && <span className="muted"> · added by {e.added_by}</span>}
-              {e.origin === 'user' && (me.role === 'admin' || e.added_by === me.display_name) &&
+              {e.origin === 'user' && <span className="muted"> · added by the team</span>}
+              {e.origin === 'user' && (me.role === 'admin' || e.mine) &&
                 <button className="btn small ghost" onClick={() => removeEvent(e.id)}>remove</button>}</li>))}</ul>
         </section>
       </div>

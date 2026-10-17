@@ -22,6 +22,7 @@ def make_engine(url: str | None = None):
             cur.execute("PRAGMA journal_mode=WAL")
             cur.execute("PRAGMA foreign_keys=ON")
             cur.execute("PRAGMA busy_timeout=30000")  # a web write may wait out a long recompute transaction
+            cur.execute("PRAGMA secure_delete=ON")    # deleted rows are overwritten, not left readable in free pages
             cur.close()
     return engine
 

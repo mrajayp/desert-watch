@@ -12,6 +12,7 @@ from ..ingest import load_rules, store_article
 from ..models import (CellWeek, Comment, CoverageSeries, GapClaim, GapVote, Item, ItemRegion, ItemTheme, Region,
                       SourceRun, Suggestion, Theme, User, utcnow)
 from ..scoring import LENSES, TREND_WEEKS, latest_complete_week, need_floor, trend_basis, week_start
+from .social import counted
 from .common import (country_or_404, descendants, hydrate_items, items_query, region_or_404, theme_or_404,
                      window_bounds)
 
@@ -137,7 +138,7 @@ def _feedback_summary(s: Session, theme_ids=None):
     for v in s.scalars(select(GapVote)):
         votes[gap_key(v.theme_id, v.region_id)][v.vote] += 1
     comments = Counter(k for (k,) in s.execute(
-        select(Comment.object_key).where(Comment.object_type == "gap", Comment.deleted.is_(False))))
+        select(Comment.object_key).where(Comment.object_type == "gap", counted())))
     claims = defaultdict(Counter)
     for c in s.scalars(select(GapClaim).where(GapClaim.status != "dropped")):
         claims[gap_key(c.theme_id, c.region_id)][c.status] += 1
@@ -465,7 +466,7 @@ def get_digest(did: int, s: Session = Depends(get_db), _: User = Depends(auth.cu
 
 # ---------------------------------------------------------------- timeline
 @router.get("/timeline")
-def timeline(country: str = "LY", s: Session = Depends(get_db), _: User = Depends(auth.current_user)):
+def timeline(country: str = "LY", s: Session = Depends(get_db), u: User = Depends(auth.current_user)):
     """Monthly counts per theme (media articles), plus official statements and humanitarian
     reports as separate streams, and the dated key events to overlay."""
     from ..models import KeyEvent
@@ -493,9 +494,8 @@ def timeline(country: str = "LY", s: Session = Depends(get_db), _: User = Depend
         themes[tid][idx[m]] += n
     for m, kind, n in streams:
         official[kind][idx[m]] += n
-    names = {u.id: u.display_name for u in s.scalars(select(User))}
     events = [{"id": e.id, "day": e.day.isoformat(), "label": e.label, "theme_id": e.theme_id, "source_url": e.source_url,
-               "origin": e.origin, "added_by": names.get(e.added_by)}
+               "origin": e.origin, "mine": e.added_by is not None and e.added_by == u.id}
               for e in s.scalars(select(KeyEvent).where(KeyEvent.country_id == c.id).order_by(KeyEvent.day))]
     return {"months": months, "themes": themes, "statements": official["statement"], "reports": official["report"],
             "events": events}
