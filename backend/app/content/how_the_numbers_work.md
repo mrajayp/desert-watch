@@ -171,10 +171,12 @@ Wikimedia publishes, for each country, the Wikipedia pages read from there on a 
 
 We keep two things from it. The first is how often people in Libya read the page on the central bank's currency booking platform, and the page on the central bank itself. These are signs of how much people are dealing with getting foreign currency. The second is the list of Libya pages read from Libya each day, which the Timeline page shows. On most days it holds one or two pages. On days when something happens it fills up, for example with Derna and its dams after the flood, or with Abdel Ghani al-Kikli after the Tripoli clashes. We only keep pages that name Libya or one of its places, public figures and institutions on a short list, and pages a theme follows. A gap in a line means the page had fewer than about 90 views that day.
 
+The card also shows the dinar's exchange rates. The parallel rate is what traders in Tripoli's market charge for a dollar or a euro in cash. We take it from Al-Mashhad al-Libi, which posts the price every day. We use the evening close where there is one and the midday price otherwise. Other outlets repeat the same figures, and when we checked them against each other on the same days they agreed to within a few hundredths of a dinar. The price by bank cheque is a separate line, because it usually costs a little more. The official rate is the Central Bank of Libya's average of its buying and selling price. From 18 January 2026 the official rate includes the 15% tax on buying foreign currency, so it jumps that week. For the years before late 2023 the parallel line comes from the rate box on the Libya Observer website, as the Internet Archive saved it. That box was only updated now and then, so the older line is patchy. We never use prices.ly, whose figures are read automatically from a dealers' WhatsApp group and whose terms do not allow collecting them.
+
 ## When the numbers update
 
 - Hourly: outlet feeds, YouTube channels, Google Alerts and the theme model on new articles, then scores and the network for the last 12 weeks.
-- Every six hours: the Wikipedia pages read in Libya, Google News, GDELT articles, the official statements and, once the Meta app is set up, Facebook link readings.
+- Every six hours: the Wikipedia pages read in Libya, the dinar's exchange rates, Google News, GDELT articles, the official statements and, once the Meta app is set up, Facebook link readings.
 - Nightly: Wikipedia page views, the social media posts Google has indexed, the outlets' own links for Google News items and a retrain of the theme model on new labels, then the full history of scores and the network.
 - Mondays: the digest.
 - About once a week, by hand: Google searches for the search lens.
