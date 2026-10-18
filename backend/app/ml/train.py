@@ -26,8 +26,8 @@ from sklearn.linear_model import LogisticRegression
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..classify import classify_themes
-from ..ingest import Rules, load_rules
+from ..classify import clean_snippet
+from ..ingest import Rules, load_rules, theme_hits
 from ..models import Country, Item, ItemTheme, Theme, utcnow
 from ..textnorm import normalise
 from . import labels as L
@@ -71,14 +71,11 @@ def country_rules(s: Session) -> Rules:
     return load_rules(s, cid)
 
 
-def rule_hits(rules: Rules, title: str | None, snippet: str | None) -> set[int]:
-    """Theme ids the keyword rules give this text (same test as ingest.tag_item)."""
-    text = " ".join(x for x in (title, snippet) if x)
-    hits = classify_themes(text, rules.themes)
-    needs = {r.theme_id for r in rules.themes if r.require_country}
-    if needs & set(hits) and not rules.mentions_country(text):
-        hits = {k: v for k, v in hits.items() if k not in needs}
-    return set(hits)
+def rule_hits(rules: Rules, title: str | None, snippet: str | None, source_key: str | None = None) -> set[int]:
+    """Theme ids the keyword rules give this article, exactly as production applies them
+    (ingest.theme_hits: title first, the cleaned snippet, require_country), so the evaluation and
+    the tuned thresholds describe the rules that actually run. Same result as ingest.item_hits."""
+    return set(theme_hits(rules, title, clean_snippet(source_key, title, snippet)))
 
 
 # ---------------------------------------------------------------- fitting
@@ -212,7 +209,7 @@ def labelled_set(s: Session, model: ThemeModel, gold: dict[int, dict] | None = N
     rules = country_rules(s)
     R = np.zeros((n, k), dtype=bool)
     for i, iid in enumerate(ids):
-        for tid in rule_hits(rules, items[iid].title, items[iid].snippet):
+        for tid in rule_hits(rules, items[iid].title, items[iid].snippet, items[iid].source_key):
             if tid in k_of:
                 R[i, k_of[tid]] = True
     T = np.zeros((n, k), dtype=bool)

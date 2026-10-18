@@ -585,6 +585,33 @@ def test_model_job_runs_in_child_process(db, tmp_path, monkeypatch):
     assert run.status == "error" and "no such file" in run.error and run.finished_at is not None
 
 
+def test_rule_hits_evaluate_the_rules_as_production_applies_them(db):
+    """A-R1.5: train.rule_hits == ingest.item_hits on every article (title first, cleaned snippet,
+    require_country), so the reported rule scores and the tuned thresholds describe the rules that run."""
+    from app.ingest import item_hits
+    from app.ml.train import rule_hits
+    c = db.scalar(select(Country))
+    rules = load_rules(db, c.id)
+    th = {t.slug: t.id for t in db.scalars(select(Theme))}
+    when = utcnow() - timedelta(days=2)
+    cases = [  # a dateline, an alert keyword excerpt and a lone snippet word: production ignores all three
+        ("Mayor opens market in Misrata", "Tripoli, March 31, 2026 (LANA) - Gunmen were seen nearby.", "backfill"),
+        ("Egypt issues dust storm warning for Cairo", "... migrants rescued off Libya ...", "galerts"),
+        ("انقطاع الكهرباء في سبها", "سكان سبها يشكون من انقطاع الكهرباء والمياه", "rss"),
+        ("Women candidates meet voters in Benghazi", None, "gnews"),
+        ("LGBT arrests reported", "Activists said the arrests took place in Cairo.", "rss"),
+    ]
+    for i, (title, snippet, src) in enumerate(cases):
+        it, _ = store_article(db, c.id, rules, url=f"https://ex.ly/parity{i}", title=title, snippet=snippet,
+                              published_at=when, source_key=src)
+        assert rule_hits(rules, it.title, it.snippet, it.source_key) == set(item_hits(rules, it)), title
+    # what the old evaluation counted (any single term anywhere in title + raw snippet) and production does not
+    assert th["security"] not in rule_hits(rules, *cases[0])
+    assert th["migration"] not in rule_hits(rules, *cases[1])
+    assert th["gender_lgbtq"] not in rule_hits(rules, *cases[4])          # require_country, no Libya in the text
+    assert th["services"] in rule_hits(rules, *cases[2]) and th["gender_political_participation"] in rule_hits(rules, *cases[3])
+
+
 def test_web_app_does_not_import_sklearn():
     code = ("import sys, app.main, app.jobs, app.api.labelling, app.ml.commands; "
             "assert not {'sklearn', 'numpy', 'scipy'} & set(sys.modules), sorted(sys.modules)")

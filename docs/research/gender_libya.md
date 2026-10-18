@@ -38,7 +38,10 @@ gender phrases otherwise pull in foreign stories.
   "divorce", `جهاز الأمن الداخلي` (ISA appears in many non-gender stories), "Fact-Finding Mission".
 - Removed country-name exclusions (تونس / مصر / غزة): the exclusion list vetoes on title +
   snippet and would drop Libyan stories that mention a neighbour; the Libya guard handles this.
-- Added `المبعوثة الأممية` / "UN envoy" as exclusions for political participation.
+- Added `المبعوثة الأممية` / "UN envoy" as exclusions for political participation. (2026-10-18: moved
+  to the theme's `cooc_veto_context`: they now set aside only a women+politics word pair next to the
+  envoy, not the whole text, and conflict/disaster words (shelling, قصف, flood…) do the same for the
+  gender pairs, so "women killed in shelling" is security, not violence against women.)
 - Pejorative terms (الشذوذ الجنسي / الشواذ) are kept **only for matching** because Libyan
   state statements and many headlines use them; never use them as UI labels.
 - Unverified: `استمارة سفر النساء` is a coined phrase; verify against Al Wasat / 218 usage.

@@ -71,6 +71,9 @@ class Theme(Base):
     # ("killed" next to "crash"). mask: phrases blanked out before matching ("territorial waters" for "water").
     veto: Mapped[list | None] = mapped_column(JSON, default=list)
     mask: Mapped[list | None] = mapped_column(JSON, default=list)
+    # cooc_veto_context: words that stop a co-occurrence pair when they sit within COOC_WINDOW of either half
+    # ("women killed" next to "shelling" is a conflict casualty, not violence against women)
+    cooc_veto_context: Mapped[list | None] = mapped_column(JSON, default=list)
     acled_event_types: Mapped[list] = mapped_column(JSON, default=list)
     reliefweb_themes: Mapped[list] = mapped_column(JSON, default=list)
     version: Mapped[int] = mapped_column(Integer, default=1)

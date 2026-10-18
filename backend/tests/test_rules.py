@@ -257,6 +257,26 @@ def test_masks(db):
     assert services in hits("أزمة المياه في سبها بعد مياه الأمطار")   # the bare term still counts
 
 
+def test_gender_pair_vetoes(db):
+    """A-R1.8: conflict casualties among women are not violence against women, and the UN envoy
+    no longer vetoes a whole text, only a pair next to her (docs/research/gender_libya.md)."""
+    cid = db.scalar(select(Country.id))
+    rules = load_rules(db, cid)
+    th = themes(db)
+    hits = lambda t: set(classify_item(t, None, rules.themes))  # noqa: E731
+    gv, gp = th["gender_violence"], th["gender_political_participation"]
+    assert gv not in hits("Two women killed in Tripoli shelling")
+    assert gv not in hits("مقتل ثلاث نساء في قصف على طرابلس")
+    assert gv not in hits("Woman and two children killed in Derna flood")
+    assert gv in hits("Woman killed by her husband in Benghazi")                 # positive control: the pair stays
+    assert gv in hits("مقتل ثلاث نساء على يد مسلح في طرابلس")
+    assert gv in hits("مقتل امرأة في قصف على طرابلس")                           # the theme's own phrase is never vetoed
+    assert gp in hits("المبعوثة الأممية تبحث مشاركة المرأة في الانتخابات الليبية")   # phrase: counts despite the envoy
+    assert gp not in hits("UN envoy meets women ahead of the elections in Tripoli")  # pair next to the envoy: no
+    assert gp in hits("Libyan women demand seats in the parliament")             # the same pair elsewhere: yes
+    assert th["security"] in hits("Two women killed in Tripoli shelling")          # the story is still security
+
+
 def test_term_hygiene(db):
     cid = db.scalar(select(Country.id))
     rules = load_rules(db, cid)
@@ -632,8 +652,8 @@ def test_admin_preview_uses_the_stored_vetoes_and_pairs(client, users, db):
     sec = db.scalar(select(Theme).where(Theme.slug == "security"))
     gv = db.scalar(select(Theme).where(Theme.slug == "gender_violence"))
     crash, clash = "Three killed in traffic accident near Tripoli", "Three killed in armed clashes in Zawiya"
-    women = "Two women killed in Tripoli shelling"
-    for k, t in (("p1", crash), ("p2", clash), ("p3", women)):
+    women, shelled = "Two women killed by a relative in Tripoli", "Two women killed in Tripoli shelling"
+    for k, t in (("p1", crash), ("p2", clash), ("p3", women), ("p4", shelled)):
         _article(db, k, t, published=utcnow())
     db.commit()
     login(client, "admin@example.org", "admin-password-1")
@@ -647,6 +667,8 @@ def test_admin_preview_uses_the_stored_vetoes_and_pairs(client, users, db):
 
     for url in (f"/api/themes/preview?tid={sec.id}", "/api/themes/preview"):
         assert crash not in titles(url, form(sec)) and clash in titles(url, form(sec))
+    # the stored pairs match, and the stored pair-veto context (shelling) is applied as in production
     assert women in titles(f"/api/themes/preview?tid={gv.id}", form(gv))
+    assert shelled not in titles(f"/api/themes/preview?tid={gv.id}", form(gv))
     # a new theme has nothing stored: the preview uses exactly what the form sends
     assert {crash, clash} <= titles("/api/themes/preview", form(sec, "A new theme"))

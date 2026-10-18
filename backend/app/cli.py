@@ -222,7 +222,7 @@ def main(argv: list[str]):
                     changed.append(th.id)
                 th.group, th.name_en, th.name_ar = t.get("group"), t["name_en"], t["name_ar"]
                 new = {k: t.get(k, []) for k in ("en_terms", "ar_terms", "exclude", "cooc", "veto", "mask",
-                                                 "acled_event_types", "reliefweb_themes")}
+                                                 "cooc_veto_context", "acled_event_types", "reliefweb_themes")}
                 new["strict"] = bool(t.get("strict", False))
                 new["require_country"] = bool(t.get("require_country", False))
                 # an empty list and NULL are the same (veto and mask are NULL on older rows)

@@ -30,13 +30,14 @@ def seed_themes(s: Session) -> int:
                     exclude=t.get("exclude", []), cooc=t.get("cooc", []), strict=bool(t.get("strict", False)),
                     require_country=bool(t.get("require_country", False)),
                     veto=t.get("veto", []), mask=t.get("mask", []),
+                    cooc_veto_context=t.get("cooc_veto_context", []),
                     acled_event_types=t.get("acled_event_types", []),
                     reliefweb_themes=t.get("reliefweb_themes", []), active=bool(t.get("active", True))))
         n += 1
     return n
 
 
-TERM_FIELDS = ("en_terms", "ar_terms", "exclude", "cooc", "veto", "mask")
+TERM_FIELDS = ("en_terms", "ar_terms", "exclude", "cooc", "veto", "mask", "cooc_veto_context")
 
 
 def apply_theme_terms(s: Session, slugs: list[str]) -> dict[str, list[str]]:

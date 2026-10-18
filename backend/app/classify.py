@@ -52,15 +52,19 @@ class ThemeRule:
     term_of: dict = field(default_factory=dict)        # variant -> the term as written in the theme
     mask: list[str] = field(default_factory=list)      # phrases blanked out before matching ("المياه الإقليمية")
     veto: list = field(default_factory=list)           # [(weak variants, context variants)]
+    # a co-occurrence pair does not fire when one of these words sits within COOC_WINDOW tokens of
+    # either half of it ("women killed" next to "shelling": conflict casualties, not violence against women)
+    cooc_veto: list[str] = field(default_factory=list)
 
     def __post_init__(self):
         self._inc = (frozenset(v for v in self.include if " " not in v), tuple(v for v in self.include if " " in v))
         self._exc = (frozenset(v for v in self.exclude if " " not in v), tuple(v for v in self.exclude if " " in v))
         self._cooc = [(frozenset(v for v in g if " " not in v), tuple(v for v in g if " " in v)) for g in self.cooc]
+        self._cooc_veto = (frozenset(v for v in self.cooc_veto if " " not in v), tuple(v for v in self.cooc_veto if " " in v))
 
     @classmethod
     def build(cls, theme_id, slug, version, en_terms, ar_terms, exclude, cooc=None, strict=False, require_country=False,
-              veto=None, mask=None):
+              veto=None, mask=None, cooc_veto_context=None):
         term_of: dict = {}
         for t in [*(en_terms or []), *(ar_terms or []), *(t for g in cooc or [] for t in g)]:
             for v in term_variants(t):
@@ -71,7 +75,9 @@ class ThemeRule:
         masks = sorted({v for t in mask or [] for v in term_variants(t)}, key=lambda v: -len(v))
         vetoes = [(frozenset(v for t in r.get("terms", []) for v in term_variants(t)), _compile(r.get("context", [])))
                   for r in veto or [] if r.get("terms") and r.get("context")]
-        return cls(theme_id, slug, version, inc, exc, groups, bool(strict), bool(require_country), term_of, masks, vetoes)
+        cooc_veto = sorted({v for t in cooc_veto_context or [] for v in term_variants(t)})
+        return cls(theme_id, slug, version, inc, exc, groups, bool(strict), bool(require_country), term_of, masks, vetoes,
+                   cooc_veto)
 
     # ---- matching over normalised (space-padded) fields
     def _terms(self, n: str, skip: frozenset) -> list[str]:
@@ -91,8 +97,18 @@ class ThemeRule:
                     covered.update(range(i, i + size))
         return sorted(terms)
 
+    def _tainted(self, n: str, toks: list, tset: set) -> set[int]:
+        """Token positions within COOC_WINDOW of a pair-veto context word: no half of a pair may sit there."""
+        out: set[int] = set()
+        for v in _found(self._cooc_veto, n, tset):
+            size = len(v.split())
+            for i in _positions(toks, v):
+                out.update(range(max(0, i - COOC_WINDOW), i + size + COOC_WINDOW))
+        return out
+
     def _pair(self, n: str) -> str | None:
-        """A co-occurrence match: one word from every group within COOC_WINDOW tokens."""
+        """A co-occurrence match: one word from every group within COOC_WINDOW tokens, and no
+        pair-veto context word (cooc_veto) within COOC_WINDOW of either of them."""
         if not self._cooc:
             return None
         toks = n.split()
@@ -100,7 +116,8 @@ class ThemeRule:
         hits = [_found(g, n, tset) for g in self._cooc]
         if not all(hits):
             return None
-        pos = [[(i, v) for v in sorted(h) for i in _positions(toks, v)] for h in hits]
+        bad = self._tainted(n, toks, tset) if self.cooc_veto else set()
+        pos = [[(i, v) for v in sorted(h) for i in _positions(toks, v) if i not in bad] for h in hits]
         for i0, v0 in pos[0]:
             picked = [v0]
             for p in pos[1:]:

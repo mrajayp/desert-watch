@@ -88,15 +88,24 @@ def test_detect_lang():
 
 def test_cooc_and_strict():
     w = ["النساء", "امرأة", "ابنتيه", "women"]
-    v = ["تغتال", "يقتل", "killed"]
-    r = ThemeRule.build(9, "gv", 1, ["femicide"], ["العنف ضد المرأة"], ["المبعوثة الأممية"], cooc=[w, v], strict=True)
+    v = ["تغتال", "يقتل", "killed", "مقتل"]
+    r = ThemeRule.build(9, "gv", 1, ["femicide"], ["العنف ضد المرأة"], ["كرة القدم النسائية"], cooc=[w, v], strict=True,
+                        cooc_veto_context=["shelling", "قصف", "UN envoy"])
     assert r.strict
     assert set(classify_themes("عندما تُغتال النساء في ليبيا", [r])) == {9}
     assert set(classify_themes("أب يقتل ابنتيه في بنغازي", [r])) == {9}
-    assert set(classify_themes("Two women killed in Tripoli shelling", [r])) == {9}
+    # conflict casualties are not violence against women: a pair-veto word next to the pair stops it
+    assert classify_themes("Two women killed in Tripoli shelling", [r]) == {}
+    assert classify_themes("مقتل ثلاث نساء في قصف على طرابلس", [r]) == {}
+    assert set(classify_themes("Two women killed by a relative in Tripoli", [r])) == {9}   # the pair itself still counts
+    assert set(classify_themes("مقتل ثلاث نساء على يد مسلح في طرابلس", [r])) == {9}
+    # the veto reaches only COOC_WINDOW tokens: a far-away context word does not stop a pair
+    assert set(classify_themes("Two women killed by their husbands at home, police say, hours after shelling elsewhere", [r])) == {9}
+    assert classify_themes("UN envoy meets women killed", [r]) == {}   # a phrase context taints the words beside it
     assert classify_themes("النساء في سوق العمل", [r]) == {}          # women word alone: no
     assert classify_themes("يقتل مسلح في طرابلس", [r]) == {}          # issue word alone: no
     assert set(classify_themes("حملة العنف ضد المرأة", [r])) == {9}   # phrase still works
+    assert set(classify_themes("حملة العنف ضد المرأة بعد قصف", [r])) == {9}   # the veto never touches the phrases
 
 
 def test_ta_marbuta_does_not_match_possessive():

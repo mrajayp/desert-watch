@@ -28,6 +28,7 @@ class ThemeIn(BaseModel):
     exclude: list[str] = Field(default_factory=list)
     veto: list[dict] | None = None   # None keeps the stored value (the Admin form does not edit these yet)
     mask: list[str] | None = None
+    cooc_veto_context: list[str] | None = None
     acled_event_types: list[str] = Field(default_factory=list)
     reliefweb_themes: list[str] = Field(default_factory=list)
     active: bool = True
@@ -56,7 +57,7 @@ def preview_theme(body: ThemeIn, days: int = 30, tid: int | None = None, s: Sess
         return getattr(stored, k) if stored and (k not in body.model_fields_set or v is None) else v
 
     rule = ThemeRule.build(0, "preview", 0, body.en_terms, body.ar_terms, body.exclude, pick("cooc"), pick("strict"),
-                           veto=pick("veto"), mask=pick("mask"))
+                           veto=pick("veto"), mask=pick("mask"), cooc_veto_context=pick("cooc_veto_context"))
     since = utcnow() - timedelta(days=days)
     rows = s.scalars(select(Item).where(Item.kind == "article", Item.published_at >= since)
                      .order_by(Item.published_at.desc()).limit(5000)).all()
@@ -115,9 +116,9 @@ def update_theme(tid: int, body: ThemeIn, bg: BackgroundTasks, s: Session = Depe
     t = s.get(Theme, tid)
     if not t:
         raise HTTPException(404, tr("Unknown theme"))
-    # fields the form does not send (cooc, strict, group, veto, mask) keep their stored values
+    # fields the form does not send (cooc, strict, group, veto, mask, cooc_veto_context) keep their stored values
     for k, v in body.model_dump(exclude_unset=True).items():
-        if v is not None or k not in ("veto", "mask"):
+        if v is not None or k not in ("veto", "mask", "cooc_veto_context"):
             setattr(t, k, v)
     t.version += 1
     t.updated_at = utcnow()

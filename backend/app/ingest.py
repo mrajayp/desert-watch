@@ -132,7 +132,7 @@ class Rules:
 
 def rule_for(t: Theme) -> ThemeRule:
     return ThemeRule.build(t.id, t.slug, t.version, t.en_terms, t.ar_terms, t.exclude, t.cooc, t.strict, t.require_country,
-                           veto=t.veto, mask=t.mask)
+                           veto=t.veto, mask=t.mask, cooc_veto_context=t.cooc_veto_context)
 
 
 def load_rules(s: Session, country_id: int) -> Rules:

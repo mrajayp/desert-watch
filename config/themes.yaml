@@ -10,6 +10,10 @@
 #             (e.g. "killed" next to "crash"). Other terms still count.
 # mask      : phrases removed from the text before matching, so a term inside them
 #             does not fire (e.g. "المياه الإقليمية" for "المياه").
+# cooc      : co-occurrence groups: one word from every group within 6 tokens counts as a match.
+# cooc_veto_context : a pair does not fire when one of these words sits within 6 tokens of
+#             either half of it ("women killed" next to "shelling" is a conflict casualty, not
+#             violence against women). The theme's own phrases (en_terms / ar_terms) still count.
 # acled_event_types / reliefweb_themes : need-lens mappings, used once keys arrive.
 
 themes:
@@ -81,6 +85,9 @@ themes:
     acled_event_types: ["Violence against civilians"]
     reliefweb_themes: [Gender, "Protection and Human Rights"]
     strict: true
+    # conflict, disaster and accident casualties among women are not violence against women
+    # (docs/research/gender_libya.md); the pair "women + killed" does not fire next to these words
+    cooc_veto_context: [shelling, shelled, airstrike, airstrikes, "air strike", "air strikes", clashes, explosion, explosions, flood, floods, flooding, crash, accident, "قصف", "غارة", "غارات", "اشتباكات", "اشتباك", "انفجار", "سيول", "فيضانات", "حادث", "حادثة", "حادث سير", "تصادم"]
     cooc: [["المرأة", "امرأة", "النساء", "نساء", "سيدة", "سيدات", "فتاة", "فتيات", "طفلة", "الليبيات", "ليبيات", "ناشطة", "ناشطات", "النائبة", "طبيبة", "طبيبات", "صحفية", "صحفيات", "محامية", "مدونة", "معلمات", "زوجته", "زوجة", "ابنته", "ابنتيه", "ابنتها", "أمها", "شقيقته", "النسوية", "نسوية", "نسائية", "النسائية", "الإناث", woman, women, girl, girls, female, wife, daughter, daughters, mother, activist, feminist, "Libyan women", "MP Siham", "lawyer Hanan"], ["قتل", "يقتل", "مقتل", "اغتيال", "تغتال", "اغتيلت", "تعنيف", "تعنف", "معنفة", "عنف", "اغتصاب", "اغتصبت", "اعتداء", "تحرش", "ابتزاز", "خطف", "اختطاف", "تهديد", "حرق", "ذبح", "طعن", "ضرب", killed, murder, murdered, violence, abuse, abused, assault, assaulted, raped, harassment, blackmail, abducted, stabbed, beaten]]
   - slug: gender_political_participation
     group: gender
@@ -88,10 +95,13 @@ themes:
     name_ar: "النوع الاجتماعي: المشاركة السياسية والعامة للمرأة"
     en_terms: ["women candidates", "female candidates", "women's quota", "gender quota", "seat reserved for women", "women's representation", "women's political participation", "women voters", "women MPs", "female lawmaker", "woman minister", "women's affairs", "women human rights defenders", "women activists", "Women, Peace and Security", "Resolution 1325", "women's empowerment", Sergiwa, Barassi, Bughaighis, "first woman", Mangoush, "Najla El Mangoush", "Leila Ben Khalifa", "Ben Khalifa", "woman candidate", "female presidential candidate"]
     ar_terms: ["المشاركة السياسية للمرأة", "مشاركة المرأة", "تمثيل المرأة", "الكوتا النسائية", "حصة المرأة", "المقاعد المخصصة للمرأة", "المترشحات", "المرشحات", "الناخبات", "النائبة", "عضوة مجلس النواب", "شؤون المرأة", "تمكين المرأة", "المدافعات عن حقوق الإنسان", "الناشطات", "المرأة والسلام والأمن", "القرار 1325", "سهام سرقيوة", "حنان البرعصي", "سلوى بوقعيقيص", "أول امرأة", "المنقوش", "نجلاء المنقوش", "ليلى بن خليفة", "مرشحة للرئاسة", "مرشحة رئاسية"]
-    exclude: [Meloni, "ميلوني", "رئيسة الوزراء الإيطالية", "Miss Libya", "ملكة جمال", "المبعوثة الأممية", "UN envoy"]
+    exclude: [Meloni, "ميلوني", "رئيسة الوزراء الإيطالية", "Miss Libya", "ملكة جمال"]
     acled_event_types: ["Violence against civilians", Protests, "Strategic developments"]
     reliefweb_themes: [Gender, "Peacekeeping and Peacebuilding"]
     strict: true
+    # the UN envoy used to veto the whole text (any mention killed a real participation story); now
+    # only a pair next to her ("envoy meets women ... elections") is set aside. The phrases still count.
+    cooc_veto_context: ["المبعوثة الأممية", "المبعوث الأممي", "UN envoy", "UN special envoy", shelling, shelled, airstrike, airstrikes, "air strike", "air strikes", clashes, explosion, explosions, flood, floods, flooding, crash, accident, "قصف", "غارة", "غارات", "اشتباكات", "اشتباك", "انفجار", "سيول", "فيضانات", "حادث", "حادثة", "حادث سير", "تصادم"]
     cooc: [["المرأة", "امرأة", "النساء", "نساء", "سيدة", "سيدات", "فتاة", "فتيات", "طفلة", "الليبيات", "ليبيات", "ناشطة", "ناشطات", "النائبة", "طبيبة", "طبيبات", "صحفية", "صحفيات", "محامية", "مدونة", "معلمات", "زوجته", "زوجة", "ابنته", "ابنتيه", "ابنتها", "أمها", "شقيقته", "النسوية", "نسوية", "نسائية", "النسائية", "الإناث", woman, women, girl, girls, female, wife, daughter, daughters, mother, activist, feminist, "Libyan women", "MP Siham", "lawyer Hanan"], ["مشاركة", "تمثيل", "ترشح", "المترشحة", "مرشحة", "انتخابات", "الانتخابات", "مقعد", "مقاعد", "البرلمان", "مجلس النواب", "المجلس البلدي", "حكومة", "وزارة", "قيادة", "صنع القرار", "السلام", "تمكين", "المجلس الوطني للمرأة", "مختطفة", "اختفاء", "الاختفاء القسري", election, elections, candidate, candidates, parliament, council, minister, "رئاسة", "الرئاسة", "الرئاسية", presidency, presidential, president, representation, participation, leadership, peace, empowerment, disappeared]]
   - slug: gender_legal_status
     group: gender
@@ -103,6 +113,7 @@ themes:
     acled_event_types: ["Strategic developments"]
     reliefweb_themes: [Gender, "Protection and Human Rights"]
     strict: true
+    cooc_veto_context: [shelling, shelled, airstrike, airstrikes, "air strike", "air strikes", clashes, explosion, explosions, flood, floods, flooding, crash, accident, "قصف", "غارة", "غارات", "اشتباكات", "اشتباك", "انفجار", "سيول", "فيضانات", "حادث", "حادثة", "حادث سير", "تصادم"]
     cooc: [["المرأة", "امرأة", "النساء", "نساء", "سيدة", "سيدات", "فتاة", "فتيات", "طفلة", "الليبيات", "ليبيات", "ناشطة", "ناشطات", "النائبة", "طبيبة", "طبيبات", "صحفية", "صحفيات", "محامية", "مدونة", "معلمات", "زوجته", "زوجة", "ابنته", "ابنتيه", "ابنتها", "أمها", "شقيقته", "النسوية", "نسوية", "نسائية", "النسائية", "الإناث", woman, women, girl, girls, female, wife, daughter, daughters, mother, activist, feminist, "Libyan women", "MP Siham", "lawyer Hanan"], ["قانون", "القانون", "تشريع", "تشريعات", "حقوق", "الجنسية", "جنسية", "الزواج", "زواج", "الطلاق", "طلاق", "الحضانة", "النفقة", "الميراث", "الولاية", "المحكمة", "القاصرات", "التمييز", law, legal, rights, nationality, citizenship, marriage, divorce, custody, inheritance, court, discrimination, decree]]
   - slug: gender_mobility_morality
     group: gender
@@ -114,6 +125,7 @@ themes:
     acled_event_types: ["Strategic developments", Protests]
     reliefweb_themes: [Gender, "Protection and Human Rights"]
     strict: true
+    cooc_veto_context: [shelling, shelled, airstrike, airstrikes, "air strike", "air strikes", clashes, explosion, explosions, flood, floods, flooding, crash, accident, "قصف", "غارة", "غارات", "اشتباكات", "اشتباك", "انفجار", "سيول", "فيضانات", "حادث", "حادثة", "حادث سير", "تصادم"]
     cooc: [["المرأة", "امرأة", "النساء", "نساء", "سيدة", "سيدات", "فتاة", "فتيات", "طفلة", "الليبيات", "ليبيات", "ناشطة", "ناشطات", "النائبة", "طبيبة", "طبيبات", "صحفية", "صحفيات", "محامية", "مدونة", "معلمات", "زوجته", "زوجة", "ابنته", "ابنتيه", "ابنتها", "أمها", "شقيقته", "النسوية", "نسوية", "نسائية", "النسائية", "الإناث", woman, women, girl, girls, female, wife, daughter, daughters, mother, activist, feminist, "Libyan women", "MP Siham", "lawyer Hanan"], ["السفر", "سفر", "الحجاب", "حجاب", "الآداب", "الاختلاط", "الفصل بين", "اللباس", "الفضيلة", "ولي الأمر", "المحرم", "محرم", "مرافق", "تصوير", "الشرطة النسائية", travel, hijab, morality, "dress code", guardian, segregation, chaperone, mahram]]
   - slug: gender_migrant_detained_women
     group: gender
@@ -125,6 +137,7 @@ themes:
     acled_event_types: ["Violence against civilians"]
     reliefweb_themes: [Gender, "Protection and Human Rights"]
     strict: true
+    cooc_veto_context: [shelling, shelled, airstrike, airstrikes, "air strike", "air strikes", clashes, explosion, explosions, flood, floods, flooding, crash, accident, "قصف", "غارة", "غارات", "اشتباكات", "اشتباك", "انفجار", "سيول", "فيضانات", "حادث", "حادثة", "حادث سير", "تصادم"]
     cooc: [["المرأة", "امرأة", "النساء", "نساء", "سيدة", "سيدات", "فتاة", "فتيات", "طفلة", "الليبيات", "ليبيات", "ناشطة", "ناشطات", "النائبة", "طبيبة", "طبيبات", "صحفية", "صحفيات", "محامية", "مدونة", "معلمات", "زوجته", "زوجة", "ابنته", "ابنتيه", "ابنتها", "أمها", "شقيقته", "النسوية", "نسوية", "نسائية", "النسائية", "الإناث", woman, women, girl, girls, female, wife, daughter, daughters, mother, activist, feminist, "Libyan women", "MP Siham", "lawyer Hanan"], ["اغتصاب", "الاغتصاب", "اغتصبت", "جنسي", "الجنسي", "دعارة", "الدعارة", "حوامل", "حامل", "الاستعباد", rape, raped, sexual, sex, prostitution, pregnant, brothel, slavery, sexually]]
   - slug: gender_economic_health
     group: gender
@@ -136,6 +149,7 @@ themes:
     acled_event_types: []
     reliefweb_themes: [Gender, Health]
     strict: true
+    cooc_veto_context: [shelling, shelled, airstrike, airstrikes, "air strike", "air strikes", clashes, explosion, explosions, flood, floods, flooding, crash, accident, "قصف", "غارة", "غارات", "اشتباكات", "اشتباك", "انفجار", "سيول", "فيضانات", "حادث", "حادثة", "حادث سير", "تصادم"]
     cooc: [["المرأة", "امرأة", "النساء", "نساء", "سيدة", "سيدات", "فتاة", "فتيات", "طفلة", "الليبيات", "ليبيات", "ناشطة", "ناشطات", "النائبة", "طبيبة", "طبيبات", "صحفية", "صحفيات", "محامية", "مدونة", "معلمات", "زوجته", "زوجة", "ابنته", "ابنتيه", "ابنتها", "أمها", "شقيقته", "النسوية", "نسوية", "نسائية", "النسائية", "الإناث", woman, women, girl, girls, female, wife, daughter, daughters, mother, activist, feminist, "Libyan women", "MP Siham", "lawyer Hanan"], ["العمل", "عمل", "توظيف", "رواتب", "مشاريع", "ريادة", "اقتصادي", "اقتصادية", "صحة", "الصحة", "الولادة", "الحوامل", "الأمومة", "سرطان", "المستشفى", "علاج", work, jobs, employment, economic, business, entrepreneurs, health, maternal, pregnant, cancer, hospital]]
   - slug: gender_lgbtq
     group: gender
