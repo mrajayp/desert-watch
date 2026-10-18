@@ -180,6 +180,7 @@ export default {
   'Only covered from outside Libya': 'تغطية من خارج ليبيا فقط',
   'Most coverage names no place': 'معظم التغطية لا تذكر مكانًا',
   'Need data stops before the week ends': 'بيانات الحاجة تتوقف قبل نهاية الأسبوع',
+  'An outlet it counted has closed': 'أُغلقت وسيلة إعلامية كانت تُحتسب هنا',
   'Only {side} outlets': 'وسائل إعلام {side} فقط',
   'one side': 'من طرف واحد',
 

@@ -99,8 +99,31 @@ class Outlet(Base):
     monitored: Mapped[bool | None] = mapped_column(Boolean, default=True)
     # metrics from external datasets, keyed by source, e.g. {"social_media_scrape": {...}}
     external: Mapped[dict | None] = mapped_column(JSON, default=dict)
+    # the day an admin says the outlet closed or became unreachable: its source|outlet pairs then stay in
+    # the comparable basis (scoring.comparable_pairs), so its silence shows as a real drop instead of the
+    # outlet quietly leaving every week's comparison; cells over the closure carry the flag outlet_closed
+    closed_on: Mapped[date | None] = mapped_column(Date)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class BasisDeparture(Base):
+    """A source|outlet pair that left the comparable basis (scoring.comparable_pairs) within the last
+    settings.DEPARTURE_WEEKS weeks: it was collecting from before the Trends span began and its last
+    article is now older than the grace fortnight, so its articles have quietly left every compared week
+    and its silence shows as no gap. Rewritten nightly by scoring.record_departures; read by the admin
+    health card and the digest's caveats. An outlet marked closed (Outlet.closed_on) is kept in the
+    basis and is not a departure."""
+    __tablename__ = "basis_departure"
+    __table_args__ = (UniqueConstraint("country_id", "source_key", "outlet_id"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    country_id: Mapped[int] = mapped_column(ForeignKey("country.id"), index=True)
+    source_key: Mapped[str] = mapped_column(String(30))
+    outlet_id: Mapped[int] = mapped_column(ForeignKey("outlet.id"))
+    first_day: Mapped[date] = mapped_column(Date)      # the pair's first article
+    last_day: Mapped[date] = mapped_column(Date)       # ... and its last
+    articles: Mapped[int] = mapped_column(Integer, default=0)   # relevant articles the pair brought in all
+    recorded_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
 class OutletCategory(Base):

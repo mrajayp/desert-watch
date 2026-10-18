@@ -121,6 +121,7 @@ export const FLAG_TEXT = lazy({
   outside_only: N_('Only covered from outside Libya'),
   mostly_unplaced: N_('Most coverage names no place'),
   need_incomplete: N_('Need data stops before the week ends'),
+  outlet_closed: N_('An outlet it counted has closed'),
 })
 export const INFO_FLAGS = new Set(['mostly_unplaced', 'need_incomplete'])
 export function flagText(f) {

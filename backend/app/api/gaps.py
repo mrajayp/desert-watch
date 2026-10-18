@@ -150,7 +150,9 @@ def _cell_json(c: CellWeek) -> dict:
             "reason": b.get("reason"), "in_progress": bool(b.get("in_progress")),
             # the calibrated verdict (scoring.judge) with its evidence; null when there is nothing to judge
             "verdict": c.verdict, "p_low": b.get("p_low"), "p_high": b.get("p_high"),
-            "ratio_lo": b.get("ratio_lo"), "ratio_hi": b.get("ratio_hi"), "chance": b.get("chance")}
+            "ratio_lo": b.get("ratio_lo"), "ratio_hi": b.get("ratio_hi"), "chance": b.get("chance"),
+            # the expected level rests on weeks searched back for (fewer articles): the interval was widened
+            "baseline_backfilled": bool(b.get("baseline_backfilled"))}
 
 
 def _feedback_summary(s: Session, theme_ids=None):
@@ -263,6 +265,7 @@ def all_series(country: str = "LY", lens: str = "audience", region_id: int | Non
                          # the calibrated verdict and its evidence (scoring.judge); null when not judged
                          "verdict": cw.verdict if cw else None, "p_low": b.get("p_low"), "p_high": b.get("p_high"),
                          "ratio_lo": b.get("ratio_lo"), "ratio_hi": b.get("ratio_hi"), "chance": b.get("chance"),
+                         "baseline_backfilled": bool(b.get("baseline_backfilled")),
                          "reason": b.get("reason") if cw else "not_scored",
                          "in_progress": bool(b.get("in_progress")) if cw else w >= current,
                          "flags": cw.flags if cw else []})

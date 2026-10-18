@@ -1,4 +1,5 @@
 """Runtime settings, read from environment variables."""
+import math
 import os
 from pathlib import Path
 
@@ -70,3 +71,21 @@ ALPHA_UNCLEAR_WEEKS = 8     # with fewer weeks a cell's verdict is unclear
 ALPHA_HISTORY_WEEKS = 52    # complete weeks the dispersion is estimated over
 INTERVAL_Z = 1.645          # the interval on the shortfall is 90%
 MAX_INTERVAL_RATIO = 4      # exp(INTERVAL_Z * SE_g) above this: too wide to say anything (unclear)
+# Collection drift (scoring.backfilled_weeks, cell_evidence). Google News date-range search returns more
+# for recent weeks than for old ones: measured in October 2026 at 391 articles a week for the latest weeks
+# against 182 for weeks about a year old, from the same 112 outlets. A week searched back for (its median
+# article first seen more than BACKFILL_LAG_DAYS after publication) is "backfilled" and holds fewer
+# articles than a week collected live, so an expected level built on backfilled weeks is low. The drift
+# is taken as ln(391/182) spread over 52 weeks of age; the own-history baseline sits DRIFT_LAG_WEEKS
+# weeks before the window it judges, so a cell with a backfilled baseline gets DRIFT_PER_WEEK *
+# DRIFT_LAG_WEEKS added to SE_g (a wider interval, breakdown.drift_se). The flag expires on its own
+# as live weeks replace the backfilled ones in the baseline (about 16 weeks after live collection began,
+# 2026-10-12 for most routes). The Sunday re-query (jobs.gnews_settle) retrieves every week again at
+# the ages SETTLE_WEEKS_AGO, so weeks going forward are all fetched at the same ages.
+DRIFT_PER_WEEK = math.log(391 / 182) / 52
+DRIFT_LAG_WEEKS = 8
+BACKFILL_LAG_DAYS = 14
+SETTLE_WEEKS_AGO = (2, 3, 4)
+# Basis honesty (scoring.record_departures): the source|outlet pairs that left the comparable basis
+# within this many weeks are listed on the admin health card and in the digest's caveats.
+DEPARTURE_WEEKS = 4

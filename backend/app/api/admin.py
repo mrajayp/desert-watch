@@ -366,12 +366,13 @@ def _file_mb(p) -> float | None:
 def service_health(s: Session = Depends(get_db), _: User = Depends(auth.require_admin)):
     """What an admin needs when something looks wrong: the scheduler and its next runs, who holds the
     job lock and since when, which sources are stale, memory and swap, disk, the database and its WAL,
-    the last backup and the last digest."""
+    the last backup and the last digest, and the source|outlet pairs that left the comparison in the
+    last DEPARTURE_WEEKS weeks (basis_departures, written nightly by scoring.record_departures)."""
     import shutil
     from pathlib import Path
     from .. import joblock, settings
     from ..jobs import STATE
-    from ..models import SourceRun
+    from ..models import BasisDeparture, Outlet, SourceRun
     from .gaps import sources_health
     sched = STATE["scheduler"]
     jobs = [{"job": j.name, "next": j.next_run_time.isoformat(timespec="minutes") if j.next_run_time else None}
@@ -393,9 +394,18 @@ def service_health(s: Session = Depends(get_db), _: User = Depends(auth.require_
     stale = [{"key": h["key"], "label": h["label"], "status": h["status"], "last_ok": h["last_ok"]}
              for h in sources_health(s, None)
              if h["stale"] and h["status"] not in ("awaiting_key", "never_run", "not_built")]
+    departures = [{"source": d.source_key, "outlet_id": d.outlet_id, "outlet": o.name, "domain": o.domain,
+                   "first_day": d.first_day.isoformat(), "last_day": d.last_day.isoformat(), "articles": d.articles}
+                  for d, o in s.execute(select(BasisDeparture, Outlet).join(Outlet, Outlet.id == BasisDeparture.outlet_id)
+                                        .order_by(BasisDeparture.last_day.desc(), BasisDeparture.articles.desc()))]
+    recorded = s.scalar(select(func.max(BasisDeparture.recorded_at)))
     return {"scheduler": {"running": bool(sched and sched.running), "jobs": jobs},
             "lock": {"held": joblock.holder() is not None, "holder": joblock.holder()},
             "stale_sources": stale,
+            # the pairs that left the comparable basis in the last DEPARTURE_WEEKS weeks (their articles
+            # left every compared week with them, so their silence shows as no gap)
+            "basis_departures": departures, "basis_departures_weeks": settings.DEPARTURE_WEEKS,
+            "basis_departures_at": recorded.isoformat(timespec="minutes") if recorded else None,
             "memory": _proc_memory(),
             "disk": disk,
             "db": {"path": str(db_path) if db_path else None, "size_mb": _file_mb(db_path) if db_path else None,

@@ -42,6 +42,7 @@ export default function OutletPanel({ id }) {
   const tax = useApi('/api/outlets/taxonomy')
   const [form, setForm] = useState({ dimension: 'alignment', value: '', confidence: 'reported', evidence_url: '', note: '' })
   const [base, setBase] = useState('')
+  const [closedOn, setClosedOn] = useState('')
   const [msg, setMsg] = useState(null)
   const o = all.data?.find((x) => x.id === id)
   usePageTitle(o?.name || t('Outlet'))
@@ -55,6 +56,10 @@ export default function OutletPanel({ id }) {
     const isCity = base in (meta.country.cities || {})
     return api(`/api/outlets/${id}`, { method: 'PATCH', body: isCity ? { base_city: base } : { base_country: base } })
   }, { onSuccess: () => { setBase(''); reloadAll() } })
+  // an outlet that closed or became unreachable keeps counting in the comparisons up to that day, so its
+  // silence shows as a real drop (null reopens it)
+  const setClosed = useMutation((value) => api(`/api/outlets/${id}`, { method: 'PATCH', body: { closed_on: value } }),
+    { onSuccess: () => { setClosedOn(''); reloadAll() } })
 
   const ready = o && tax.data
   const loadError = all.error || tax.error
@@ -85,6 +90,7 @@ export default function OutletPanel({ id }) {
                     : <span className="small muted">{t('source: Social Media scraped data (2023–24)')}</span>}</> : <span className="muted">{t('unclassified')}</span>}</td></tr>
             })}
             {o.monitored === false && <tr><th>{t('Collection')}</th><td><span className="pill">{t('partly seen')}</span> <span className="small muted">{t('Facebook page: we only see the posts Google News indexes')}</span></td></tr>}
+            {o.closed_on && <tr><th>{t('Closed')}</th><td><span className="pill">{t('closed on {date}', { date: fmtDate(o.closed_on) })}</span> <span className="small muted">{t('Its earlier articles still count, so its silence shows as a real drop.')}</span></td></tr>}
             {o.external?.social_media_scrape && <tr><th>{t('Social-media scrape')}</th><td className="small">
               {Object.entries(o.external.social_media_scrape).filter(([k]) => !['source', 'period', 'link', 'kind'].includes(k)).map(([k, v]) => (SCRAPE_KEY[k] ? t(SCRAPE_KEY[k], { value: fmtNum(Number(v)) }) : `${k.replace('_', ' ')} ${fmtNum(Number(v))}`)).join(' · ')}
               <div className="muted">{t('Social Media scraped data, {from} to {to}', { from: fmtMonth(o.external.social_media_scrape.period?.from ?? ''), to: fmtMonth(o.external.social_media_scrape.period?.to ?? '') })}</div></td></tr>}
@@ -99,6 +105,13 @@ export default function OutletPanel({ id }) {
               <datalist id="cities">{Object.keys(meta.country.cities || {}).map((c) => <option key={c} value={c} />)}</datalist>
               <button className="btn small" disabled={!base || setLocation.busy} onClick={() => setLocation.run()}>{t('Set base')}</button>
               {setLocation.error && <ErrorBox error={setLocation.error} compact />}
+            </div>)}
+          {me.role === 'admin' && (
+            <div className="row" style={{ marginTop: 6 }}>
+              <label className="small">{t('Closed on')} <input type="date" value={closedOn} onChange={(e) => setClosedOn(e.target.value)} aria-label={t('Closing date')} /></label>
+              <button className="btn small" disabled={!closedOn || setClosed.busy} onClick={() => setClosed.run(closedOn)}>{t('Mark closed')}</button>
+              {o.closed_on && <button className="btn small ghost" disabled={setClosed.busy} onClick={() => setClosed.run(null)}>{t('Reopen')}</button>}
+              {setClosed.error && <ErrorBox error={setClosed.error} compact />}
             </div>)}
 
           {can && (

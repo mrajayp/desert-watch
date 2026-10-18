@@ -13,8 +13,8 @@ from sqlalchemy import and_, func, select
 from sqlalchemy.orm import Session
 
 from . import settings
-from .models import (CellWeek, Comment, Country, Digest, GapClaim, GapVote, Item, ItemRegion, ItemTheme, Region,
-                     Theme, utcnow)
+from .models import (BasisDeparture, CellWeek, Comment, Country, Digest, GapClaim, GapVote, Item, ItemRegion, ItemTheme,
+                     Region, Theme, utcnow)
 from .scoring import LENSES, counted_items, latest_complete_week, scored_articles, week_start
 
 log = logging.getLogger("desert_watch.digest")
@@ -82,6 +82,10 @@ COUNTS_LIMIT = ("articles and previous_window count stories from the outlets and
                 "Recurring posts (daily rates, weather) are left out")
 UNSCORED_LIMIT = ("this week has no scores, so articles and previous_window count every monitored source and rise "
                   "whenever a feed or social route is added")
+# Outlets whose route stopped reaching us (scoring.record_departures): their articles left every compared
+# week with them, so their silence shows as no gap. {n} outlets, {weeks} weeks.
+DEPARTURES_LIMIT = ("{n} outlet{s} left the comparison in the last {weeks} weeks: they stopped reaching us, so their "
+                    "articles were removed from every week compared and their silence does not show as a gap")
 
 
 def build_facts(s: Session, country: Country, week: date) -> dict:
@@ -177,6 +181,9 @@ def build_facts(s: Session, country: Country, week: date) -> dict:
     votes = Counter(v for (v,) in s.execute(select(GapVote.vote).where(GapVote.created_at >= since)))
     claims = Counter(c for (c,) in s.execute(select(GapClaim.status).where(GapClaim.updated_at >= since)))
     comments = s.scalar(select(func.count(Comment.id)).where(Comment.created_at >= since, Comment.deleted.is_(False)))
+    # outlets whose route left the comparable basis lately (nightly list; the health card shows the pairs)
+    departed = s.scalar(select(func.count(func.distinct(BasisDeparture.outlet_id)))
+                        .where(BasisDeparture.country_id == country.id)) or 0
 
     return {
         "country": country.name_en, "week_starting": week.isoformat(),
@@ -192,7 +199,9 @@ def build_facts(s: Session, country: Country, week: date) -> dict:
                          "event and humanitarian need data are pending source keys" if not
                          {"events", "humanitarian"} & {g["lens"] for g in gaps} else "",
                          "most articles name no district",
-                         *([SEARCH_LIMIT] if "search" in {g["lens"] for g in gaps} else [])],
+                         *([SEARCH_LIMIT] if "search" in {g["lens"] for g in gaps} else []),
+                         *([DEPARTURES_LIMIT.format(n=departed, s="" if departed == 1 else "s", weeks=settings.DEPARTURE_WEEKS)]
+                           if departed else [])],
     }
 
 

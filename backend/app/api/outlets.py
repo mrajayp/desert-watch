@@ -58,6 +58,7 @@ def list_outlets(country: str = "LY", days: int = 84, min_articles: int = 0, s: 
         out.append({"id": o.id, "name": o.name, "domain": o.domain, "languages": o.languages, "rss": bool(o.rss_url),
                     "base_city": o.base_city, "base_country": o.base_country, "lat": o.lat, "lon": o.lon,
                     "created_via": o.created_via, "monitored": o.monitored is not False,
+                    "closed_on": o.closed_on.isoformat() if o.closed_on else None,
                     "external": o.external or {}, "articles": n, "lang_mix": dict(langs.get(o.id, {})),
                     "categories": cats.get(o.id, {}), "pending_changes": pending.get(o.id, 0),
                     "quality": q.get(o.id)})
@@ -142,6 +143,9 @@ class OutletPatch(BaseModel):
     lon: float | None = None
     rss_url: str | None = None
     active: bool | None = None
+    # the day the outlet closed or became unreachable (null reopens it): its source|outlet pairs then stay
+    # in the comparable basis so its silence shows as a real drop (scoring.comparable_pairs, flag outlet_closed)
+    closed_on: date | None = None
 
 
 @router.patch("/outlets/{oid}")
@@ -150,6 +154,8 @@ def patch_outlet(oid: int, body: OutletPatch, s: Session = Depends(get_db), u: U
     if not o:
         raise HTTPException(404, tr("Unknown outlet"))
     data = body.model_dump(exclude_unset=True)
+    if data.get("closed_on") and data["closed_on"] > date.today():
+        raise HTTPException(400, tr("The closing date cannot be in the future."))
     if "base_city" in data and data["base_city"] and "lat" not in data:
         # place on the map from the country's city list
         from ..models import Country
@@ -376,4 +382,5 @@ def outlet_detail(oid: int, s: Session = Depends(get_db), u: User = Depends(auth
         raise HTTPException(404, tr("Unknown outlet"))
     return {"id": o.id, "name": o.name, "domain": o.domain, "languages": o.languages, "base_city": o.base_city,
             "base_country": o.base_country, "monitored": o.monitored is not False, "active": o.active,
+            "closed_on": o.closed_on.isoformat() if o.closed_on else None,
             "categories": outlet_categories(s, [o.id]).get(o.id, {}), "ai_cited_4w": ai_cited_4w(s, u, o.id)}

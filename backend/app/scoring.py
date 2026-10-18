@@ -37,7 +37,19 @@ verdict: short | over | usual | possibly_short for a judged cell, decided per le
 with the practical floor settings.MIN_SHORTFALL; unclear when E < MIN_EXPECTED_ARTICLES (reason
 too_few_expected), alpha rests on fewer than ALPHA_UNCLEAR_WEEKS weeks, or the interval is wider than
 MAX_INTERVAL_RATIO; null when there is nothing to judge (in_progress, no_need_data, ...). gap and
-insufficient do not depend on the verdict."""
+insufficient do not depend on the verdict.
+
+Collection drift and basis honesty (settings DRIFT_*, BACKFILL_LAG_DAYS, DEPARTURE_WEEKS):
+  baseline_backfilled  on every cell: an own-history cell whose 12 baseline weeks include a week that was
+                       searched back for (backfilled_weeks: the median article first seen more than 14
+                       days after publication). Such weeks hold fewer articles than live ones, so the
+                       expected level runs low: the cell's SE_g gets drift_se added and its interval
+                       widens. Pooled lenses compare themes within one window, so the flag is false there.
+  drift_se             the widening (DRIFT_PER_WEEK x DRIFT_LAG_WEEKS, 0 when not backfilled); judged cells
+  flag outlet_closed   a comparable pair belongs to an outlet an admin marked closed (Outlet.closed_on)
+                       within the cell's compared span, and the cell counted its stories: the pair stays
+                       in the basis (comparable_pairs), so the outlet's silence is a real drop, not a
+                       retroactive change of outlet set. record_departures lists the pairs that did leave."""
 import math
 import statistics
 from bisect import bisect_left
@@ -45,12 +57,12 @@ from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 
-from sqlalchemy import and_, delete, func, select
+from sqlalchemy import and_, case, delete, func, select
 from sqlalchemy.orm import Session
 
 from . import settings
-from .models import (CellWeek, Country, Item, ItemRegion, ItemTheme, OutletCategory, Region, Theme,
-                     utcnow)
+from .models import (BasisDeparture, CellWeek, Country, Item, ItemRegion, ItemTheme, Outlet, OutletCategory,
+                     Region, Theme, utcnow)
 from .stats import benjamini_hochberg, interval, nb_tail, one_in
 
 # daily: need arrives as one reading per day, so a week counts as complete only once its need
@@ -125,7 +137,7 @@ def score_cell(coverage: float, need: float, ref_ratio: float | None, *, prior: 
 
 # ---------------------------------------------------------------- calibrated verdict
 VERDICTS = ("short", "over", "usual", "possibly_short", "unclear")
-EVIDENCE_KEYS = ("variance", "p_low", "p_high", "se_g", "ratio_lo", "ratio_hi", "chance", "new_short")
+EVIDENCE_KEYS = ("variance", "p_low", "p_high", "se_g", "ratio_lo", "ratio_hi", "chance", "new_short", "drift_se")
 
 
 def alpha_pair(b: dict | None) -> tuple[float, float] | None:
@@ -168,7 +180,7 @@ def dispersions(by_theme: dict) -> tuple[dict, float]:
 
 
 def cell_evidence(expected: float, stories: float, alpha: float, mu_weeks, baseline_counts, *,
-                  prior: float | None = None, z: float | None = None) -> dict:
+                  prior: float | None = None, z: float | None = None, drift_se: float = 0.0) -> dict:
     """The tail probabilities and the interval of one judged cell, C stories against E expected:
       V      = E + alpha * sum_W mu_w^2 + E^2 * s_E^2    the window count's variance if nothing changed
       s_E^2  = (H + alpha * sum_B c_b^2) / H^2            the baseline ratio's relative variance, H = sum_B c_b
@@ -178,11 +190,16 @@ def cell_evidence(expected: float, stories: float, alpha: float, mu_weeks, basel
                                                           same variance model as V, so the interval and the
                                                           tail agree (the proposal wrote the middle term as
                                                           alpha, the weekly dispersion put on the 4-week sum)
+      SE_g  += drift_se                                   a baseline on backfilled weeks (settings.DRIFT_*):
+                                                          added, not in quadrature, since the drift is a bias
+                                                          of known direction rather than noise; the stored
+                                                          se_g is the widened one and drift_se says by how much
       ratio_lo, ratio_hi = exp(g -/+ z SE_g)              the 90% interval on exp(g), "N times fewer"
       chance = "1 in N" on the side the cell leans to (p_low when C <= E, else p_high); None past 0.2
     mu_weeks: the expectation of each window week (they sum to E). baseline_counts: the weekly stories
     the reference rests on (the cell's own 12 weeks; on a pooled lens the pool's window nationally, the
-    theme's national window for a district)."""
+    theme's national window for a district). The tails (p_low, p_high) never move with drift_se: the
+    verdict is the same, only the margin the page quotes is wider."""
     A = settings.PRIOR_ARTICLES if prior is None else prior
     z = settings.INTERVAL_Z if z is None else z
     E, C = float(expected), float(stories)
@@ -192,10 +209,11 @@ def cell_evidence(expected: float, stories: float, alpha: float, mu_weeks, basel
     V = E + alpha * shape + E * E * s_e2
     p_low, p_high = nb_tail(E, V, C)
     g = math.log((E + A) / (C + A))
-    se = math.sqrt(1.0 / (C + A) + alpha * shape / (E * E) + s_e2 * (E / (E + A)) ** 2)
+    se = math.sqrt(1.0 / (C + A) + alpha * shape / (E * E) + s_e2 * (E / (E + A)) ** 2) + drift_se
     lo, hi = interval(g, se, z)
     return {"variance": round(V, 2), "p_low": round(p_low, 6), "p_high": round(p_high, 6), "se_g": round(se, 4),
-            "ratio_lo": round(lo, 3), "ratio_hi": round(hi, 3), "chance": one_in(p_low if g >= 0 else p_high)}
+            "ratio_lo": round(lo, 3), "ratio_hi": round(hi, 3), "chance": one_in(p_low if g >= 0 else p_high),
+            "drift_se": round(drift_se, 4)}
 
 
 def judge(cells, *, q: float | None = None, min_shortfall: float | None = None) -> list[str]:
@@ -362,15 +380,79 @@ def pair_spans(s: Session, country_id: int) -> dict[tuple[str, int], tuple[date,
         .group_by(Item.source_key, Item.outlet_id)).all()}
 
 
+def closed_outlets(s: Session) -> dict[int, date]:
+    """Outlet id -> the day an admin marked it closed (Outlet.closed_on)."""
+    return dict(s.execute(select(Outlet.id, Outlet.closed_on).where(Outlet.closed_on.is_not(None))).all())
+
+
 def comparable_pairs(s: Session | None, country_id: int | None, span_start: date, span_end_week: date,
-                     spans: dict | None = None) -> set[tuple[str, int]]:
+                     spans: dict | None = None, closed: dict | None = None) -> set[tuple[str, int]]:
     """source|outlet pairs collecting across the whole span: first article on or before span_start, last
     article on or after span_end_week - 14 days (so a pair is not dropped for a quiet fortnight).
     The one rule behind the gap scores, the Trends bars and their article lists. An empty set means
-    nothing qualifies yet, and callers then count every source."""
+    nothing qualifies yet, and callers then count every source.
+    An outlet an admin marked closed (`closed`: outlet id -> closed_on, closed_outlets) keeps its pairs
+    whatever its last article day: its stories count up to the closure and its silence after it is a
+    real drop in the comparison (compute flags such cells outlet_closed), where a pair that simply
+    stops is removed from every compared week and its loss never shows (record_departures lists those)."""
     spans = pair_spans(s, country_id) if spans is None else spans
+    if closed is None:
+        closed = closed_outlets(s) if s is not None else {}
     end = span_end_week - PAIR_END_GRACE
-    return {k for k, (lo, hi) in spans.items() if lo <= span_start and hi >= end}
+    return {k for k, (lo, hi) in spans.items() if lo <= span_start and (hi >= end or k[1] in closed)}
+
+
+def backfilled_weeks(s: Session, country_id: int, start: date, end: date) -> set[date]:
+    """Weeks in [start, end) that were searched back for rather than collected live: more than half of
+    the week's counted articles (from the sources comparisons use) were first seen more than
+    settings.BACKFILL_LAG_DAYS after publication, that is the week's median article came in late.
+    Google News finds fewer articles for a week the older it is when asked (settings.DRIFT_PER_WEEK), so
+    an expected level built on such weeks runs low; compute widens those cells' intervals. One grouped
+    query, a row per day. A week with no article is not backfilled."""
+    lag = func.julianday(Item.created_at) - func.julianday(Item.published_at)
+    day = func.date(Item.published_at)
+    rows = s.execute(select(day, func.sum(case((lag > settings.BACKFILL_LAG_DAYS, 1), else_=0)), func.count(Item.id))
+                     .where(*counted_items(country_id), Item.kind == "article", Item.source_key.not_in(NOT_FOR_TRENDS),
+                            Item.published_at >= _dt(start), Item.published_at < _dt(end))
+                     .group_by(day)).all()
+    late: Counter = Counter()
+    total: Counter = Counter()
+    for d, n_late, n in rows:
+        wk = week_start(date.fromisoformat(str(d)[:10]))
+        late[wk] += int(n_late or 0)
+        total[wk] += int(n)
+    return {wk for wk, n in total.items() if n and 2 * late[wk] > n}
+
+
+def record_departures(s: Session, country_id: int | None = None, today: date | None = None) -> int:
+    """Rewrite basis_departure (models.BasisDeparture) for each country: the source|outlet pairs that
+    left the Trends basis in the last settings.DEPARTURE_WEEKS weeks. A pair leaves when its last article
+    falls behind the grace fortnight before the last complete week (comparable_pairs); it is listed while
+    that last article is within DEPARTURE_WEEKS weeks of the cut. Pairs that never qualified (first
+    article after the span began) and closed outlets (kept in the basis) are not departures. Runs
+    nightly (jobs.nightly); returns the number of pairs listed."""
+    today = today or date.today()
+    countries = [s.get(Country, country_id)] if country_id else list(s.scalars(select(Country)))
+    closed = closed_outlets(s)
+    n = 0
+    for c in countries:
+        s.execute(delete(BasisDeparture).where(BasisDeparture.country_id == c.id))
+        _, end, span_start = trend_window(week_start(today), coverage_start(s, c.id))
+        cut = end - PAIR_END_GRACE
+        since = cut - timedelta(weeks=settings.DEPARTURE_WEEKS)
+        rows = s.execute(select(Item.source_key, Item.outlet_id, func.min(Item.published_at), func.max(Item.published_at),
+                                func.count(Item.id))
+                         .where(Item.country_id == c.id, Item.kind == "article", Item.relevant.is_(True),
+                                Item.outlet_id.is_not(None), Item.source_key.not_in(NOT_FOR_TRENDS))
+                         .group_by(Item.source_key, Item.outlet_id)).all()
+        for src, oid, lo, hi, cnt in rows:
+            lo, hi = lo.date(), hi.date()
+            if lo <= span_start and since <= hi < cut and oid not in closed:
+                s.add(BasisDeparture(country_id=c.id, source_key=src, outlet_id=oid, first_day=lo, last_day=hi,
+                                     articles=int(cnt), recorded_at=utcnow()))
+                n += 1
+    s.commit()
+    return n
 
 
 def coverage_start(s: Session, country_id: int) -> date | None:
@@ -533,8 +615,10 @@ def compute(s: Session, country_id: int, *, weeks: int = 12, today: date | None 
     # read as more coverage. Weeks the Trends page shows all use the page's own set, so its bars, the
     # usual level and the verdicts count the same outlets. Older weeks use their own 16-week span.
     spans = pair_spans(s, country_id)
+    closed = closed_outlets(s)   # an admin's closure keeps the outlet's pairs in the basis (comparable_pairs)
+    closed_pairs = {p: closed[p[1]] for p in spans if p[1] in closed}
     tw_first, tw_end, tw_from = trend_window(current, cov_start)
-    trend_keep = comparable_pairs(None, None, tw_from, tw_end, spans=spans) or None
+    trend_keep = comparable_pairs(None, None, tw_from, tw_end, spans=spans, closed=closed) or None
     keeps: dict[date, set | None] = {}
 
     def keep_for(wk: date) -> set | None:
@@ -542,13 +626,17 @@ def compute(s: Session, country_id: int, *, weeks: int = 12, today: date | None 
             return trend_keep
         if wk not in keeps:
             lo = wk - timedelta(weeks=BASELINE_REACH)
-            keeps[wk] = comparable_pairs(None, None, max(lo, cov_start) if cov_start else lo, wk, spans=spans) or None
+            keeps[wk] = comparable_pairs(None, None, max(lo, cov_start) if cov_start else lo, wk, spans=spans,
+                                         closed=closed) or None
         return keeps[wk]
 
     counted = counted_in
     themes = s.scalars(select(Theme).where(Theme.active.is_(True))).all()
     dims = _outlet_dims(s)
     capped = capped_pageviews(s, country_id, history_from, last + timedelta(days=7))
+    # weeks searched back for (fewer articles than live weeks): a baseline resting on one gets a wider interval
+    backfilled = backfilled_weeks(s, country_id, history_from, last + timedelta(days=7))
+    drift = settings.DRIFT_PER_WEEK * settings.DRIFT_LAG_WEEKS
 
     # ---- load items once, one row per story: (week, theme, region) -> aggregates
     rows = load_stories(s, country_id, history_from, last + timedelta(days=7))
@@ -632,6 +720,15 @@ def compute(s: Session, country_id: int, *, weeks: int = 12, today: date | None 
             out.append(counted(c.pairs, keep) if c else 0)
         return out
 
+    def counted_closure(wk_end: date, theme_id, region_id, closing: set) -> bool:
+        """Whether the cell counted a story from one of the closing pairs within its compared span (the
+        window and the 12 weeks before it): then the outlet's silence is part of this cell's shortfall."""
+        for i in range(BASELINE_REACH + 1):
+            c = weekly_cov.get((wk_end - timedelta(weeks=i), theme_id, region_id))
+            if c and any(not closing.isdisjoint(ps) for (ps, _) in c.pairs):
+                return True
+        return False
+
     # one record per cell: the CellWeek fields, plus the evidence inputs under keys starting with "_".
     # The rows are written after the verdicts, which need every cell of a lens-week and the dispersion
     # of every theme over the run (the session held the same objects before the commit as it does now).
@@ -639,6 +736,10 @@ def compute(s: Session, country_id: int, *, weeks: int = 12, today: date | None 
     wk = first
     while wk <= last:
         keep = keep_for(wk)
+        # comparable pairs of outlets that closed inside this week's compared span: their loss is real,
+        # and the cells that counted them say so (flag outlet_closed)
+        closing = {p for p, d in closed_pairs.items() if (keep is None or p in keep)
+                   and wk - timedelta(weeks=BASELINE_REACH) <= d <= wk + timedelta(days=6)}
         cur = {(t.id, rid): window(wk, t.id, rid) for t in themes for rid in region_ids}
         prev = {(t.id, rid): window(wk - timedelta(weeks=settings.WINDOW_WEEKS), t.id, rid)
                 for t in themes for rid in region_ids}
@@ -672,6 +773,7 @@ def compute(s: Session, country_id: int, *, weeks: int = 12, today: date | None 
                         continue  # keep the table small: empty regional cells are implicit
                     scored_cov = counted(agg.pairs, keep) - (counted(agg.late, keep) if cut else 0)
                     baseline_windows = 0
+                    base_backfilled = False   # an own-history baseline resting on a week searched back for
                     if cfg["reference"] == "own_history":
                         hc = hn = 0.0
                         baseline_counts: list[int] = []
@@ -684,6 +786,8 @@ def compute(s: Session, country_id: int, *, weeks: int = 12, today: date | None 
                             hn += n2[lens]
                             baseline_windows += 1
                             baseline_counts += weekly_counts(w_end, t.id, rid, settings.WINDOW_WEEKS, keep)
+                            base_backfilled = base_backfilled or any(
+                                w_end - timedelta(weeks=j) in backfilled for j in range(settings.WINDOW_WEEKS))
                         ref = hc / hn if hn else None
                     elif reg.level == "national":
                         ref, baseline_counts = pooled_nat, pool_weekly
@@ -714,6 +818,8 @@ def compute(s: Session, country_id: int, *, weeks: int = 12, today: date | None 
                         flags = [f for f in flags if f != "coverage_drop"]
                     elif cut:  # judged although its need data never reached the week's end
                         flags.append("need_incomplete")
+                    if closing and counted_closure(wk, t.id, rid, closing):
+                        flags.append("outlet_closed")
                     k = (wk, t.id, rid)
                     need_week = weekly_need.get(k, {}).get(lens, 0.0)
                     wcov = weekly_cov.get(k)
@@ -726,6 +832,7 @@ def compute(s: Session, country_id: int, *, weeks: int = 12, today: date | None 
                         need=need[lens], coverage=agg.total, ratio=sc.ratio, ref_ratio=sc.ref_ratio, gap=sc.gap,
                         insufficient=sc.insufficient, verdict=None, flags=flags,
                         _mu_weeks=mu_weeks, _baseline=baseline_counts, _level=reg.level,
+                        _drift=drift if base_backfilled else 0.0,
                         breakdown={"lang": dict(agg.lang), "scope": dict(agg.scope),
                                    "alignment": dict(agg.alignment), "source": dict(agg.source),
                                    "unplaced": agg.unplaced, "prev_coverage": pagg.total,
@@ -736,6 +843,8 @@ def compute(s: Session, country_id: int, *, weeks: int = 12, today: date | None 
                                    "prev_need": pneed[lens], "reference": cfg["reference"],
                                    "baseline_windows": baseline_windows, "partial_window": partial,
                                    "building_baseline": building,
+                                   # the baseline rests on a week searched back for: the interval is widened
+                                   "baseline_backfilled": base_backfilled,
                                    "in_progress": ip, "reason": sc.reason,
                                    "need_through": need_end.isoformat() if cut else None,
                                    "scored_coverage": scored_cov,
@@ -777,7 +886,8 @@ def compute(s: Session, country_id: int, *, weeks: int = 12, today: date | None 
         alpha, m = alphas[(rec["theme_id"], rec["lens"])]
         b["alpha"], b["alpha_weeks"] = round(alpha, 4), m
         if rec["gap"] is not None:
-            b.update(cell_evidence(b["expected_4w"], b["articles_4w"], alpha, rec["_mu_weeks"], rec["_baseline"]))
+            b.update(cell_evidence(b["expected_4w"], b["articles_4w"], alpha, rec["_mu_weeks"], rec["_baseline"],
+                                   drift_se=rec["_drift"]))
             families[(rec["week_start"], rec["lens"], rec["_level"])].append(rec)
         elif b["reason"] == "too_few_expected":
             rec["verdict"] = "unclear"

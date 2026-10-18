@@ -8,6 +8,7 @@ import { useApi } from '../hooks/useApi'
 import { useMutation } from '../hooks/useMutation'
 import { usePageTitle } from '../hooks/usePageTitle'
 import { fmtDate, fmtDateTime, fmtNum, isAr, pick, t, tn } from '../i18n'
+import { sourceLabel } from '../charts/scales'
 import { Markdown } from './Digest'
 
 const N_ = (s) => s // marks English for the catalogue; translated with t() when read
@@ -428,6 +429,10 @@ function HealthCard() {
     [t('Last digest'), last(d.last_digest)],
     [t('Last recompute'), last(d.last_recompute)],
     [t('Stale sources'), d.stale_sources.length ? d.stale_sources.map((x) => `${x.label} (${runStatus(x.status)})`).join(comma()) : t('none')],
+    // source|outlet pairs that stopped reaching us lately: their articles left every compared week with them
+    [t('Left the comparison ({weeks} weeks)', { weeks: d.basis_departures_weeks ?? 4 }), d.basis_departures?.length
+      ? d.basis_departures.map((x) => t('{outlet} via {source}, last article {date}', { outlet: x.outlet, source: sourceLabel(x.source), date: fmtDate(x.last_day) })).join(comma())
+      : t('none')],
   ] : []
   return (
     <section className="card" style={{ marginTop: 16 }}>

@@ -4,7 +4,7 @@ so failures are recorded, not raised. Jobs share one lock so SQLite sees one wri
 scheduler starts, so a deploy's data steps and the scheduler's jobs take turns."""
 import logging
 
-from . import dedupe, joblock, learning, network, scoring
+from . import dedupe, joblock, learning, network, scoring, settings
 from .collectors import COLLECTORS
 from .collectors.base import run_collector
 from .db import SessionLocal
@@ -65,8 +65,10 @@ def recompute(weeks: int | None = None):
 def child_job(source_key: str, *args: str, timeout: int = 3600) -> dict:
     """Run a CLI command in a child process, so the memory it takes (scikit-learn for the theme model,
     the recompute's rows) goes back to the system when it ends. Logged in source_run under source_key;
-    the child's last stdout line is read as JSON and its "changed" count stored as rows. A child
-    started under the job lock inherits it (HELD_ENV) instead of waiting for its parent."""
+    the child's last stdout line is read as JSON and its "changed" count stored as rows; a "status" of
+    partial or error and a "detail" in that line are kept too (a collector run as a child reports its
+    own outcome that way). A child started under the job lock inherits it (HELD_ENV) instead of
+    waiting for its parent."""
     import json
     import os
     import subprocess
@@ -91,8 +93,11 @@ def child_job(source_key: str, *args: str, timeout: int = 3600) -> dict:
             except ValueError:
                 out = {}
             run.status = "ok" if p.returncode == 0 else "error"
+            if p.returncode == 0 and out.get("status") in ("partial", "error"):
+                run.status = out["status"]
             run.rows = int(out.get("changed") or 0)
-            run.error = (p.stderr or p.stdout)[-1500:] if p.returncode else None  # the outcome is in the registry note
+            # a failed child's output; otherwise the outcome is in the registry note, or the child's own detail
+            run.error = (p.stderr or p.stdout)[-1500:] if p.returncode else (str(out.get("detail") or "")[:1500] or None)
         except subprocess.TimeoutExpired:
             run.status, run.error = "error", "timed out after an hour"
         except Exception as e:  # never leave the run at "running"
@@ -123,6 +128,16 @@ def recompute_child(weeks: int | None = None) -> dict:
 
 
 @_locked
+def gnews_settle(weeks_ago=None) -> dict:
+    """Sunday 05:00 UTC: Google News searched again for the weeks that ended 2, 3 and 4 weeks ago
+    (collectors/gnews.settle), as a child process under this job's lock like the recomputes, so the
+    collector's rules and rows go back to the system when it ends. Logged in source_run as "gnews_settle"
+    (stale after 8 days on the health strip). weeks_ago: which weeks, default settings.SETTLE_WEEKS_AGO."""
+    weeks = ",".join(str(k) for k in (weeks_ago or settings.SETTLE_WEEKS_AGO))
+    return child_job("gnews_settle", "gnews-settle", "--weeks-ago", weeks)
+
+
+@_locked
 def nightly():
     with SessionLocal() as s:
         learning.purge_old_events(s)
@@ -132,11 +147,21 @@ def nightly():
     collect("gnews_social")   # yesterday and the day before, one fixed day each (Google indexes late)
     _resolve_links()
     _mark_recurring()
+    _record_departures()
     # retrain the label-trained part of the theme model; a promoted version re-scores everything
     res = model_job("theme_model_train", "train-small-model")
     if res and res.get("promoted"):
         model_job("theme_model", "classify-items", "--all")
     _checkpoint_wal()
+
+
+def _record_departures() -> int:
+    """The source|outlet pairs that left the comparable basis in the last DEPARTURE_WEEKS weeks
+    (scoring.record_departures), for the admin health card and the digest's caveats."""
+    with SessionLocal() as s:
+        n = scoring.record_departures(s)
+        log.info("basis departures: %s pairs left the comparison in the last %s weeks", n, settings.DEPARTURE_WEEKS)
+        return n
 
 
 def _mark_recurring() -> int | None:
@@ -299,6 +324,8 @@ JOBS = {
     "backup": backup,
     "classify": lambda: _locked(model_job)("theme_model", *CLASSIFY_HOURLY),
     "classify_all": lambda: _locked(model_job)("theme_model", "classify-items", "--all"),
+    "gnews_settle": gnews_settle,
+    "basis_departures": _locked(_record_departures),
 }
 
 
@@ -317,6 +344,8 @@ def start_scheduler():
     sched.add_job(reach_snapshot, "cron", day=1, hour=4, minute=40)            # outlet web rank, monthly
     # after the nightly full recompute (03:30) and before the Monday digest (06:00)
     sched.add_job(ai_audit, "cron", day_of_week="mon", hour=4, minute=20)
+    # Google News searched again for the weeks aged 2 to 4 weeks, so every week is retrieved at the same ages
+    sched.add_job(gnews_settle, "cron", day_of_week="sun", hour=5, minute=0)
     sched.start()
     STATE["scheduler"] = sched
     return sched

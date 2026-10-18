@@ -6,6 +6,11 @@
   collect KEY [--weeks N] [--themes a,b]  run one collector (rss, gnews, gdelt, gdelt_timeline, wikipedia, ...)
   backfill [WEEKS]          gnews + wikipedia + gdelt history + rss
   recompute [--weeks N]     duplicates + scores + network + labels (the scheduler runs it as a child process)
+  gnews-settle [--weeks-ago 2,3,4]  search Google News again for the weeks that ended that many weeks ago, both
+                            languages, so every week is retrieved at the same ages (the Sunday 05:00 job runs it as a
+                            child process; stored articles are updated, not duplicated; ~230 queries, ~8 minutes)
+  basis-departures          list the source|outlet pairs that left the comparison in the last 4 weeks (nightly; the
+                            admin health card and the digest read the list)
   backup                    the nightly off-site database backup now (VACUUM INTO, quick_check, gzip, upload, prune)
   dedupe                    mark every duplicate copy of a story (full pass)
   mark-recurring [--days 30] [--min 3] [--since YYYY-MM-DD]  flag recurring posts (daily rates, weather...) so no count
@@ -68,7 +73,7 @@ import sys
 # the lock on its own, as the scheduled run does.
 NO_LOCK = {"init", "create-admin", "invite", "review", "alerts-list", "model-status", "train-theme-model", "ai-audit"}
 # Commands the scheduler runs as children: no seed_all, which would bring back deleted key events every hour.
-NO_SEED = {"recompute"}
+NO_SEED = {"recompute", "gnews-settle", "basis-departures"}
 
 
 def _ai_audit_plan_text(res: list[dict]) -> str:
@@ -357,6 +362,22 @@ def _run(cmd: str, args: list[str]):
         from .jobs import recompute
         n = recompute(weeks=int(args[args.index("--weeks") + 1]) if "--weeks" in args else None)
         print(json.dumps({"cells": n, "changed": n}))   # the last line is what the scheduler's child_job reads
+    elif cmd == "gnews-settle":
+        import json
+        from .collectors.gnews import settle
+        opt = lambda k, d=None: args[args.index(k) + 1] if k in args else d  # noqa: E731
+        weeks_ago = tuple(int(x) for x in (opt("--weeks-ago") or "").split(",") if x.strip()) or None
+        with SessionLocal() as s:
+            res = settle(s, weeks_ago=weeks_ago)
+        # the last line is what the scheduler's child_job reads: rows, the run's outcome and its note
+        print(json.dumps({"changed": res.rows, "errors": res.errors, "detail": res.detail,
+                          "status": "ok" if not res.errors else ("partial" if res.rows else "error")}))
+    elif cmd == "basis-departures":
+        import json
+        from .scoring import record_departures
+        with SessionLocal() as s:
+            n = record_departures(s)
+        print(json.dumps({"pairs": n, "changed": n}))
     elif cmd == "backup":
         from .jobs import backup
         print(backup())

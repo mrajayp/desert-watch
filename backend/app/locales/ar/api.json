@@ -122,5 +122,7 @@
   "Key set; collector not written yet.": "المفتاح موجود، لكن هذا المجمّع لم يُكتب بعد.",
   "Nightly database backup (off-site)": "النسخة الاحتياطية الليلية لقاعدة البيانات (خارج الخادم)",
   "Too many failed sign-in attempts. Try again in {n} min.": "محاولات تسجيل دخول فاشلة كثيرة. يمكن المحاولة مجددًا بعد {n} دقيقة.",
-  "The current password is wrong.": "كلمة المرور الحالية غير صحيحة."
+  "The current password is wrong.": "كلمة المرور الحالية غير صحيحة.",
+  "Google News searched again for the weeks aged 2 to 4 weeks (Sundays)": "إعادة البحث في أخبار غوغل عن الأسابيع التي مضى عليها من أسبوعين إلى 4 أسابيع (كل يوم أحد)",
+  "The closing date cannot be in the future.": "لا يمكن أن يكون تاريخ الإغلاق في المستقبل."
 }

@@ -140,6 +140,8 @@ export default {
   "Last recompute": "آخر إعادة حساب",
   "never": "لم يحدث بعد",
   "Stale sources": "مصادر غير محدَّثة",
+  "Left the comparison ({weeks} weeks)": "خرجت من المقارنة (خلال {weeks} أسابيع)",
+  "{outlet} via {source}, last article {date}": "{outlet} عبر {source}، آخر مقال في {date}",
   "none": "لا شيء",
   "Saved. Articles are being re-tagged and scores recomputed in the background.": "حُفظ. تجري في الخلفية إعادة وسم المقالات وإعادة حساب الدرجات.",
   "Queued {job}. Refresh in a minute.": "أُضيفت المهمة {job} إلى قائمة الانتظار. يُرجى تحديث الصفحة بعد دقيقة.",

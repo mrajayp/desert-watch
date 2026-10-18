@@ -30,9 +30,11 @@ EXTRA_HEALTH = {
     "ai_audit_perplexity": N_("AI answers audit: Perplexity"),
     # the nightly off-site copy of the database (backup.py), 01:15 UTC
     "backup": N_("Nightly database backup (off-site)"),
+    # the Sunday re-query of Google News for the weeks aged 2 to 4 weeks (gnews.settle), 05:00 UTC
+    "gnews_settle": N_("Google News searched again for the weeks aged 2 to 4 weeks (Sundays)"),
 }
 # Hours before a source counts as stale (48 unless listed). Search data is imported by hand each week;
-# the AI answers audit runs once a week (Monday 04:20 UTC), so it is stale after 8 days; the backup
-# runs nightly, so a missed night shows after 30 hours.
+# the AI answers audit runs once a week (Monday 04:20 UTC), so it is stale after 8 days, as is the
+# Sunday re-query of Google News; the backup runs nightly, so a missed night shows after 30 hours.
 STALE_HOURS = {"gtrends": 10 * 24, "ai_audit_anthropic": 8 * 24, "ai_audit_openai": 8 * 24,
-               "ai_audit_perplexity": 8 * 24, "backup": 30}
+               "ai_audit_perplexity": 8 * 24, "backup": 30, "gnews_settle": 8 * 24}
