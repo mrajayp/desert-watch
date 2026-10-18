@@ -29,7 +29,7 @@ export default function Comments({ objectType, objectKey }) {
   const kids = (id) => rows.filter((c) => c.parent_id === id)
   const one = (c, reply) => (
     <div key={c.id} className={`comment ${reply ? 'reply' : ''}`} style={c.resolved ? { opacity: 0.6 } : undefined}>
-      <div className="meta">{c.deleted ? t('deleted') : <bdi>{c.user}</bdi>} · {fmtDateTime(c.at)} {c.tag &&<span className="pill">{TAGS[c.tag] && t(TAGS[c.tag])}</span>} {c.resolved && <span className="pill ok">{t('resolved')}</span>}</div>
+      <div className="meta">{c.deleted ? t('deleted') : <bdi>{c.user || t('A team member')}</bdi>} · {fmtDateTime(c.at)} {c.tag &&<span className="pill">{TAGS[c.tag] && t(TAGS[c.tag])}</span>} {c.resolved && <span className="pill ok">{t('resolved')}</span>}</div>
       {!c.deleted && <div dir="auto" style={{ whiteSpace: 'pre-wrap' }}>{c.body}</div>}
       {!c.deleted && can && (
         <div className="row small">

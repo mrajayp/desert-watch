@@ -163,6 +163,38 @@ def test_category_requires_evidence_and_keeps_history(client, users, db):
     db.expire_all()
     hist = [c for c in client.get(f"/api/outlets/{o.id}/history").json() if c["dimension"] == "alignment"]
     assert len(hist) == 2 and sum(1 for c in hist if c["valid_to"] is None) == 1
+    assert {c["set_by"] for c in hist} == {"Journo", "Admin"}
+
+
+def test_viewers_see_no_names(client, users, db):
+    """A read-only account sees votes, claims, comments and label history without the names of the
+    people behind them (viewers see no names); contributors still see who did what."""
+    from app.auth import create_user
+    themes, regions = ids(db)
+    create_user(db, "v@example.org", "viewer-password-1", "Viewer", "viewer")
+    db.commit()
+    gap = {"theme_id": themes["health"], "region_id": regions["fezzan"]}
+    login(client, "j@example.org", "journo-password-1")
+    assert client.post("/api/gap/vote", json={**gap, "week": "2026-10-05", "lens": "events", "vote": "real"}).status_code == 200
+    assert client.post("/api/gap/claim", json={**gap, "status": "working"}).status_code == 200
+    d = client.get("/api/gap", params={**gap, "lens": "events", "week": "2026-10-05"}).json()
+    key = d["object_key"]
+    assert client.post("/api/comments", json={"object_type": "gap", "object_key": key, "body": "hello"}).status_code == 200
+    assert d["votes"][0]["user"] == "Journo" and d["claims"][0]["user"] == "Journo"
+    assert client.get("/api/comments", params={"object_type": "gap", "object_key": key}).json()[0]["user"] == "Journo"
+    o = db.scalar(select(Outlet).where(Outlet.domain == "libyaherald.com"))
+    cat = {"dimension": "alignment", "value": "independent", "confidence": "reported", "evidence_url": "https://example.org/study"}
+    assert client.post(f"/api/outlets/{o.id}/categories", json=cat).status_code == 200
+    assert client.get(f"/api/outlets/{o.id}/history").json()[0]["set_by"] == "Journo"
+    client.post("/api/auth/logout")
+    login(client, "v@example.org", "viewer-password-1")
+    d = client.get("/api/gap", params={**gap, "lens": "events", "week": "2026-10-05"}).json()
+    assert d["votes"] and d["votes"][0]["user"] is None and d["votes"][0]["vote"] == "real"
+    assert d["claims"] and d["claims"][0]["user"] is None and d["claims"][0]["status"] == "working"
+    cs = client.get("/api/comments", params={"object_type": "gap", "object_key": key}).json()
+    assert cs and cs[0]["user"] is None and cs[0]["body"] == "hello"
+    hist = client.get(f"/api/outlets/{o.id}/history").json()
+    assert hist and all(c["set_by"] is None for c in hist)
 
 
 def test_delete_account(client, users, db):

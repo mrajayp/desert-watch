@@ -126,6 +126,15 @@ def require_admin(u: User = Depends(current_user)) -> User:
     return u
 
 
+def team_names(s: Session, u: User) -> dict[int, str]:
+    """id -> display name of every account, for saying who voted, claimed, commented or labelled.
+    A viewer (read-only account) sees no names: the map is empty, so every lookup gives None and the
+    interface says "a team member" instead."""
+    if u.role == "viewer":
+        return {}
+    return {x.id: x.display_name for x in s.scalars(select(User))}
+
+
 def accept_invite(s: Session, token: str, password: str, display_name: str) -> User:
     inv = s.scalar(select(Invite).where(Invite.token_hash == sha(token)))
     if not inv or inv.used_at or inv.expires_at < utcnow():

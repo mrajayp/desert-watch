@@ -238,6 +238,7 @@ export default {
   'What’s been written ({n})': 'ما كُتب حتى الآن ({n})',
   'No monitored article in this period.': 'لا توجد مقالات مرصودة في هذه الفترة.',
   'Showing {shown} of {total} · see all': 'يظهر {shown} من {total} · عرض الكل',
+  'A team member': 'أحد أعضاء الفريق',
   'No votes yet.': 'لا توجد أصوات بعد.',
   'Nobody has claimed this yet.': 'لا أحد يعمل على هذا حتى الآن.',
   'No outlet with this id.': 'لا توجد وسيلة إعلامية بهذا المعرّف.',

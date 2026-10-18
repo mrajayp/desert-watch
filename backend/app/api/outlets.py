@@ -66,8 +66,8 @@ def list_outlets(country: str = "LY", days: int = 84, min_articles: int = 0, s: 
 
 
 @router.get("/outlets/{oid}/history")
-def outlet_history(oid: int, s: Session = Depends(get_db), _: User = Depends(auth.current_user)):
-    names = {x.id: x.display_name for x in s.scalars(select(User))}
+def outlet_history(oid: int, s: Session = Depends(get_db), u: User = Depends(auth.current_user)):
+    names = auth.team_names(s, u)  # empty for a viewer: set_by comes back None
     return [{"id": c.id, "dimension": c.dimension, "value": c.value, "confidence": c.confidence,
              "evidence_url": c.evidence_url, "note": c.note, "status": c.status, "set_by": names.get(c.set_by),
              "valid_from": c.valid_from.isoformat(), "valid_to": c.valid_to.isoformat() if c.valid_to else None}

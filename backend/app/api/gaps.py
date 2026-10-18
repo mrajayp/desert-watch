@@ -298,7 +298,7 @@ def gap_detail(theme_id: int, region_id: int, lens: str = "audience", week: date
     k = gap_key(theme_id, region_id)
     votes = s.scalars(select(GapVote).where(GapVote.theme_id == theme_id, GapVote.region_id == region_id)
                       .order_by(GapVote.created_at.desc())).all()
-    names = {x.id: x.display_name for x in s.scalars(select(User))}
+    names = auth.team_names(s, u)  # empty for a viewer: votes and claims come back without names
     claims = s.scalars(select(GapClaim).where(GapClaim.theme_id == theme_id, GapClaim.region_id == region_id)).all()
     return {
         "theme": {"id": theme.id, "name_en": theme.name_en, "name_ar": theme.name_ar, "slug": theme.slug},

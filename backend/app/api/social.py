@@ -55,7 +55,8 @@ def counted():
 
 
 def _json(c: Comment, names: dict, me: User) -> dict:
-    return {"id": c.id, "parent_id": c.parent_id, "user": names.get(c.user_id, "?") if not c.deleted else None,
+    # `names` is empty for a viewer (auth.team_names), so a viewer sees comments without their authors
+    return {"id": c.id, "parent_id": c.parent_id, "user": None if c.deleted or not names else names.get(c.user_id, "?"),
             "mine": c.user_id == me.id, "body": c.body if not c.deleted else "", "tag": c.tag,
             "resolved": c.resolved, "deleted": c.deleted, "at": c.created_at.isoformat(),
             "mentions": re.findall(r"@([\w.\-]+)", c.body or "")}
@@ -65,7 +66,7 @@ def _json(c: Comment, names: dict, me: User) -> dict:
 def list_comments(object_type: str, object_key: str, s: Session = Depends(get_db), u: User = Depends(auth.current_user)):
     rows = s.scalars(select(Comment).where(Comment.object_type == object_type, Comment.object_key == object_key)
                      .order_by(Comment.created_at)).all()
-    names = {x.id: x.display_name for x in s.scalars(select(User))}
+    names = auth.team_names(s, u)
     parents = {c.id: c for c in rows}
     return [_json(c, names, u) for c in rows if can_see(c, u, parents)]
 

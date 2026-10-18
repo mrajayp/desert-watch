@@ -143,7 +143,7 @@ export default function GapPanel({ themeId, regionId, week: weekProp, lens: lens
               {vote.error && <ErrorBox error={vote.error} compact />}
             </>)}
           {d.votes.length > 0 && <ul className="list small">{d.votes.slice(0, 8).map((v, i) =>
-            <li key={i}><b dir="auto">{v.user}</b> · {VOTE_CODE[v.vote] ? t(VOTE_CODE[v.vote]) : v.vote.replace('_', ' ')} <span className="muted">({v.week ? weekRange(v.week) : ''})</span>{v.note && <div dir="auto">{v.note}</div>}</li>)}</ul>}
+            <li key={i}><b dir="auto">{v.user || t('A team member')}</b> · {VOTE_CODE[v.vote] ? t(VOTE_CODE[v.vote]) : v.vote.replace('_', ' ')} <span className="muted">({v.week ? weekRange(v.week) : ''})</span>{v.note && <div dir="auto">{v.note}</div>}</li>)}</ul>}
           {!can && d.votes.length === 0 && <p className="small muted">{t('No votes yet.')}</p>}
 
           <h3>{t('Working on it')}</h3>
@@ -155,7 +155,7 @@ export default function GapPanel({ themeId, regionId, week: weekProp, lens: lens
               {myClaim && <button className="btn ghost small" disabled={claim.busy} onClick={() => claim.run('dropped')}>{t('Drop')}</button>}
             </div>)}
           {claim.error && <ErrorBox error={claim.error} compact />}
-          {d.claims.filter((x) => x.status !== 'dropped').map((x, i) => <div key={i} className="small muted"><span dir="auto">{x.user}</span>: {CLAIM_STATUS[x.status] ? t(CLAIM_STATUS[x.status]) : x.status}{x.published_url && <> · <a href={x.published_url} target="_blank" rel="noreferrer noopener">{t('link')}</a></>}</div>)}
+          {d.claims.filter((x) => x.status !== 'dropped').map((x, i) => <div key={i} className="small muted"><span dir="auto">{x.user || t('A team member')}</span>: {CLAIM_STATUS[x.status] ? t(CLAIM_STATUS[x.status]) : x.status}{x.published_url && <> · <a href={x.published_url} target="_blank" rel="noreferrer noopener">{t('link')}</a></>}</div>)}
           {!can && !d.claims.some((x) => x.status !== 'dropped') && <p className="small muted">{t('Nobody has claimed this yet.')}</p>}
           <p className="small muted">{t('Visible to your team only.')}</p>
 
