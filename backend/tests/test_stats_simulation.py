@@ -113,8 +113,16 @@ def test_false_short_rate_on_steady_data_stays_near_q():
     rate_weeks, rate_cells = weeks_with_short / weeks, short / cells
     print(f"\nsteady data: {weeks} lens-weeks, {cells} cells; a false short in {rate_weeks:.3f} of weeks, "
           f"{rate_cells:.4f} of cells; possibly_short on {possibly / cells:.3f} of cells; {time.perf_counter() - t0:.1f}s")
+    # the proposal's bar: a false red in at most 1.5 q of lens-weeks. Without Benjamini-Hochberg, 13 cells
+    # each short at p_low < q would give a red week about 3 times in 4, so this line tests the family rule.
     assert rate_weeks <= 1.5 * settings.FDR_Q
-    assert rate_cells <= settings.FDR_Q
+    # measured 0.2% of cells on these seeds (deterministic): a tenfold regression fails here
+    assert rate_cells <= 0.02
+    # p_low is calibrated: under the null a cell leans short at p_low < q (short or possibly_short) at
+    # most q of the time (discrete counts and the shrunk alpha make it rarer, 4.6% here); a variance
+    # model that ran too tight would show up as many more possibly_short cells
+    assert (short + possibly) / cells <= 1.2 * settings.FDR_Q
+    assert possibly > 0   # ... and the tail is not switched off altogether
     assert time.perf_counter() - t0 < 60
 
 
