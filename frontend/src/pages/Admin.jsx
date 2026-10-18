@@ -3,6 +3,10 @@ import { api } from '../api'
 import { useApp } from '../App'
 import SourceHealth from '../components/SourceHealth'
 import AiAuditAdmin from '../components/AiAuditAdmin'
+import { ErrorBox, Loading } from '../components/Notices'
+import { useApi } from '../hooks/useApi'
+import { useMutation } from '../hooks/useMutation'
+import { usePageTitle } from '../hooks/usePageTitle'
 import { fmtDate, fmtNum, isAr, pick, t, tn } from '../i18n'
 import { Markdown } from './Digest'
 
@@ -29,41 +33,39 @@ const semi = () => (isAr() ? '؛ ' : '; ')
 const day = (d) => (isAr() ? fmtDate(d) : d)
 
 export default function Admin() {
-  const { refresh } = useApp()
-  const [themes, setThemes] = useState([])
+  const { refresh, reloadMeta } = useApp()
+  usePageTitle(t('Admin'))
+  const themesQ = useApi('/api/themes')
+  const themes = themesQ.data || []
+  const sugsQ = useApi('/api/admin/suggestions')
+  const sugs = sugsQ.data || []
+  const learningQ = useApi('/api/admin/learning')
+  const learning = learningQ.data
+  const loadError = themesQ.error || sugsQ.error || learningQ.error
+  const retryLoads = () => { themesQ.retry(); sugsQ.retry(); learningQ.retry() }
   const [edit, setEdit] = useState(null)
-  const [preview, setPreview] = useState(null)
   const [invite, setInvite] = useState({ email: '', role: 'journalist' })
   const [inviteLink, setInviteLink] = useState(null)
-  const [sugs, setSugs] = useState([])
-  const [learning, setLearning] = useState(null)
   const [msg, setMsg] = useState(null)
-  const load = () => {
-    api('/api/themes').then(setThemes)
-    api('/api/admin/suggestions').then(setSugs)
-    api('/api/admin/learning').then(setLearning)
-  }
-  useEffect(() => { load() }, [])
-  const startEdit = (th) => { setPreview(null); setEdit(th ? { ...th, en: th.en_terms.join('\n'), ar: th.ar_terms.join('\n'), ex: th.exclude.join('\n') } : { id: null, name_en: '', name_ar: '', en: '', ar: '', ex: '', active: true }) }
+  const startEdit = (th) => { preview.clearError(); setPreviewData(null); setEdit(th ? { ...th, en: th.en_terms.join('\n'), ar: th.ar_terms.join('\n'), ex: th.exclude.join('\n') } : { id: null, name_en: '', name_ar: '', en: '', ar: '', ex: '', active: true }) }
   const body = () => ({ name_en: edit.name_en, name_ar: edit.name_ar, en_terms: split(edit.en), ar_terms: split(edit.ar), exclude: split(edit.ex), active: edit.active,
     acled_event_types: edit.acled_event_types || [], reliefweb_themes: edit.reliefweb_themes || [] })
   // tid: the preview uses the saved theme's word pairs and exceptions, which this form does not edit
-  const runPreview = async () => setPreview(await api(`/api/themes/preview${edit.id ? `?tid=${edit.id}` : ''}`, { method: 'POST', body: body() }))
-  const saveTheme = async () => {
-    await api(edit.id ? `/api/themes/${edit.id}` : '/api/themes', { method: edit.id ? 'PUT' : 'POST', body: body() })
-    setMsg(t('Saved. Articles are being re-tagged and scores recomputed in the background.')); setEdit(null); load(); setTimeout(refresh, 4000)
-  }
-  const sendInvite = async (e) => {
-    e.preventDefault()
-    const r = await api('/api/admin/invites', { method: 'POST', body: invite })
-    setInviteLink(location.origin + r.invite_path); setInvite({ email: '', role: 'journalist' })
-  }
-  const review = async (id, accept) => { await api(`/api/admin/suggestions/${id}`, { method: 'POST', body: { accept } }); load() }
-  const run = async (job) => { await api(`/api/admin/run/${job}`, { method: 'POST' }); setMsg(t('Queued {job}. Refresh in a minute.', { job })) }
+  const [previewData, setPreviewData] = useState(null)
+  const preview = useMutation(() => api(`/api/themes/preview${edit.id ? `?tid=${edit.id}` : ''}`, { method: 'POST', body: body() }), { onSuccess: setPreviewData })
+  // a saved theme changes /api/meta (names, the list), which is otherwise loaded once per app load
+  const saveTheme = useMutation(() => api(edit.id ? `/api/themes/${edit.id}` : '/api/themes', { method: edit.id ? 'PUT' : 'POST', body: body() }),
+    { onSuccess: () => { setMsg(t('Saved. Articles are being re-tagged and scores recomputed in the background.')); setEdit(null); themesQ.retry(); reloadMeta(); setTimeout(refresh, 4000) } })
+  const sendInvite = useMutation((e) => { e.preventDefault(); return api('/api/admin/invites', { method: 'POST', body: invite }) },
+    { onSuccess: (r) => { setInviteLink(location.origin + r.invite_path); setInvite({ email: '', role: 'journalist' }) } })
+  const review = useMutation((id, accept) => api(`/api/admin/suggestions/${id}`, { method: 'POST', body: { accept } }), { onSuccess: () => { sugsQ.retry(); learningQ.retry() } })
+  const run = useMutation((job) => api(`/api/admin/run/${job}`, { method: 'POST' }), { onSuccess: (r, job) => setMsg(t('Queued {job}. Refresh in a minute.', { job })) })
 
   return (
     <main className="page">
       {msg && <div className="banner info">{msg}</div>}
+      {loadError && <ErrorBox error={loadError} onRetry={retryLoads} />}
+      {run.error && <ErrorBox error={run.error} compact />}
       <div className="grid halves">
         <section className="card">
           <div className="card-head"><h2>{t('Themes')}</h2><button className="btn small" onClick={() => startEdit(null)}>{t('+ New theme')}</button></div>
@@ -82,14 +84,15 @@ export default function Admin() {
               </div>
               <label>{t('Exclusions (veto a match)')}<textarea rows={2} value={edit.ex} onChange={(e) => setEdit({ ...edit, ex: e.target.value })} /></label>
               <label className="row"><input type="checkbox" checked={edit.active} onChange={(e) => setEdit({ ...edit, active: e.target.checked })} />{t('Active')}</label>
-              <div className="row"><button className="btn" onClick={runPreview}>{t('Preview matches (30 days)')}</button><span className="spacer" />
-                <button className="btn ghost" onClick={() => setEdit(null)}>{t('Cancel')}</button><button className="btn primary" disabled={!edit.name_en} onClick={saveTheme}>{t('Save')}</button></div>
-              {preview && (
+              <div className="row"><button className="btn" disabled={preview.busy} onClick={() => preview.run()}>{t('Preview matches (30 days)')}</button><span className="spacer" />
+                <button className="btn ghost" onClick={() => setEdit(null)}>{t('Cancel')}</button><button className="btn primary" disabled={!edit.name_en || saveTheme.busy} onClick={() => saveTheme.run()}>{t('Save')}</button></div>
+              {(preview.error || saveTheme.error) && <ErrorBox error={preview.error || saveTheme.error} compact />}
+              {previewData && (
                 <div>
                   <p className="small">{t('Matches {matched} of {scanned} recent articles. Top terms: {terms}', {
-                    matched: preview.matched, scanned: preview.scanned, terms: preview.top_terms.slice(0, 8).map(([term, k]) => `${term} (${k})`).join(comma()),
+                    matched: previewData.matched, scanned: previewData.scanned, terms: previewData.top_terms.slice(0, 8).map(([term, k]) => `${term} (${k})`).join(comma()),
                   })}</p>
-                  <ul className="list small scroll" style={{ maxHeight: 260 }}>{preview.samples.map((s) => (
+                  <ul className="list small scroll" style={{ maxHeight: 260 }}>{previewData.samples.map((s) => (
                     <li key={s.id}><span dir="auto">{s.title}</span> <span className="muted">[{s.hits.join(comma())}]</span>{!s.relevant && <span className="pill flag">{t('marked junk')}</span>}</li>))}</ul>
                   <p className="small muted">{t('Check precision before saving: if fewer than ~8 in 10 samples are on-topic, tighten terms or add exclusions.')}</p>
                 </div>)}
@@ -97,18 +100,20 @@ export default function Admin() {
         </section>
         <section className="card">
           <h2>{t('Invite a journalist')}</h2>
-          <form className="row" onSubmit={sendInvite}>
+          <form className="row" onSubmit={(e) => sendInvite.run(e)}>
             <input type="email" required placeholder={t('email')} value={invite.email} onChange={(e) => setInvite({ ...invite, email: e.target.value })} />
             <select value={invite.role} onChange={(e) => setInvite({ ...invite, role: e.target.value })}><option value="journalist">{cap(code('journalist'))}</option><option value="admin">{cap(code('admin'))}</option></select>
-            <button className="btn primary">{t('Create invite')}</button>
+            <button className="btn primary" disabled={sendInvite.busy}>{t('Create invite')}</button>
           </form>
+          {sendInvite.error && <ErrorBox error={sendInvite.error} compact />}
           {inviteLink && <p className="small">{t('Send this link privately (valid 7 days):')} <code dir="ltr" style={{ wordBreak: 'break-all' }}>{inviteLink}</code></p>}
 
           <h2 style={{ marginTop: 20 }}>{t('Suggestions queue ({n})', { n: sugs.length })}</h2>
+          {review.error && <ErrorBox error={review.error} compact />}
           {sugs.length === 0 ? <p className="muted small">{t('Nothing pending.')}</p> : (
             <ul className="list small">{sugs.map((g) => (
               <li key={g.id}><b>{code(g.kind)}</b> {t('by {who}', { who: g.user || code(g.origin) })} · <span className="mono" dir="ltr">{JSON.stringify(g.payload)}</span>
-                <div className="row"><button className="btn small" onClick={() => review(g.id, true)}>{t('Accept')}</button><button className="btn small ghost" onClick={() => review(g.id, false)}>{t('Reject')}</button></div></li>))}</ul>)}
+                <div className="row"><button className="btn small" disabled={review.busy} onClick={() => review.run(g.id, true)}>{t('Accept')}</button><button className="btn small ghost" disabled={review.busy} onClick={() => review.run(g.id, false)}>{t('Reject')}</button></div></li>))}</ul>)}
 
           <h2 style={{ marginTop: 20 }}>{t('Learning')}</h2>
           {learning && (
@@ -141,7 +146,7 @@ export default function Admin() {
       <HealthCard />
       <section className="card" style={{ marginTop: 16 }}>
         <div className="card-head"><h2>{t('Data sources')}</h2>
-          <div className="row">{['rss', 'youtube', 'galerts', 'gnews', 'gnews_social', 'digest', 'gdelt', 'gdelt_timeline', 'wikipedia', 'recompute', 'backup'].map((j) => <button key={j} className="btn small" onClick={() => run(j)}>{t('Run {job}', { job: j })}</button>)}</div></div>
+          <div className="row">{['rss', 'youtube', 'galerts', 'gnews', 'gnews_social', 'digest', 'gdelt', 'gdelt_timeline', 'wikipedia', 'recompute', 'backup'].map((j) => <button key={j} className="btn small" disabled={run.busy} onClick={() => run.run(j)}>{t('Run {job}', { job: j })}</button>)}</div></div>
         <SourceHealth />
       </section>
     </main>
@@ -149,17 +154,16 @@ export default function Admin() {
 }
 
 function AlertsCard() {
-  const [data, setData] = useState(null)
   const [lines, setLines] = useState('')
   const [result, setResult] = useState(null)
   const [filter, setFilter] = useState('')
-  const load = () => api('/api/admin/alerts').then(setData)
-  useEffect(() => { load() }, [])
-  if (!data) return null
+  const q = useApi('/api/admin/alerts')
+  const data = q.data
+  const save = useMutation(() => api('/api/admin/alerts', { method: 'POST', body: { lines } }), { onSuccess: (r) => { setResult(r); setLines(''); q.retry() } })
+  if (!data) return q.error ? <section className="card" style={{ marginTop: 16 }}><h2>{t('Google Alerts')}</h2><ErrorBox error={q.error} onRetry={q.retry} compact /></section> : null
   const attached = data.alerts.filter((a) => a.feed_url).length
   const shown = data.alerts.filter((a) => !filter || a.key.includes(filter) || a.label.toLowerCase().includes(filter.toLowerCase()))
-  const save = async () => { setResult(await api('/api/admin/alerts', { method: 'POST', body: { lines } })); setLines(''); load() }
-  const copy = (s) => navigator.clipboard?.writeText(s)
+  const copy = (s) => navigator.clipboard?.writeText(s).catch(() => {})
   return (
     <section className="card" style={{ marginTop: 16 }}>
       <div className="card-head">
@@ -185,9 +189,10 @@ function AlertsCard() {
         placeholder={'district:sabha:ar https://www.google.com/alerts/feeds/…/…\ntheme:health:en https://www.google.com/alerts/feeds/…/…'} // i18n-ok: a sample of alert keys and feed URLs, not English prose
       />
       <div className="row" style={{ marginTop: 6 }}>
-        <button className="btn primary" disabled={!lines.trim()} onClick={save}>{t('Connect')}</button>
+        <button className="btn primary" disabled={!lines.trim() || save.busy} onClick={() => save.run()}>{t('Connect')}</button>
         {result && <span className="small">{t('{n} connected', { n: result.attached })}{result.problems.length ? ` · ${t('problems: {list}', { list: result.problems.join(semi()) })}` : ''}</span>}
       </div>
+      {save.error && <ErrorBox error={save.error} compact />}
     </section>
   )
 }
@@ -260,19 +265,22 @@ function PendingRow({ u, onDecide }) {
 }
 
 function FeedbackCard() {
-  const [rows, setRows] = useState([])
   const [filter, setFilter] = useState('new')
   const [drafts, setDrafts] = useState({})
-  const load = () => api('/api/admin/feedback' + (filter === 'all' ? '' : `?status=${filter}`)).then(setRows)
-  useEffect(() => { load() }, [filter])
-  const save = async (f, body) => { await api(`/api/admin/feedback/${f.id}`, { method: 'PATCH', body }); setDrafts({ ...drafts, [f.id]: '' }); load() }
+  const q = useApi('/api/admin/feedback' + (filter === 'all' ? '' : `?status=${filter}`))
+  const rows = q.data || []
+  const save = useMutation((f, body) => api(`/api/admin/feedback/${f.id}`, { method: 'PATCH', body }),
+    { onSuccess: (r, f) => { setDrafts((d) => ({ ...d, [f.id]: '' })); q.retry() } })
   return (
     <section className="card" style={{ marginTop: 16 }}>
       <div className="card-head">
         <div><h2>{t('Suggestions and questions')}</h2><p className="sub">{t('Left at the bottom of each page. Replies are shown to the person who wrote them.')}</p></div>
         <span className="seg">{['new', 'answered', 'planned', 'done', 'all'].map((k) => <button key={k} aria-pressed={filter === k} onClick={() => setFilter(k)}>{code(k)}</button>)}</span>
       </div>
-      {rows.length === 0 ? <p className="small muted">{t('Nothing here.')}</p> : (
+      {q.error && <ErrorBox error={q.error} onRetry={q.retry} compact />}
+      {save.error && <ErrorBox error={save.error} compact />}
+      {!q.data && !q.error && <Loading />}
+      {q.data && rows.length === 0 ? <p className="small muted">{t('Nothing here.')}</p> : q.data && (
         <ul className="list">{rows.map((f) => (
           <li key={f.id}>
             <div className="small muted"><span className="pill">{code(f.kind)}</span> <span dir="auto">{f.user || t('deleted user')}</span> · {t('page')} <span className="mono">{f.page}</span> · {f.at.slice(0, 16).replace('T', ' ')} · {code(f.status)}</div>
@@ -281,8 +289,8 @@ function FeedbackCard() {
             <div className="row">
               <input type="text" dir="auto" placeholder={t('Reply (shown to the author)')} value={drafts[f.id] || ''} style={{ flex: 1 }}
                 onChange={(e) => setDrafts({ ...drafts, [f.id]: e.target.value })} />
-              <button className="btn small" disabled={!(drafts[f.id] || '').trim()} onClick={() => save(f, { reply: drafts[f.id] })}>{t('Reply')}</button>
-              <select value={f.status} onChange={(e) => save(f, { status: e.target.value })} aria-label={t('Status')}>
+              <button className="btn small" disabled={!(drafts[f.id] || '').trim() || save.busy} onClick={() => save.run(f, { reply: drafts[f.id] })}>{t('Reply')}</button>
+              <select value={f.status} disabled={save.busy} onChange={(e) => save.run(f, { status: e.target.value })} aria-label={t('Status')}>
                 {['new', 'answered', 'planned', 'done', 'closed'].map((st) => <option key={st} value={st}>{code(st)}</option>)}</select>
             </div>
           </li>))}</ul>)}
@@ -442,8 +450,8 @@ function HealthCard() {
 // "How the numbers work": every calculation in plain words. Collapsed by default.
 function MethodsCard() {
   const [open, setOpen] = useState(false)
-  const [md, setMd] = useState(null)
-  useEffect(() => { if (open && md == null) api('/api/admin/methods').then((r) => setMd(r.markdown)) }, [open])
+  const q = useApi(open ? '/api/admin/methods' : null)
+  const md = q.data?.markdown
   return (
     <section className="card" style={{ marginTop: 16 }}>
       <div className="card-head">
@@ -451,7 +459,7 @@ function MethodsCard() {
           <p className="sub">{t('How every figure in Desert Watch is worked out, and where it can mislead you.')}</p></div>
         <button className="btn small" aria-expanded={open} onClick={() => setOpen(!open)}>{open ? t('Hide') : t('Show')}</button>
       </div>
-      {open && (md == null ? <div className="empty">{t('Loading…')}</div> : <div className="prose"><Markdown text={md.replace(/^# .*\n/, '')} /></div>)}
+      {open && (md == null ? (q.error ? <ErrorBox error={q.error} onRetry={q.retry} /> : <Loading />) : <div className="prose"><Markdown text={md.replace(/^# .*\n/, '')} /></div>)}
     </section>
   )
 }

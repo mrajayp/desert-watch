@@ -1,13 +1,16 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { api, qs } from '../api'
+import { useCallback, useRef, useState } from 'react'
+import { qs } from '../api'
 import { useApp } from '../App'
 import Filters from '../components/Filters'
+import { ErrorBox, Loading } from '../components/Notices'
 import TrendBars from '../charts/TrendBars'
 import IndicatorLines from '../charts/IndicatorLines'
 import { lensNeed, weekEnd, weekRange } from '../charts/trendText'
 import { HistoryLine, MonthlyCoverage } from '../charts/Balance'
 import { LENS_TEXT, sourceLabel } from '../charts/scales'
 import { ExportMenu } from '../charts/util'
+import { useApi } from '../hooks/useApi'
+import { usePageTitle } from '../hooks/usePageTitle'
 import { fmtDate, isAr, pick, t } from '../i18n.js'
 
 // marks a string for the Arabic catalogue where a table is defined; t() translates it when it is shown
@@ -33,25 +36,24 @@ export default function Trends() {
   const regions = meta.regions.filter((r) => levels.includes(r.level))
   const regionId = regions.some((r) => r.id === regionPick) ? regionPick : national.id
   const region = meta.regions.find((r) => r.id === regionId)
-  const [trend, setTrend] = useState(null)
-  const [history, setHistory] = useState({})
+  usePageTitle(t('Trends'))
   const histSvg = useRef(null)
   const grp = String(filters.themeId).startsWith('group:') ? filters.themeId.slice(6) : null
   const themeId = grp ? meta.themes.find((t) => t.group === grp)?.id : filters.themeId ? +filters.themeId : meta.themes[0].id
-  const [monthly, setMonthly] = useState([])
   const monthSvg = useRef(null)
-  useEffect(() => { api('/api/coverage-monthly' + qs({ theme_id: themeId })).then(setMonthly) }, [themeId])
-  useEffect(() => {
-    let live = true
-    setTrend(null)
-    api('/api/cells/trends' + qs({ lens: filters.lens, region_id: regionId })).then((r) => live && setTrend(r))
-    return () => { live = false }
-  }, [filters.lens, regionId])
-  useEffect(() => { api('/api/coverage-history' + qs({ theme_id: themeId })).then(setHistory) }, [themeId])
+  const monthlyQ = useApi('/api/coverage-monthly' + qs({ theme_id: themeId }))
+  const monthly = monthlyQ.data || []
+  const trendQ = useApi('/api/cells/trends' + qs({ lens: filters.lens, region_id: regionId }))
+  // the bars for one lens and region: shown only once that answer is in (never the previous lens's bars)
+  const trend = trendQ.refreshing ? null : trendQ.data
+  const historyQ = useApi('/api/coverage-history' + qs({ theme_id: themeId }))
+  const history = historyQ.data || {}
   const theme = meta.themes.find((t) => t.id === themeId)
-  const [signals, setSignals] = useState(null)
   const [signalDays, setSignalDays] = useState(400)
-  useEffect(() => { api('/api/indicators' + qs({ theme: 'economy', days: signalDays })).then(setSignals).catch(() => setSignals({ indicators: [] })) }, [signalDays])
+  const signalsQ = useApi('/api/indicators' + qs({ theme: 'economy', days: signalDays }))
+  const signals = signalsQ.data || (signalsQ.error ? { indicators: [] } : null)
+  const loadError = monthlyQ.error || historyQ.error
+  const retryLoads = () => { monthlyQ.retry(); historyQ.retry() }
   const economy = meta.themes.find((t) => t.slug === 'economy')
   const pickSignalDay = (day) => {
     if (!economy) return
@@ -97,12 +99,13 @@ export default function Trends() {
         </label>
       </Filters>
       <main className="page">
+        {loadError && <ErrorBox error={loadError} onRetry={retryLoads} />}
         <section className="card">
           <h2>{t('Articles per week, theme by theme')}</h2>
           <p className="sub">{t('Bars count the articles each week from the outlets we followed all year.')} {pooled
             ? t('The grey line is the expected level for {what}, going by what other topics get.', { what: t(need.usual) })
             : t('The grey line is the usual level for {what}.', { what: t(need.usual) })} {t('The strip under each chart turns red when the last 4 weeks fell clearly short. Google News finds more for recent weeks when we search back, so bars run higher on the right.')}{pooled ? '' : ` ${t('The usual level lags behind that rise, so recent weeks can look better covered than they were.')}`} {t('Click a bar to see its articles, or the strip under it for the full gap. A theme’s name picks it for the charts below.')}</p>
-          {!trend ? <div className="empty">{t('Loading…')}</div> : (
+          {!trend ? (trendQ.error && !trendQ.refreshing ? <ErrorBox error={trendQ.error} onRetry={trendQ.retry} /> : <Loading />) : (
             <>
               <TrendBars themes={meta.themes} data={trend} lens={filters.lens} reference={lensMeta?.reference}
                 scoredWeek={filters.lens === 'search' ? lensMeta?.latest_scored_week : null} lang={lang} selectedId={themeId}

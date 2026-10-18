@@ -1,13 +1,17 @@
 import { useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { api } from '../api'
+import { usePageTitle } from '../hooks/usePageTitle'
 import { t } from '../i18n'
+import { safeNext } from '../routes'
 import LangSwitch from '../components/LangSwitch'
 
 function Brand() {
   return <div className="brand"><span className="brand-mark" aria-hidden="true" />Desert Watch</div>
 }
 
+// Sign in or request access. /login?next=/gaps/3/7 returns to that page after sign-in; any other
+// path (a shared link opened while signed out) simply renders once the user is known.
 export function Login({ onDone, lang, setLang }) {
   const [mode, setMode] = useState('login')
   const [email, setEmail] = useState('')
@@ -16,17 +20,25 @@ export function Login({ onDone, lang, setLang }) {
   const [org, setOrg] = useState('')
   const [note, setNote] = useState('')
   const [err, setErr] = useState(null)
+  const [busy, setBusy] = useState(false)
   const [done, setDone] = useState(null)
+  const [sp] = useSearchParams()
+  const loc = useLocation()
+  const nav = useNavigate()
+  usePageTitle(mode === 'login' ? t('Sign in') : t('Request access'))
   const submit = async (e) => {
     e.preventDefault()
-    setErr(null)
+    setErr(null); setBusy(true)
     try {
-      if (mode === 'login') onDone(await api('/api/auth/login', { method: 'POST', body: { email, password } }))
-      else {
+      if (mode === 'login') {
+        const me = await api('/api/auth/login', { method: 'POST', body: { email, password } })
+        if (loc.pathname === '/login') nav(safeNext(sp.get('next')), { replace: true })
+        onDone(me)
+      } else {
         const r = await api('/api/auth/signup', { method: 'POST', body: { email, password, display_name: name, organisation: org, note } })
         setDone(r.message); setPassword('')
       }
-    } catch (ex) { setErr(ex.message) }
+    } catch (ex) { setErr(ex.message) } finally { setBusy(false) }
   }
   return (
     <div className="center-page">
@@ -53,7 +65,7 @@ export function Login({ onDone, lang, setLang }) {
               <p className="small muted">{t('Requests are reviewed by an admin. Accounts start read-only; the admin sets your role.')}</p>
             </>}
             {err && <p className="err">{err}</p>}
-            <button className="btn primary">{mode === 'login' ? t('Sign in') : t('Request access')}</button>
+            <button className="btn primary" disabled={busy}>{mode === 'login' ? t('Sign in') : t('Request access')}</button>
           </form>)}
       </div>
     </div>
@@ -66,6 +78,7 @@ export function Invite({ onDone, lang, setLang }) {
   const [name, setName] = useState('')
   const [password, setPassword] = useState('')
   const [err, setErr] = useState(null)
+  usePageTitle(t('Create account'))
   const submit = async (e) => {
     e.preventDefault()
     try { const me = await api('/api/auth/accept-invite', { method: 'POST', body: { token, password, display_name: name } }); nav('/'); onDone(me) }

@@ -3,8 +3,12 @@ import { api } from '../api'
 import { useApp } from '../App'
 import { LENS_TEXT, RED_FROM, fmt, gapLabel } from '../charts/scales'
 import AiPanelTask from '../components/AiPanelTask'
-import ArticleRow from '../components/ArticleRow'
+import ArticleRow, { replaceItem } from '../components/ArticleRow'
+import { ErrorBox, Loading } from '../components/Notices'
 import { LabelForm, NotCounted, ThemePills } from '../components/ThemeLabels'
+import { useApi } from '../hooks/useApi'
+import { useMutation } from '../hooks/useMutation'
+import { usePageTitle } from '../hooks/usePageTitle'
 import { fmtDate, isAr, pick, t, tn } from '../i18n'
 
 const N_ = (s) => s // marks English for the catalogue; translated with t() when read
@@ -19,20 +23,24 @@ const code = (table, k) => (table[k] ? t(table[k]) : k)
 
 // One place that tells a journalist where their input is needed right now, and why it matters.
 export default function Contribute() {
-  const { meta, me, openGap, openOutlet, openAdd, setFilters, version } = useApp()
-  const [d, setD] = useState(null)
-  const load = () => api('/api/contribute').then(setD)
-  useEffect(() => { load() }, [version])
+  const { meta, me, openGap, openOutlet, openAdd, version, can } = useApp()
+  usePageTitle(t('Contribute'))
+  const q = useApi('/api/contribute', { deps: [version] })
+  const d = q.data
   const nm = (o) => (o ? pick(o, 'name') : '—')
   const themes = new Map(meta.themes.map((th) => [th.id, th]))
   const regions = new Map(meta.regions.map((r) => [r.id, r]))
-  if (!d) return <main className="page"><div className="empty">{t('Loading…')}</div></main>
-  const ro = !d.can_contribute
+  if (!d) return <main className="page">{q.error ? <ErrorBox error={q.error} onRetry={q.retry} /> : <Loading />}</main>
+  const ro = !can
   const red = meta.red_from ?? RED_FROM // one red threshold on every page: the API's
-  const showGap = (g) => { setFilters({ lens: g.lens, week: g.week }); openGap(g.theme_id, g.region_id, { from: 'contribute' }) }
+  // "Judge" opens the gap at its own lens and week; the page's saved lens is left alone
+  const showGap = (g) => openGap(g.theme_id, g.region_id, { from: 'contribute', lens: g.lens, week: g.week })
+  // a corrected row is replaced by the row the server sent back, so the queue stays and a second topic can follow
+  const patchList = (key) => (r) => q.setData((x) => ({ ...x, [key]: Array.isArray(x[key]) ? replaceItem(x[key], r) : { ...x[key], items: replaceItem(x[key].items, r) } }))
 
   return (
     <main className="page">
+      {q.error && <ErrorBox error={q.error} onRetry={q.retry} compact />}
       <section className="card">
         <div className="card-head">
           <div>
@@ -40,12 +48,11 @@ export default function Contribute() {
             <p className="sub">{t('Desert Watch learns from what you tell it. Every vote, correction and rating below is saved as a training label, so the rankings and topic matching get better the more the team uses them. Pick anything; each task takes under a minute.')}</p>
           </div>
         </div>
-        {ro && <p className="pill flag" style={{ display: 'inline-block' }}>{t('Your account is read-only. Ask an admin for journalist access to vote, correct, rate and suggest.')}</p>}
         <Tally mine={d.mine} team={d.team} />
       </section>
 
       <div className="grid halves" style={{ marginTop: 16 }}>
-        <Task n="1" title={t('Is this really a gap?')} why={t('The biggest gaps of the last 4 weeks that nobody has judged yet. Your vote decides whether they stay at the top.')}
+        <Task n="1" title={t('Is this really a gap?')} why={t('The biggest gaps of the last 4 weeks that nobody has judged yet. Votes are shown on the gap and saved for the team. They will start to train the ranking once there are about 150 of them.')}
           empty={t('No unjudged gaps in the last 4 weeks.')}>
           {d.gaps.length > 0 && <ul className="list">{d.gaps.map((g) => {
             // articles = the count the score used; articles_all = every source (coverage until the API sends them)
@@ -64,25 +71,26 @@ export default function Contribute() {
         </Task>
 
         <Task n="2" title={t('Know something we missed?')} why={t('Most coverage on Facebook, and anything on Telegram or in print, does not reach us. Adding a link counts it as coverage, so the gap shrinks where it should.')}>
-          <div className="row" style={{ gap: 8 }}>
-            <button className="btn primary" disabled={ro} onClick={() => openAdd()}>{t('+ Add an article')}</button>
-          </div>
+          {can && (
+            <div className="row" style={{ gap: 8 }}>
+              <button className="btn primary" onClick={() => openAdd()}>{t('+ Add an article')}</button>
+            </div>)}
           <p className="small muted">{t('Tip: from any gap, “Already covered” takes a link too.')}</p>
         </Task>
 
         <Task n="3" title={t('What is this article about?')} why={t('The rules could not give these a topic ({n} in the last 2 weeks). Use Fix to pick topics, or mark junk.', { n: fmt(d.untagged.total) })}
           empty={t('Every recent article has a topic.')}>
-          {d.untagged.items.length > 0 && <ul className="list">{d.untagged.items.map((it) => <ArticleRow key={it.id} item={it} onChanged={load} context={{ from: 'contribute' }} />)}</ul>}
+          {d.untagged.items.length > 0 && <ul className="list">{d.untagged.items.map((it) => <ArticleRow key={it.id} item={it} onChanged={patchList('untagged')} context={{ from: 'contribute' }} />)}</ul>}
         </Task>
 
         <Task n="4" title={t('Where did it happen?')} why={t('These have a topic but no place ({n} in the last 2 weeks). Adding a district puts them on the map, and teaches the place matcher new spellings.', { n: fmt(d.unplaced.total) })}
           empty={t('Every recent filed article has a place.')}>
-          {d.unplaced.items.length > 0 && <ul className="list">{d.unplaced.items.map((it) => <ArticleRow key={it.id} item={it} onChanged={load} context={{ from: 'contribute' }} />)}</ul>}
+          {d.unplaced.items.length > 0 && <ul className="list">{d.unplaced.items.map((it) => <ArticleRow key={it.id} item={it} onChanged={patchList('unplaced')} context={{ from: 'contribute' }} />)}</ul>}
         </Task>
 
         <Task n="5" title={t('How good is this reporting?')} why={t('Rate accuracy, depth and local sourcing (1–3). Ratings build each outlet’s quality score; one article per busy outlet here.')}
           empty={t('Nothing waiting to be rated.')}>
-          {d.to_assess.length > 0 && <ul className="list">{d.to_assess.map((it) => <ArticleRow key={it.id} item={it} onChanged={load} context={{ from: 'contribute' }} />)}</ul>}
+          {d.to_assess.length > 0 && <ul className="list">{d.to_assess.map((it) => <ArticleRow key={it.id} item={it} onChanged={patchList('to_assess')} context={{ from: 'contribute' }} />)}</ul>}
         </Task>
 
         <Task n="6" title={t('Who is this outlet?')} why={t('{n} active outlets have no scope or political alignment on record. Categories need an evidence link; admins review proposals.', { n: fmt(d.outlets.total) })}
@@ -95,12 +103,12 @@ export default function Contribute() {
         </Task>
       </div>
 
-      <LearnQueue ro={ro} />
+      {can && <LearnQueue />}
 
       <section className="card" style={{ marginTop: 16 }}>
         <div className="card-head"><div><h2>{t('8. Suggest')}</h2>
           <p className="sub">{t('Sources to monitor, search words, place spellings or a gap you know about. An admin reviews each one; you will see its status here.')}</p></div></div>
-        <Suggest meta={meta} nm={nm} onSent={load} ro={ro} />
+        {can && <Suggest meta={meta} nm={nm} onSent={q.retry} />}
         {d.my_suggestions.length > 0 && (
           <>
             <h3>{t('Your suggestions')}</h3>
@@ -150,22 +158,18 @@ const QUEUE_REASON = {
 }
 const COUNT_KEY = 'dw_labels_given'
 
-function LearnQueue({ ro }) {
+function LearnQueue() {
   const { meta } = useApp()
   const themeName = (slug) => pick(meta.themes.find((th) => th.slug === slug), 'name') || slug.replace(/_/g, ' ')
-  const [q, setQ] = useState(null)
   const [i, setI] = useState(0)
-  const [err, setErr] = useState(null)
   const [given, setGiven] = useState(() => { try { return +sessionStorage.getItem(COUNT_KEY) || 0 } catch { return 0 } })
   const skipped = useRef(new Set())
-  const load = () => {
-    setQ(null); setErr(null)
-    api('/api/review-queue?n=20').then((r) => { setQ({ ...r, items: r.items.filter((x) => !skipped.current.has(x.id)) }); setI(0) })
-      .catch((e) => setErr(e.message))
-  }
-  useEffect(() => { if (!ro) load() }, [ro])
-  const it = q?.items[i]
-  const next = () => (i + 1 < q.items.length ? setI(i + 1) : load())
+  const queue = useApi('/api/review-queue?n=20')
+  useEffect(() => { setI(0) }, [queue.data])
+  const items = (queue.data?.items || []).filter((x) => !skipped.current.has(x.id))
+  const q = queue.data
+  const it = items[i]
+  const next = () => (i + 1 < items.length ? setI(i + 1) : queue.retry())
   const saved = () => {
     const n = given + 1
     setGiven(n)
@@ -183,13 +187,12 @@ function LearnQueue({ ro }) {
           {q && <span className="stat"><span className="v num">{fmt(q.labelled)}</span><span className="l">{t('articles labelled in all')}</span></span>}
         </div>
       </div>
-      {ro ? <p className="small muted">{t('Your account is read-only, so you cannot label articles yet.')}</p>
-        : err ? <p className="err">{err}</p>
-          : !q ? <div className="empty">{t('Loading…')}</div>
-            : !it ? (
-              <div className="row"><span className="small muted">{t('Nothing left to label right now.')}</span>
-                <button className="btn small" onClick={() => { skipped.current.clear(); load() }}>{t('Look again')}</button></div>)
-              : (
+      {!q && queue.error ? <ErrorBox error={queue.error} onRetry={queue.retry} />
+        : !q || queue.refreshing ? <Loading />
+          : !it ? (
+            <div className="row"><span className="small muted">{t('Nothing left to label right now.')}</span>
+              <button className="btn small" onClick={() => { skipped.current.clear(); queue.retry() }}>{t('Look again')}</button></div>)
+            : (
                 <div>
                   <div className="small muted">{t('Article {i} of {total}', { i: i + 1, total: q.items.length })} · {QUEUE_REASON[it.reason]?.(it, themeName) || it.reason}</div>
                   <h3 style={{ margin: '6px 0 2px', fontSize: 15, color: 'var(--ink)' }}>
@@ -226,22 +229,17 @@ function summary(x, themes, regions, nm) {
   return ''
 }
 
-function Suggest({ meta, nm, onSent, ro }) {
+function Suggest({ meta, nm, onSent }) {
   const [kind, setKind] = useState('source')
   const [p, setP] = useState({})
   const [msg, setMsg] = useState(null)
   const set = (patch) => setP({ ...p, ...patch })
   const places = meta.regions.filter((r) => r.level !== 'macro')
   const ok = { source: p.url, keyword: p.term && p.theme_id, alias: p.alias && p.region_id, gap: p.theme_id && p.region_id }[kind]
-  const send = async (e) => {
-    e.preventDefault()
-    try {
-      await api('/api/suggestions', { method: 'POST', body: { kind, payload: p } })
-      setMsg(t('Thanks, sent for review.')); setP({}); onSent()
-    } catch (ex) { setMsg(ex.message) }
-  }
+  const send = useMutation((e) => { e.preventDefault(); return api('/api/suggestions', { method: 'POST', body: { kind, payload: p } }) },
+    { onSuccess: () => { setMsg(t('Thanks, sent for review.')); setP({}); onSent() } })
   return (
-    <form className="form" onSubmit={send}>
+    <form className="form" onSubmit={(e) => send.run(e)}>
       <div className="seg" role="group" aria-label={t('Suggestion type')}>
         {Object.entries(SUGGEST_KINDS).map(([k, v]) => <button type="button" key={k} aria-pressed={kind === k} onClick={() => { setKind(k); setP({}); setMsg(null) }}>{t(v.label)}</button>)}
       </div>
@@ -256,7 +254,8 @@ function Suggest({ meta, nm, onSent, ro }) {
           <option value="">{t('Place…')}</option>{places.map((r) => <option key={r.id} value={r.id}>{nm(r)}</option>)}</select>)}
       {kind === 'alias' && <input required dir="auto" placeholder={t('Spelling as it appears in articles')} value={p.alias || ''} onChange={(e) => set({ alias: e.target.value })} aria-label={t('Place spelling')} />}
       <textarea dir="auto" placeholder={t('Why? (optional)')} value={p.note || ''} onChange={(e) => set({ note: e.target.value })} aria-label={t('Note')} />
-      <div className="row"><button className="btn primary" disabled={!ok || ro}>{t('Send suggestion')}</button>{msg && <span className="small">{msg}</span>}</div>
+      <div className="row"><button className="btn primary" disabled={!ok || send.busy}>{t('Send suggestion')}</button>{msg && <span className="small">{msg}</span>}</div>
+      {send.error && <ErrorBox error={send.error} compact />}
     </form>
   )
 }

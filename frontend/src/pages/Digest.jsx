@@ -1,6 +1,10 @@
-import { Fragment, useEffect, useState } from 'react'
+import { Fragment, useState } from 'react'
 import { api } from '../api'
 import { useApp } from '../App'
+import { ErrorBox, Loading } from '../components/Notices'
+import { useApi } from '../hooks/useApi'
+import { useMutation } from '../hooks/useMutation'
+import { usePageTitle } from '../hooks/usePageTitle'
 import { N_, fmtDate, getLang, isAr, t } from '../i18n'
 
 // digest status codes from the API (shown for anything but 'ok')
@@ -51,39 +55,44 @@ export function Markdown({ text }) {
 
 export default function DigestPage() {
   const { me } = useApp()
-  const [list, setList] = useState(null)
-  const [cur, setCur] = useState(null)
+  usePageTitle(t('Digest'))
+  const [picked, setPicked] = useState(null) // an archive entry the reader chose; else the latest good one
   const [showFacts, setShowFacts] = useState(false)
   const [msg, setMsg] = useState(null)
-  const load = () => api('/api/digests').then((l) => {
-    setList(l)
-    const first = l.find((d) => d.status === 'ok') || l[0]
-    if (first) api(`/api/digests/${first.id}`).then(setCur)
-  })
-  useEffect(() => { load() }, [])
-  const open = (id) => api(`/api/digests/${id}`).then((d) => { setCur(d); setShowFacts(false) })
-  const regenerate = async () => {
-    await api('/api/admin/run/digest', { method: 'POST' })
-    setMsg(t('Generating… refresh in a minute. (Needs the ANTHROPIC_API_KEY secret on the server.)'))
-  }
+  const listQ = useApi('/api/digests')
+  const list = listQ.data
+  const first = list && (list.find((d) => d.status === 'ok') || list[0])
+  const curId = picked ?? first?.id ?? null
+  const curQ = useApi(curId ? `/api/digests/${curId}` : null)
+  const cur = curQ.data
+  const open = (id) => { setPicked(id); setShowFacts(false) }
+  const regenerate = useMutation(() => api('/api/admin/run/digest', { method: 'POST' }),
+    { onSuccess: () => setMsg(t('Generating… refresh in a minute. (Needs the ANTHROPIC_API_KEY secret on the server.)')) })
   return (
     <main className="page">
       <div className="grid two">
         <section className="card">
-          {!list ? <div className="empty">{t('Loading…')}</div> : !cur ? (
+          {!list && listQ.error && <ErrorBox error={listQ.error} onRetry={listQ.retry} />}
+          {!list && !listQ.error && <Loading />}
+          {list && !first && (
             <div className="empty">
               {t('No digest yet. It is written about the week before, on Monday at 06:00 UTC. If Sunday’s Wikipedia views are not in by then, it tries again each morning up to Thursday. It needs an Anthropic API key on the server.')}
-              {me.role === 'admin' && <><br /><br /><button className="btn" onClick={regenerate}>{t('Generate now')}</button></>}
+              {me.role === 'admin' && <><br /><br /><button className="btn" disabled={regenerate.busy} onClick={() => regenerate.run()}>{t('Generate now')}</button></>}
+              {regenerate.error && <ErrorBox error={regenerate.error} compact />}
               {msg && <p className="small">{msg}</p>}
-            </div>
-          ) : (
+            </div>)}
+          {list && first && !cur && curQ.error && <ErrorBox error={curQ.error} onRetry={curQ.retry} />}
+          {list && first && !cur && !curQ.error && <Loading />}
+          {cur && (
             <>
               <div className="card-head">
                 <div><h2>{t('Weekly brief · week of {week}', { week: day(cur.week_start) })}</h2>
                   <p className="sub">{t('Written by {model} from the facts below · {time} UTC', { model: cur.model, time: cur.created_at.slice(0, 16).replace('T', ' ') })}
                     {cur.usage?.input_tokens ? <> · {t('{n} tokens', { n: cur.usage.input_tokens + cur.usage.output_tokens })}</> : ''}</p></div>
-                {me.role === 'admin' && <button className="btn small" onClick={regenerate}>{t('Regenerate')}</button>}
+                {me.role === 'admin' && <button className="btn small" disabled={regenerate.busy} onClick={() => regenerate.run()}>{t('Regenerate')}</button>}
               </div>
+              {regenerate.error && <ErrorBox error={regenerate.error} compact />}
+              {curQ.error && <ErrorBox error={curQ.error} onRetry={curQ.retry} compact />}
               {msg && <p className="small">{msg}</p>}
               {cur.status === 'ok' && cur.lang && cur.lang !== getLang() &&
                 <p className="small muted">{t('This brief was written before briefs were produced in Arabic too, so it is shown in English.')}</p>}

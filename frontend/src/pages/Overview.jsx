@@ -1,6 +1,6 @@
 import * as d3 from 'd3'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { api, qs, track } from '../api'
+import { qs, track } from '../api'
 import { useApp } from '../App'
 import Filters from '../components/Filters'
 import GeoNetwork, { GeoLegend } from '../charts/GeoNetwork'
@@ -8,9 +8,16 @@ import RegionalNetwork from '../charts/RegionalNetwork'
 import Heatmap from '../charts/Heatmap'
 import { LanguageBalance } from '../charts/Balance'
 import { INFO_FLAGS, DIMENSIONS, LENS_TEXT, RED_FROM, categoryOf, flagText, fmt, gapFill, gapLabel } from '../charts/scales'
+import { weekEnd } from '../charts/trendText'
 import { ExportMenu } from '../charts/util'
+import { ErrorBox } from '../components/Notices'
 import SourceHealth from '../components/SourceHealth'
+import { useApi } from '../hooks/useApi'
+import { usePageTitle } from '../hooks/usePageTitle'
 import { fmtDate, isAr, pick, t } from '../i18n'
+
+// the first day of the window that ends with `week` (a Monday), `weeks` weeks long
+const windowStart = (week, weeks) => new Date(new Date(`${week}T00:00:00Z`).getTime() - (weeks - 1) * 7 * 864e5).toISOString().slice(0, 10)
 
 let geoCache = null
 async function loadGeo(meta) {
@@ -31,35 +38,40 @@ async function loadGeo(meta) {
 }
 
 export default function Overview() {
-  const { meta, filters, lang, openGap, openOutlet, version } = useApp()
+  const { meta, filters, lang, openGap, openOutlet, openArticles, version } = useApp()
+  usePageTitle(t('Map'))
   const [geo, setGeo] = useState(null)
-  const [cells, setCells] = useState([])
-  const [network, setNetwork] = useState(null)
+  const [geoErr, setGeoErr] = useState(null)
+  const [geoTick, setGeoTick] = useState(0)
   const [selected, setSelected] = useState(null)
   const [minEdge, setMinEdge] = useState(2)
   const [mapView, setMapView] = useState(() => { try { return localStorage.getItem('dw_mapview') || 'region' } catch { return 'region' } })
   const pickView = (v) => { setMapView(v); try { localStorage.setItem('dw_mapview', v) } catch { /* storage blocked */ } }
   const mapSvg = useRef(null), heatSvg = useRef(null), langSvg = useRef(null)
 
-  useEffect(() => { loadGeo(meta).then(setGeo) }, [meta])
+  useEffect(() => {
+    let live = true
+    setGeoErr(null)
+    loadGeo(meta).then((g) => live && setGeo(g)).catch((e) => live && setGeoErr(e))
+    return () => { live = false }
+  }, [meta, geoTick])
   const regionsById = useMemo(() => new Map(meta.regions.map((r) => [r.id, r])), [meta])
   // one red threshold on every page: the API's (settings.GAP_RED_FROM), the same one Trends uses
   const red = meta.red_from ?? RED_FROM
-  const [regionalContext, setRegionalContext] = useState([])
   const lensMeta = meta.lenses.find((l) => l.key === filters.lens)
   const nationalOnly = lensMeta && lensMeta.levels.length === 1
-  useEffect(() => {
-    if (!filters.week) return
-    api('/api/cells' + qs({ lens: filters.lens, week: filters.week })).then((r) => setCells(r.cells))
-    // A national-only lens still has regional coverage counts worth showing (unscored, hatched).
-    if (nationalOnly) api('/api/cells' + qs({ lens: 'journalist', week: filters.week })).then((r) =>
-      setRegionalContext(r.cells.filter((c) => regionsById.get(c.region_id)?.level !== 'national').map((c) => ({ ...c, insufficient: true, gap: null, flags: [] }))))
-    else setRegionalContext([])
-  }, [filters.lens, filters.week, version, nationalOnly])
-  useEffect(() => {
-    const g = String(filters.themeId).startsWith('group:') ? filters.themeId.slice(6) : null
-    api('/api/network' + qs({ theme_id: g ? '' : filters.themeId, theme_group: g, week: filters.week, weeks: meta.window_weeks })).then(setNetwork)
-  }, [filters.themeId, filters.week, meta.window_weeks, version])
+  const cellsQ = useApi(filters.week ? '/api/cells' + qs({ lens: filters.lens, week: filters.week }) : null, { deps: [version] })
+  const cells = cellsQ.data?.cells || []
+  // A national-only lens still has regional coverage counts worth showing (unscored, hatched).
+  const ctxQ = useApi(nationalOnly && filters.week ? '/api/cells' + qs({ lens: 'journalist', week: filters.week }) : null, { deps: [version] })
+  const regionalContext = useMemo(() => (nationalOnly && ctxQ.data
+    ? ctxQ.data.cells.filter((c) => regionsById.get(c.region_id)?.level !== 'national').map((c) => ({ ...c, insufficient: true, gap: null, flags: [] }))
+    : []), [ctxQ.data, nationalOnly, regionsById])
+  const themeGroupKey = String(filters.themeId).startsWith('group:') ? filters.themeId.slice(6) : null
+  const netQ = useApi('/api/network' + qs({ theme_id: themeGroupKey ? '' : filters.themeId, theme_group: themeGroupKey, week: filters.week, weeks: meta.window_weeks }), { deps: [version] })
+  const network = netQ.data
+  const loadError = cellsQ.error || netQ.error || geoErr
+  const retryLoads = () => { cellsQ.retry(); netQ.retry(); ctxQ.retry(); if (geoErr) setGeoTick((n) => n + 1) }
 
   const themeGroup = String(filters.themeId).startsWith('group:') ? filters.themeId.slice(6) : null
   const themeId = filters.themeId && !themeGroup ? +filters.themeId : null
@@ -126,12 +138,25 @@ export default function Overview() {
   const unplacedShare = nationalCells.length ? d3.sum(nationalCells, (c) => c.breakdown?.unplaced || 0) / Math.max(1, d3.sum(nationalCells, (c) => c.articles_all ?? c.coverage)) : null
   const lensInfo = LENS_TEXT[filters.lens]
   const lens = t(lensInfo.label)
+  // A district click opens the theme that coloured it (cellsByRegion keeps the worst cell per district).
+  // With no scored cell (coverage mode, or an unscored district) it opens the district's articles for
+  // the same window instead of an unscored gap for theme #1.
+  const openDistrict = (rid) => {
+    setSelected(rid)
+    const cell = mode === 'gap' ? cellsByRegion.get(rid) : null
+    if (cell?.theme_id) { openGap(cell.theme_id, rid, { from: 'map' }); return }
+    openArticles({
+      title: pick(regionsById.get(rid), 'name'), from: 'map',
+      subtitle: t('Monitored articles naming this district, {n} weeks ending {week}.', { n: meta.window_weeks, week }),
+      query: filters.week ? { region_id: rid, start: windowStart(filters.week, meta.window_weeks), end: weekEnd(filters.week) } : { region_id: rid, days: meta.window_weeks * 7 },
+    })
+  }
 
   return (
     <>
       <Filters />
       <main className="page">
-        <SourceHealth compact />
+        {loadError && <ErrorBox error={loadError} onRetry={retryLoads} />}
         <section className="card">
             <div className="card-head">
               <div>
@@ -155,11 +180,11 @@ export default function Overview() {
             {mapView === 'region' ? (
               <RegionalNetwork geo={geo?.districts} meta={meta} network={network} cellsByRegion={cellsByRegion} mode={mode}
                 svgRef={mapSvg} minEdge={minEdge} red={red}
-                onSelectRegion={(rid) => { setSelected(rid); openGap(themeId || meta.themes.find((t) => inScope(t.id))?.id || meta.themes[0].id, rid, { from: 'map' }) }} />
+                onSelectRegion={openDistrict} />
             ) : <>
             <GeoNetwork geo={geo?.districts} macroGeo={geo?.macro} meta={meta} network={network} cellsByRegion={cellsByRegion}
               colorBy={filters.colorBy} mode={mode} lang={lang} svgRef={mapSvg} selectedRegion={selected} minEdge={minEdge} red={red}
-              onSelectRegion={(rid) => { setSelected(rid); openGap(themeId || meta.themes.find((t) => inScope(t.id))?.id || meta.themes[0].id, rid, { from: 'map' }) }}
+              onSelectRegion={openDistrict}
               onSelectOutlet={(o) => openOutlet(+o.id.slice(2))} />
             <GeoLegend mode={mode} colorBy={filters.colorBy} present={presentCats} />
             </>}
@@ -221,6 +246,7 @@ export default function Overview() {
           <p className="sub">{t('Click an outlet to see and suggest its categories. Categories need evidence; contested labels show their confidence.')}</p>
           <OutletStrip network={network} colorBy={filters.colorBy} onOpen={(id) => openOutlet(id)} />
         </section>
+        <SourceHealth compact />
       </main>
     </>
   )

@@ -30,7 +30,7 @@ const targets = only.length ? files.filter((f) => only.some((o) => f === o)) : f
 
 const ALLOW = new Set(['Desert Watch', 'EN', 'عربي'])
 const UI_ATTRS = new Set(['placeholder', 'title', 'aria-label', 'alt', 'label', 'aria-description', 'summary', 'aria-valuetext'])
-const SILENT_CALLS = /^(track|api|qs|fetch|flush|dwell|console\.\w+|localStorage\.\w+|sessionStorage\.\w+|document\.\w+|window\.\w+|\w+\.addEventListener|\w+\.querySelector(All)?|readPref|writePref|navigate|nav|URLSearchParams|RegExp|Intl\.\w+|\w+\.toLocale\w+|require)$/
+const SILENT_CALLS = /^(track|api|useApi|qs|fetch|flush|dwell|console\.\w+|localStorage\.\w+|sessionStorage\.\w+|document\.\w+|window\.\w+|\w+\.addEventListener|\w+\.querySelector(All)?|readPref|writePref|navigate|nav|URLSearchParams|RegExp|Intl\.\w+|\w+\.toLocale\w+|require)$/
 // code-ish strings: CSS, colours, SVG paths, URLs, date patterns, identifiers, mime types
 const TECH = /^(\s*|[#.][\w-]+|var\(--[\w-]+\)|.*\bvar\(--.*|.*\d+px\b.*|[\d\s.,%-]+|https?:\/\/\S+|\/\S*|%[-\w%\s:/.,]+|[MLHVCSQTAZmlhvcsqtaz\d\s.,-]+|\w+\/[\w.+-]+|translate\(.*|rotate\(.*|scale\(.*|rgba?\(.*|hsla?\(.*|\S+\.(js|jsx|json|svg|png|csv)|[\w.-]+@[\w.-]+)$/
 const PROSE = /[A-Za-z]{2,}/

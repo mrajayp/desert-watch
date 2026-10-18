@@ -1,21 +1,39 @@
 // Thin fetch wrapper + the behaviour tracker (batched, first-party only).
 // Every request says which interface language is on (X-Lang), so the server answers in it.
-import { getLang } from './i18n'
+// Failures are always an ApiError: status 0 = no connection, 401 = signed out (the app's handler
+// clears the user and sends it to the sign-in page), anything else = the server's message.
+// An aborted request (AbortController) rejects with the browser's AbortError, never an ApiError,
+// so a hook can tell a cancelled call from a failed one.
+import { getLang, t } from './i18n.js'
 
 export class ApiError extends Error {
-  constructor(status, message) { super(message); this.status = status }
+  constructor(status, message) { super(message); this.name = 'ApiError'; this.status = status } // i18n-ok: an error class name, not shown
 }
 
-export async function api(path, { method = 'GET', body, signal } = {}) {
-  const r = await fetch(path, {
-    method, signal, credentials: 'same-origin',
-    headers: body ? { 'Content-Type': 'application/json', 'X-Lang': getLang() } : { 'X-Lang': getLang() },
-    body: body ? JSON.stringify(body) : undefined,
-  })
+export const isAbort = (e) => e?.name === 'AbortError'
+
+// Set by the app: called with the path when any call but the sign-in and the first /api/me gets a 401.
+let onUnauthorised = null
+export function setUnauthorisedHandler(fn) { onUnauthorised = fn }
+
+// silent401: the caller expects "not signed in" as an answer (the first /api/me) and handles it itself
+export async function api(path, { method = 'GET', body, signal, silent401 = false } = {}) {
+  let r
+  try {
+    r = await fetch(path, {
+      method, signal, credentials: 'same-origin',
+      headers: body ? { 'Content-Type': 'application/json', 'X-Lang': getLang() } : { 'X-Lang': getLang() },
+      body: body ? JSON.stringify(body) : undefined,
+    })
+  } catch (e) {
+    if (isAbort(e)) throw e
+    throw new ApiError(0, t('No connection'))
+  }
   if (!r.ok) {
     let msg = r.statusText
     try { const j = await r.json(); msg = typeof j.detail === 'string' ? j.detail : JSON.stringify(j.detail) } catch { /* not json */ }
-    throw new ApiError(r.status, msg)
+    if (r.status === 401 && !silent401 && path !== '/api/auth/login' && onUnauthorised) onUnauthorised(path)
+    throw new ApiError(r.status, msg || t('Request failed'))
   }
   return r.status === 204 ? null : r.json()
 }

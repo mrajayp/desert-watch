@@ -78,7 +78,10 @@ svg { direction: ltr; }
 [dir="rtl"] input[type="password"] { direction: ltr; text-align: start; unicode-bidi: plaintext; }
 
 /* ---- shell */
-.shell { display: grid; grid-template-rows: auto auto 1fr; grid-template-columns: minmax(0, 1fr); min-height: 100vh; }
+.shell { display: grid; grid-template-rows: auto 1fr auto; grid-template-columns: minmax(0, 1fr); min-height: 100vh; }
+/* #main holds the read-only notice, a page's filter bar and the page itself; the page takes the spare height */
+.main { display: flex; flex-direction: column; min-width: 0; }
+.main > main.page { flex: 1; }
 .topbar { display: flex; align-items: center; gap: 16px; padding: 10px 20px; background: var(--surface); border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 20; }
 .brand { font-weight: 650; letter-spacing: .01em; display: flex; align-items: center; gap: 8px; white-space: nowrap; }
 .brand-mark { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--gap-5); display: inline-grid; place-items: center; }
@@ -171,6 +174,31 @@ table.data tr:hover td { background: var(--surface-2); }
 .drawer-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.25); z-index: 40; }
 .drawer { position: fixed; top: 0; inset-inline-end: 0; bottom: 0; width: min(560px, 100vw); background: var(--surface); z-index: 41; overflow: auto; padding: 18px; box-shadow: -8px 0 24px rgba(0,0,0,.15); }
 .modal { position: fixed; left: 50%; top: 8vh; transform: translateX(-50%); width: min(560px, calc(100vw - 32px)); max-height: 84vh; overflow: auto; background: var(--surface); z-index: 41; border-radius: 10px; padding: 18px; box-shadow: var(--shadow); }
+/* the one dialog (components/Dialog.jsx): a panel over the page from 900px up, a page with a Back bar below */
+body.dialog-open { overflow: hidden; }
+.dialog-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 8px; }
+.dialog-title { margin: 2px 0; font-size: 17px; }
+.dialog-title:focus { outline: none; }
+.dialog-title:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 4px; }
+.dialog-page { padding-top: 0; }
+.dialog-bar { position: sticky; top: 0; z-index: 15; display: flex; align-items: flex-start; gap: 10px; padding: 10px 0; margin: 0 0 12px; background: var(--page); border-bottom: 1px solid var(--line); }
+.dialog-bar .dialog-head { flex: 1; margin: 0; }
+.dialog-bar .btn { flex: none; margin-top: 2px; }
+/* skip link: visible only when it has keyboard focus */
+.skip-link { position: absolute; inset-inline-start: 8px; top: -60px; z-index: 50; padding: 6px 10px; background: var(--ink); color: var(--surface); border-radius: 6px; }
+.skip-link:focus { top: 8px; }
+.main:focus { outline: none; }
+/* notices (components/Notices.jsx): a stack at the foot of the screen; errors stay until dismissed */
+.notices { position: fixed; bottom: 12px; inset-inline-end: 12px; z-index: 60; display: flex; flex-direction: column; gap: 8px; max-width: min(420px, calc(100vw - 24px)); }
+.notice { display: flex; align-items: flex-start; gap: 8px; padding: 10px 12px; border-radius: 8px; background: var(--surface); border: 1px solid var(--line); border-inline-start: 3px solid var(--accent); box-shadow: var(--shadow); font-size: 13px; }
+.notice.error { border-inline-start-color: var(--critical); }
+.notice.offline { border-inline-start-color: var(--warning); }
+.notice span { flex: 1; }
+.banner.err-box { border-inline-start-color: var(--critical); display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+.row.err { margin: 6px 0; }
+.banner.readonly { margin: 12px 20px 0; }
+.source-line { margin: 16px 0 0; }
+@media (max-width: 640px) { .banner.readonly { margin: 10px 16px 0; } }
 .form { display: grid; gap: 10px; }
 .form label { display: grid; gap: 4px; font-size: 13px; color: var(--ink-2); }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }

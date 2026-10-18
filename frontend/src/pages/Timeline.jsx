@@ -1,12 +1,16 @@
 // Timeline: key events overlaid on monthly coverage per theme, with official statements and
 // humanitarian reports as separate streams (not counted as media coverage).
 import * as d3 from 'd3'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { api } from '../api'
 import { useApp } from '../App'
 import { fmt } from '../charts/scales'
 import { ExportMenu, fitLabel, themeLabel, useSize, useTooltip } from '../charts/util'
+import { ErrorBox, Loading } from '../components/Notices'
 import WikiReading from '../components/WikiReading'
+import { useApi } from '../hooks/useApi'
+import { useMutation } from '../hooks/useMutation'
+import { usePageTitle } from '../hooks/usePageTitle'
 import { N_, fmtDate, isAr, pick, t } from '../i18n'
 
 const RANGES = [['all', N_('All')], ['24', N_('24 months')], ['12', N_('12 months')]]
@@ -15,8 +19,10 @@ const GROUPS = [['all', N_('All')], ['general', N_('General')], ['gender', N_('G
 const day = (d) => (isAr() ? fmtDate(d) : d)
 
 export default function Timeline() {
-  const { meta, lang, me } = useApp()
-  const [data, setData] = useState(null)
+  const { meta, lang, me, can } = useApp()
+  usePageTitle(t('Timeline'))
+  const q = useApi('/api/timeline')
+  const data = q.data
   const [range, setRange] = useState('all')
   const [group, setGroup] = useState('all')
   const [hoverEv, setHoverEv] = useState(null)
@@ -26,8 +32,9 @@ export default function Timeline() {
   const wrap = useRef(null)
   const W = useSize(wrap, 1100)
   const tip = useTooltip()
-  const load = () => api('/api/timeline').then(setData)
-  useEffect(() => { load() }, [])
+  const addEvent = useMutation((e) => { e.preventDefault(); return api('/api/key-events', { method: 'POST', body: { ...form, theme_id: form.theme_id ? +form.theme_id : null } }) },
+    { onSuccess: () => { setForm({ day: '', label: '', theme_id: '', source_url: '' }); setMsg(t('Added.')); q.retry() } })
+  const removeEvent = useMutation((id) => api(`/api/key-events/${id}`, { method: 'DELETE' }), { onSuccess: q.retry })
 
   const view = useMemo(() => {
     if (!data || !data.months.length) return null
@@ -53,7 +60,7 @@ export default function Timeline() {
     return { months, rows, events }
   }, [data, range, group, meta.themes])
 
-  if (!data) return <main className="page"><div className="empty">{t('Loading…')}</div></main>
+  if (!data) return <main className="page">{q.error ? <ErrorBox error={q.error} onRetry={q.retry} /> : <Loading />}</main>
   if (!view) return <main className="page"><div className="empty">{t('No coverage collected yet.')}</div></main>
 
   const left = Math.min(260, Math.max(130, W * 0.24))
@@ -94,14 +101,6 @@ export default function Timeline() {
           onMouseMove={(e) => tip.show(e, <div><b>{label}</b><div>{m}: {fmt(v)}</div></div>, wrap.current)} />)
     })
   }
-  const addEvent = async (e) => {
-    e.preventDefault()
-    try {
-      await api('/api/key-events', { method: 'POST', body: { ...form, theme_id: form.theme_id ? +form.theme_id : null } })
-      setForm({ day: '', label: '', theme_id: '', source_url: '' }); setMsg(t('Added.')); load()
-    } catch (ex) { setMsg(ex.message) }
-  }
-  const removeEvent = async (id) => { await api(`/api/key-events/${id}`, { method: 'DELETE' }); load() }
   const caption = t('Source: Desert Watch monitored coverage (relevant articles per theme per month), official statements and ReliefWeb reports as separate streams.') + '\n' +
     t('Older months come from backfilled search, which returns fewer items: compare shapes, not levels, across years. Events: config + team, each with a source link.')
 
@@ -168,29 +167,32 @@ export default function Timeline() {
         </div>
       </section>
       <div className="grid halves" style={{ marginTop: 16 }}>
-        <section className="card">
-          <h2>{t('Add a key event')}</h2>
-          <p className="sub">{t('Events appear on the timeline for the whole team. A source link is required.')}</p>
-          <form className="form" onSubmit={addEvent}>
-            <div className="row">
-              <label>{t('Date')}<input type="text" placeholder={t('YYYY-MM-DD')} value={form.day} onChange={(e) => setForm({ ...form, day: e.target.value })} required pattern="\d{4}-\d{2}-\d{2}" /></label>
-              <label style={{ flex: 1 }}>{t('Theme (optional)')}
-                <select value={form.theme_id} onChange={(e) => setForm({ ...form, theme_id: e.target.value })}>
-                  <option value="">{t('— none —')}</option>{meta.themes.map((t) => <option key={t.id} value={t.id}>{pick(t, 'name')}</option>)}</select></label>
-            </div>
-            <label>{t('What happened')}<input type="text" dir="auto" maxLength={200} value={form.label} onChange={(e) => setForm({ ...form, label: e.target.value })} required /></label>
-            <label>{t('Source link')}<input type="url" value={form.source_url} onChange={(e) => setForm({ ...form, source_url: e.target.value })} required /></label>
-            <div className="row"><button className="btn primary">{t('Add event')}</button>{msg && <span className="small">{msg}</span>}</div>
-          </form>
-        </section>
+        {can && (
+          <section className="card">
+            <h2>{t('Add a key event')}</h2>
+            <p className="sub">{t('Events appear on the timeline for the whole team. A source link is required.')}</p>
+            <form className="form" onSubmit={(e) => addEvent.run(e)}>
+              <div className="row">
+                <label>{t('Date')}<input type="text" placeholder={t('YYYY-MM-DD')} value={form.day} onChange={(e) => setForm({ ...form, day: e.target.value })} required pattern="\d{4}-\d{2}-\d{2}" /></label>
+                <label style={{ flex: 1 }}>{t('Theme (optional)')}
+                  <select value={form.theme_id} onChange={(e) => setForm({ ...form, theme_id: e.target.value })}>
+                    <option value="">{t('— none —')}</option>{meta.themes.map((t) => <option key={t.id} value={t.id}>{pick(t, 'name')}</option>)}</select></label>
+              </div>
+              <label>{t('What happened')}<input type="text" dir="auto" maxLength={200} value={form.label} onChange={(e) => setForm({ ...form, label: e.target.value })} required /></label>
+              <label>{t('Source link')}<input type="url" value={form.source_url} onChange={(e) => setForm({ ...form, source_url: e.target.value })} required /></label>
+              <div className="row"><button className="btn primary" disabled={addEvent.busy}>{t('Add event')}</button>{msg && <span className="small">{msg}</span>}</div>
+              {addEvent.error && <ErrorBox error={addEvent.error} compact />}
+            </form>
+          </section>)}
         <section className="card">
           <h2>{t('Events ({n})', { n: data.events.length })}</h2>
+          {removeEvent.error && <ErrorBox error={removeEvent.error} compact />}
           <ul className="list small scroll" style={{ maxHeight: 360 }}>{[...data.events].reverse().map((e) => (
             <li key={e.id}><b>{day(e.day)}</b> · <span dir="auto">{pick(e, 'label')}</span>{e.theme_id && <span className="muted"> · {themeName(e.theme_id)}</span>}
               {' '}<a href={e.source_url} target="_blank" rel="noreferrer noopener">{t('source')}</a>
               {e.origin === 'user' && <span className="muted"> · {t('added by the team')}</span>}
-              {e.origin === 'user' && (me.role === 'admin' || e.mine) &&
-                <button className="btn small ghost" onClick={() => removeEvent(e.id)}>{t('remove')}</button>}</li>))}</ul>
+              {can && e.origin === 'user' && (me.role === 'admin' || e.mine) &&
+                <button className="btn small ghost" disabled={removeEvent.busy} onClick={() => removeEvent.run(e.id)}>{t('remove')}</button>}</li>))}</ul>
         </section>
       </div>
       <section className="card" style={{ marginTop: 16 }}>

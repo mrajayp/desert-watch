@@ -96,8 +96,6 @@ export default {
   "Archive": "الأرشيف",
   "Week of {week}": "أسبوع {week}",
   "No briefs yet.": "لا توجد موجزات بعد.",
-  "Newest": "الأحدث",
-  "Most picked up": "الأكثر إعادة نشر",
   "Close": "إغلاق",
   "articles": {
     zero: "مقال",
@@ -112,8 +110,6 @@ export default {
   "Outlets followed all year": "وسائل الإعلام المتابَعة طوال العام",
   "All sources": "كل المصادر",
   "Order": "الترتيب",
-  "Stories carried by the most outlets first": "القصص التي نقلها أكبر عدد من وسائل الإعلام أولًا",
-  "No articles.": "لا توجد مقالات.",
   "via {source}": "عبر {source}",
   "added by team": "أضافه الفريق",
   "Label this": "تصنيف هذا",
@@ -190,11 +186,15 @@ export default {
   "Resolve": "تعليم كمعالَج",
   "Delete": "حذف",
   "No comments yet. Visible to your team only.": "لا توجد تعليقات بعد. لا يراها إلا أعضاء الفريق.",
-  "Your account is read-only, so you can’t comment. Ask an admin for contributor access.": "هذا الحساب للقراءة فقط، لذا لا يمكن التعليق. يمكن طلب صلاحية المساهمة من أحد المشرفين.",
   "Replying": "رد على تعليق",
   "cancel": "إلغاء",
-  "Add context, a source tip, or why you agree/disagree… Use @name to mention.": "يمكن إضافة سياق أو اقتراح مصدر أو سبب التأييد أو الاعتراض… ولذكر أحد الزملاء يُكتب @ ثم الاسم.",
+  "Add context, a source tip, or why you agree/disagree…": "يمكن إضافة سياق أو اقتراح مصدر أو سبب التأييد أو الاعتراض…",
   "Comment type": "نوع التعليق",
   "Post": "نشر",
   "This brief was written before briefs were produced in Arabic too, so it is shown in English.": "كُتب هذا الموجز قبل أن تصدر الموجزات بالعربية أيضًا، لذا يظهر بالإنجليزية.",
+
+  // components/ArticleRow.jsx, ItemPanel.jsx: the article view (/articles/:id)
+  "Details": "التفاصيل",
+  "Topics and places": "المواضيع والأماكن",
+  "Correct": "تصحيح",
 }

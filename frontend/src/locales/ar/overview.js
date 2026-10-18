@@ -193,4 +193,5 @@ export default {
   "Network of outlets linked by similar coverage and reprinted headlines": "شبكة وسائل الإعلام التي تربط بينها تغطية متشابهة وعناوين أُعيد نشرها",
   "{count} articles in window": "المقالات في الفترة: {count}",
   "Coverage cluster {n}": "مجموعة التغطية {n}",
+  "Monitored articles naming this district, {n} weeks ending {week}.": "المقالات المرصودة التي تذكر هذه الشعبية خلال {n} أسابيع تنتهي في {week}.",
 }

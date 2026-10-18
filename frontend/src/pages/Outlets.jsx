@@ -1,14 +1,17 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import BlindSpots from '../components/BlindSpots'
 import AiAnswers from '../components/AiAnswers'
-import { api, qs } from '../api'
+import { qs } from '../api'
 import { useApp } from '../App'
 import Filters from '../components/Filters'
+import { ErrorBox } from '../components/Notices'
 import ClusterMap, { ClusterDistrictTable, ClusterLegendTable } from '../charts/ClusterMap'
 import { ClusterMultiples, ClusterSummary } from '../charts/ClusterViews'
 import { MixBar } from '../charts/Balance'
 import { DIMENSIONS, categoryColor, fmt } from '../charts/scales'
 import { ExportMenu } from '../charts/util'
+import { useApi } from '../hooks/useApi'
+import { usePageTitle } from '../hooks/usePageTitle'
 import { fmtNum, pick, t } from '../i18n'
 import { countryName } from '../charts/RegionalNetwork'
 
@@ -21,21 +24,27 @@ const num = (v) => fmtNum(v, { useGrouping: false })
 const CONFIDENCE = { reported: N_('reported'), likely: N_('likely'), disputed: N_('disputed'), unverified: N_('unverified') }
 
 export default function Outlets() {
-  const { meta, filters, openOutlet, openGap, version, lang } = useApp()
-  const [rows, setRows] = useState([])
-  const [network, setNetwork] = useState(null)
+  const { meta, filters, openOutlet, openArticles, version, lang } = useApp()
+  usePageTitle(t('Outlets'))
+  const rowsQ = useApi('/api/outlets' + qs({ days: 84, min_articles: 1 }), { deps: [version] })
+  const rows = rowsQ.data || []
+  const networkQ = useApi('/api/network' + qs({ week: filters.week, weeks: 12 }), { deps: [version] })
+  const network = networkQ.data
+  const clustersQ = useApi('/api/clusters', { deps: [version] })
+  const clusters = clustersQ.data
+  const periodsQ = useApi('/api/clusters/periods', { deps: [version] })
+  const periods = periodsQ.data
+  const loadError = rowsQ.error || networkQ.error || clustersQ.error || periodsQ.error
+  const retryLoads = () => { rowsQ.retry(); networkQ.retry(); clustersQ.retry(); periodsQ.retry() }
   const [show, setShow] = useState({ similar: false, syndication: true })
-  const [clusters, setClusters] = useState(null)
   const [highlight, setHighlight] = useState(null)
   const [view, setView] = useState('summary')
-  const [periods, setPeriods] = useState(null)
-  const tableRef = useRef(null)
   const [q, setQ] = useState('')
   const [onlyUnclassified, setOnlyUnclassified] = useState(false)
   const svg = useRef(null)
-  useEffect(() => { api('/api/outlets' + qs({ days: 84, min_articles: 1 })).then(setRows) }, [version])
-  useEffect(() => { api('/api/network' + qs({ week: filters.week, weeks: 12 })).then(setNetwork) }, [filters.week, version])
-  useEffect(() => { api('/api/clusters').then(setClusters); api('/api/clusters/periods').then(setPeriods) }, [version])
+  // a district in the cluster table has no theme: open its articles for the same 12 weeks, not an unscored gap
+  const openDistrict = (rid) => openArticles({ title: pick(meta.regions.find((r) => r.id === rid), 'name'), from: 'cluster_table',
+    subtitle: t('Monitored articles naming this district, 12 weeks.'), query: { region_id: rid, days: 84 } })
   const dim = filters.colorBy
   const mix = useMemo(() => {
     const m = {}
@@ -51,6 +60,7 @@ export default function Outlets() {
     <>
       <Filters showWeek />
       <main className="page">
+        {loadError && <ErrorBox error={loadError} onRetry={retryLoads} />}
         <div className="grid two">
           <section className="card" style={view === 'time' ? { gridColumn: '1 / -1' } : undefined}>
             <div className="card-head">
@@ -93,7 +103,7 @@ export default function Outlets() {
               <p className="sub">{t('Share of each cluster’s articles that name the district. Rows of dots are districts no cluster writes about — candidate deserts. Click a district to open it.')}</p></div>
           </div>
           {clusters && <ClusterDistrictTable clusters={clusters.clusters} districts={clusters.districts} regions={meta.regions} lang={lang} highlight={highlight}
-            onSelectDistrict={(rid) => openGap(meta.themes[0].id, rid, { from: 'cluster_table' })} />}
+            onSelectDistrict={openDistrict} />}
         </section>
         <BlindSpots />
         <AiAnswers />

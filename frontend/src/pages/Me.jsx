@@ -1,21 +1,25 @@
 import { useState } from 'react'
 import { api } from '../api'
 import { useApp } from '../App'
+import { ErrorBox } from '../components/Notices'
+import { useMutation } from '../hooks/useMutation'
+import { usePageTitle } from '../hooks/usePageTitle'
 import { t } from '../i18n'
 
 export default function Me() {
   const { me, setMe } = useApp()
+  usePageTitle(t('Privacy'))
   const [confirm, setConfirm] = useState('')
   const [pw, setPw] = useState({ current: '', next: '' })
   const [pwMsg, setPwMsg] = useState(null)
   const [busy, setBusy] = useState(false)
   const word = t('delete') // the word to type before the account can be deleted, in the interface language
-  const exportData = async () => {
+  const exportData = useMutation(async () => {
     const data = await api('/api/me/export')
     const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }))
     const a = document.createElement('a'); a.href = url; a.download = 'desert-watch-my-data.json'; a.click()
-  }
-  const del = async () => { await api('/api/me', { method: 'DELETE' }); setMe(null) }
+  })
+  const del = useMutation(() => api('/api/me', { method: 'DELETE' }), { onSuccess: () => setMe(null) })
   // a new password ends every other session of the account (the server does that); this browser stays signed in
   const changePassword = async (e) => {
     e.preventDefault(); setBusy(true); setPwMsg(null)
@@ -25,7 +29,7 @@ export default function Me() {
     } catch (err) { setPwMsg({ ok: false, text: err.message }) } finally { setBusy(false) }
   }
   // ends every session, this one included, so the app goes back to the sign-in page
-  const signOutEverywhere = async () => { try { await api('/api/auth/logout-all', { method: 'POST' }) } finally { setMe(null) } }
+  const signOutEverywhere = async () => { try { await api('/api/auth/logout-all', { method: 'POST' }) } catch { /* the sessions are gone either way */ } finally { setMe(null) } }
   return (
     <main className="page" style={{ maxWidth: 760 }}>
       <section className="card">
@@ -46,11 +50,13 @@ export default function Me() {
         <h3>{t('What is recorded')}</h3>
         <p className="small">{t('Your votes, comments, corrections, assessments and added articles, plus the gaps and articles you view, click and spend time on and the filters you use. Stored under a pseudonymous ID; raw activity logs are deleted after 12 months; never shared with third-party analytics.')}</p>
         <h3>{t('Export')}</h3>
-        <button className="btn" onClick={exportData}>{t('Download everything stored about me (JSON)')}</button>
+        <button className="btn" disabled={exportData.busy} onClick={() => exportData.run()}>{t('Download everything stored about me (JSON)')}</button>
+        {exportData.error && <ErrorBox error={exportData.error} compact />}
         <h3>{t('Delete account')}</h3>
         <p className="small">{t('Deletes your account, behaviour log and comment text. Your votes and labels stay only in anonymised form.')}</p>
         <div className="row"><input type="text" dir="auto" placeholder={t('Type "delete" to confirm')} value={confirm} onChange={(e) => setConfirm(e.target.value)} />
-          <button className="btn" disabled={confirm !== word} onClick={del}>{t('Delete my account')}</button></div>
+          <button className="btn" disabled={confirm !== word || del.busy} onClick={() => del.run()}>{t('Delete my account')}</button></div>
+        {del.error && <ErrorBox error={del.error} compact />}
       </section>
     </main>
   )
