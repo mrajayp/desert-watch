@@ -1,8 +1,13 @@
-// AI answers audit (docs/research/ai_answers_audit_scope.md): which sources two AI assistants search
-// and cite when they get the same fixed questions about the country each week, in Arabic and English,
-// next to the mix of the coverage Desert Watch monitors. Counts are per assistant and never added
-// up. Nothing here feeds a gap score. The API answers {"visible": false} to anyone who may not see
-// the results (admins only until config/ai_audit.yaml says visible_to: team); the card then stays hidden.
+// AI answers audit (docs/research/ai_answers_audit_scope.md): which sources AI assistants search and
+// cite when they get the same fixed questions about the country each week, in Arabic and English, next
+// to the mix of the coverage Desert Watch monitors. Three origins, never mixed in one figure:
+//   api      the automatic weekly run through the assistants' developer services (Claude, ChatGPT,
+//            Perplexity), with searched and cited sources;
+//   panel    links team members logged from the consumer apps on their own phones (Contribute page);
+//   browser  supervised browser sessions, asked from London in a signed-in account.
+// Counts are per assistant or app and never added up. Nothing here feeds a gap score. The API answers
+// {"visible": false} to anyone who may not see the results (admins only until config/ai_audit.yaml
+// says visible_to: team); the card then stays hidden.
 import { useEffect, useState } from 'react'
 import { api, qs } from '../api'
 import { useApp } from '../App'
@@ -11,8 +16,12 @@ import { DIMENSIONS, categoryColor } from '../charts/scales'
 import { fmtDate, fmtNum, N_, pick, t, tn } from '../i18n'
 
 // brand names stay as they are in both languages
-const ASSISTANT = { anthropic: 'Claude', openai: 'ChatGPT' } // i18n-ok: brand names
-// each assistant's last run (a code from the API)
+const ASSISTANT = { anthropic: 'Claude', openai: 'ChatGPT', perplexity: 'Perplexity' } // i18n-ok: brand names
+// where the answers come from (the API's origin parameter)
+const ORIGINS = [
+  ['api', N_('Automatic: developer services')], ['panel', N_('Logged by the team: apps')], ['browser', N_('Browser sessions: London')],
+]
+// each assistant's last automatic run (a code from the API)
 const STATUS = {
   ok: N_('last run complete'), partial: N_('last run partly complete'), over_budget: N_('last run stopped at the weekly cost cap'),
   error: N_('last run failed'), awaiting_key: N_('waiting for an API key'), disabled: N_('switched off'),
@@ -38,36 +47,63 @@ const pct = (n, of) => (of ? Math.round((n / of) * 100) : 0)
 const siteUrl = (d) => (/^[a-z0-9.-]+\.[a-z]{2,}$/i.test(d || '') ? `https://${d}` : null)
 const NEVER_SHOWN = 40
 
+// the card's words for each origin (called when rendering, so they follow the interface language)
+const wording = (origin, country) => (origin === 'panel' ? {
+  sub: t('Each week team members ask the same questions about {country} in the AI apps they use on their own phones, in Arabic or in English, and log the source links each answer showed. We count those links per app.', { country }),
+  empty: t('No answers logged by the team in this window yet. Team members log them on the Contribute page.'),
+  caveat: t('These links come from a small, uneven sample: the team’s own phones and accounts, the apps each person uses, and whichever questions they had time to ask. The apps tailor answers to the account, the place and earlier chats, so the same question can get other sources for someone else. Each app is counted on its own, and nothing here is added to the automatic audit or the browser sessions. Nothing here is part of any gap score. The answers themselves are not kept, only the source links, and no one’s name is shown.'),
+} : origin === 'browser' ? {
+  sub: t('In supervised browser sessions an admin signs in to an AI assistant’s website and the same questions about {country} are asked while the admin watches. Only the source links are logged, per app.', { country }),
+  empty: t('No browser sessions in this window yet.'),
+  caveat: t('These questions were asked from London in a signed-in account. They show what the assistant answered there and then, not what people in {country} see, since the apps tailor answers to the place and the account. Each app is counted on its own, and nothing here is added to the automatic audit or the team’s log. Nothing here is part of any gap score. The answers themselves are not kept, only the source links.', { country }),
+} : {
+  sub: t('Each week the same set of questions about {country} goes to AI assistants through their developer services, in Arabic and in English, with web search on. We count the sources they search and the sources they cite, per assistant.', { country }),
+  empty: t('No answers in this window yet. The audit runs once a week, early on Monday (UTC).'),
+  caveat: t('These answers come from the assistants’ developer services with web search on, not from the apps people use, which can answer differently. It is one fixed set of questions, so it says nothing about other topics. Each assistant is counted on its own and the counts are never added together, because the services define searched and cited differently. The team’s log from the apps and the browser sessions are shown apart and never mixed in. Nothing here is part of any gap score. The answers themselves are not kept, only which sources were searched and cited.'),
+})
+
 export default function AiAnswers() {
   const { meta, openOutlet } = useApp()
+  const [origin, setOrigin] = useState('api')
   const [provider, setProvider] = useState('all')
   const [qlang, setQlang] = useState('all')
   const [weeks, setWeeks] = useState(4)
   const [data, setData] = useState(null)
+  const [choices, setChoices] = useState({}) // origin -> [{key, label}] from its 'all' answer
   const [err, setErr] = useState(null)
   const [allNever, setAllNever] = useState(false)
   useEffect(() => {
     const ac = new AbortController()
-    api('/api/ai-audit/summary' + qs({ weeks, provider, lang: qlang }), { signal: ac.signal })
-      .then((r) => { setData(r); setErr(null) })
+    api('/api/ai-audit/summary' + qs({ weeks, provider, lang: qlang, origin }), { signal: ac.signal })
+      .then((r) => {
+        setData({ ...r, req: { origin, provider } })
+        setErr(null)
+        if (provider === 'all' && r?.providers) setChoices((c) => ({ ...c, [origin]: r.providers.map((p) => ({ key: p.key, label: p.label })) }))
+      })
       .catch((e) => {
         if (e.name === 'AbortError') return
         setData((d) => d || { visible: false })
         setErr(e.message)
       })
     return () => ac.abort()
-  }, [weeks, provider, qlang])
+  }, [weeks, provider, qlang, origin])
   if (!data || !data.visible) return null
 
+  const shown = data.req?.origin || 'api' // the origin of the data on screen (the next one may be loading)
+  const isApi = shown === 'api'
+  const words = wording(shown, pick(meta?.country, 'name'))
   const labels = scopeLabels()
   const providers = data.providers || []
-  const status = data.status || {}
-  const one = provider !== 'all'
+  const status = isApi ? data.status || {} : {}
+  const one = (data.req?.provider || 'all') !== 'all'
+  const short = (p) => (isApi ? ASSISTANT[p.key] || p.label || p.key : p.label || p.key)
   const never = data.never_cited || []
   const neverShown = allNever ? never : never.slice(0, NEVER_SHOWN)
   const appeared = neverShown.filter((r) => r.appeared_in_results)
   const unseen = neverShown.filter((r) => !r.appeared_in_results)
   const covTotal = total(data.coverage_scope)
+  const pickOrigin = (k) => { if (k !== origin) { setOrigin(k); setProvider('all') } }
+  const options = choices[origin] || []
   const chip = (r) => (
     <button key={r.outlet_id} className="chip" dir="auto" onClick={() => openOutlet(r.outlet_id)}
       title={`${r.domain || ''} · ${tn(r.articles_12w, '{n} article in 12 weeks', '{n} articles in 12 weeks')}`}>{r.name}</button>)
@@ -76,11 +112,15 @@ export default function AiAnswers() {
     <section className="card" style={{ marginTop: 16 }}>
       <div className="card-head">
         <div><h2>{t('What AI assistants cite')}</h2>
-          <p className="sub">{t('Each week Claude and ChatGPT get the same set of questions about {country}, in Arabic and in English, with web search on. We count the sources they search and the sources they cite, per assistant.', { country: pick(meta?.country, 'name') })}</p></div>
+          <p className="sub">{words.sub}</p></div>
         <div className="row">
-          <span className="seg" role="group" aria-label={t('Assistant')}>
-            {[['all', t('Both')], ['anthropic', ASSISTANT.anthropic], ['openai', ASSISTANT.openai]].map(([k, l]) =>
-              <button key={k} aria-pressed={provider === k} onClick={() => setProvider(k)}>{l}</button>)}
+          <span className="seg" role="group" aria-label={t('Where the answers come from')}>
+            {ORIGINS.map(([k, l]) => <button key={k} aria-pressed={origin === k} onClick={() => pickOrigin(k)}>{t(l)}</button>)}
+          </span>
+          <span className="seg" role="group" aria-label={origin === 'api' ? t('Assistant') : t('App')}>
+            <button aria-pressed={provider === 'all'} onClick={() => setProvider('all')}>{origin === 'api' ? t('All assistants') : t('All apps')}</button>
+            {options.map((p) => <button key={p.key} aria-pressed={provider === p.key} onClick={() => setProvider(p.key)}>
+              {origin === 'api' ? ASSISTANT[p.key] || p.label || p.key : p.label || p.key}</button>)}
           </span>
           <span className="seg" role="group" aria-label={t('Language of the question')}>
             {[['all', t('Both languages')], ['ar', t('Arabic')], ['en', t('English')]].map(([k, l]) =>
@@ -102,7 +142,7 @@ export default function AiAnswers() {
         {data.window && <span className="muted">{t('{from} to {to}', { from: fmtDate(data.window.from), to: fmtDate(data.window.to) })} · {tn(data.n_answers || 0, '{n} answer', '{n} answers')}</span>}
       </div>
 
-      {!data.n_answers ? <div className="empty">{t('No answers in this window yet. The audit runs once a week, early on Monday (UTC).')}</div> : (
+      {!data.n_answers ? <div className="empty">{words.empty}</div> : (
         <>
           <p className="small muted" style={{ margin: '0 0 8px' }}>{t('The two bars in each block use different units: monitored coverage counts articles we collected, cited counts links in the answers. Compare the shares, not the sizes.')}</p>
           <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 320px), 1fr))' }}>
@@ -111,37 +151,45 @@ export default function AiAnswers() {
               const cl = p.cited_lang || {}
               const ql = p.query_lang || {}
               const clTotal = total(cl), qlTotal = total(ql)
+              const asked = p.asked_in || {}
               return (
                 <div key={p.key} style={{ border: '1px solid var(--line)', borderRadius: 8, padding: 12, minWidth: 0 }}>
-                  <h3 style={{ marginTop: 0 }}>{p.label || ASSISTANT[p.key] || p.key}</h3>
+                  <h3 style={{ marginTop: 0 }} dir="auto">{p.label || ASSISTANT[p.key] || p.key}</h3>
                   <p className="small" style={{ margin: '0 0 6px' }}>{tn(p.answers || 0, '{n} answer', '{n} answers')}
-                    {p.no_search > 0 && <> · {tn(p.no_search, '{n} answer without a search', '{n} answers without a search')}</>}</p>
+                    {p.no_search > 0 && <> · {tn(p.no_search, '{n} answer without a search', '{n} answers without a search')}</>}
+                    {p.no_sources > 0 && <> · {tn(p.no_sources, '{n} answer showed no sources', '{n} answers showed no sources')}</>}</p>
+                  {!isApi && total(asked) > 0 && <p className="small muted" style={{ margin: '0 0 6px' }}>{shown === 'browser'
+                    ? t('Asked from London: {london}', { london: fmtNum(asked.London || 0) })
+                    : t('Asked from {country}: {ly}. From elsewhere: {other}.', { country: pick(meta?.country, 'name'), ly: fmtNum(asked.LY || 0), other: fmtNum(asked.other || 0) })}</p>}
                   <table className="data"><tbody>
-                    <tr><th>{t('Sources searched per answer, median (range)')}</th><td className="num" style={{ whiteSpace: 'nowrap' }}>{spread(p.searched_per_answer)}</td></tr>
+                    {p.searched_per_answer != null && <tr><th>{t('Sources searched per answer, median (range)')}</th><td className="num" style={{ whiteSpace: 'nowrap' }}>{spread(p.searched_per_answer)}</td></tr>}
                     <tr><th>{t('Sources cited per answer, median (range)')}</th><td className="num" style={{ whiteSpace: 'nowrap' }}>{spread(p.cited_per_answer)}</td></tr>
                   </tbody></table>
                   <div className="small" style={{ marginTop: 10 }}><b>{t('Monitored coverage')}</b> <span className="muted">{t('share of articles, by outlet scope')}</span></div>
                   {covTotal ? <MixBar parts={parts(data.coverage_scope)} labels={labels} colors={SCOPE_COLOR} height={12} />
                     : <p className="small muted">{t('No monitored articles in this window.')}</p>}
-                  <div className="small" style={{ marginTop: 10 }}><b>{t('Cited by the assistant')}</b> <span className="muted">{t('share of cited links, by outlet scope')}</span></div>
+                  <div className="small" style={{ marginTop: 10 }}><b>{isApi ? t('Cited by the assistant') : t('Cited in the app')}</b> <span className="muted">{t('share of cited links, by outlet scope')}</span></div>
                   {cited ? <MixBar parts={parts(p.cited_scope)} labels={labels} colors={SCOPE_COLOR} height={12} />
                     : <p className="small muted">{t('No cited links in this window.')}</p>}
+                  {isApi && p.key === 'perplexity' && <p className="small muted" style={{ margin: '4px 0 0' }}>{t('Perplexity marks the links it used only when a question asks for numbered sources, and these questions never do. So its cited figures are often zero and say little about what it used.')}</p>}
                   <p className="small" style={{ margin: '10px 0 2px' }}>{clTotal ? t('Cited sources by language: Arabic {ar}%, English {en}%, other {other}%', {
                     ar: pct(cl.ar || 0, clTotal), en: pct(cl.en || 0, clTotal), other: pct(cl.other || 0, clTotal) }) : t('Cited sources by language: none yet')}</p>
-                  <p className="small muted" style={{ margin: 0 }}>{qlTotal ? t('Its own searches by language: Arabic {ar}%, English {en}%, other {other}%', {
-                    ar: pct(ql.ar || 0, qlTotal), en: pct(ql.en || 0, qlTotal), other: pct(ql.other || 0, qlTotal) }) : t('Its own searches by language: none yet')}</p>
+                  {isApi && <p className="small muted" style={{ margin: 0 }}>{qlTotal ? t('Its own searches by language: Arabic {ar}%, English {en}%, other {other}%', {
+                    ar: pct(ql.ar || 0, qlTotal), en: pct(ql.en || 0, qlTotal), other: pct(ql.other || 0, qlTotal) }) : t('Its own searches by language: none yet')}</p>}
                 </div>)
             })}
           </div>
 
           <h3>{t('Most cited outlets and domains')}</h3>
-          {!one && <p className="small muted" style={{ marginTop: 0 }}>{t('One column per assistant. Choose one assistant to see how often each source also appeared in search results.')}</p>}
+          {!one && <p className="small muted" style={{ marginTop: 0 }}>{isApi
+            ? t('One column per assistant. Choose one assistant to see how often each source also appeared in search results.')
+            : t('One column per app. The apps show the links an answer used, so there are no search results to count.')}</p>}
           {!(data.top_outlets || []).length ? <p className="small muted">{t('No cited links in this window.')}</p> : (
             <div className="scroll" style={{ maxHeight: 420 }}>
               <table className="data">
                 <thead><tr><th>{t('Outlet or domain')}</th><th>{t('Scope')}</th>
-                  {one ? <><th className="num">{t('Cited')}</th><th className="num" title={t('Times it appeared in search results')}>{t('Searched')}</th></>
-                    : providers.map((p) => <th key={p.key} className="num">{t('Cited by {assistant}', { assistant: ASSISTANT[p.key] || p.label })}</th>)}
+                  {one ? <><th className="num">{t('Cited')}</th>{isApi && <th className="num" title={t('Times it appeared in search results')}>{t('Searched')}</th>}</>
+                    : providers.map((p) => <th key={p.key} className="num">{t('Cited by {assistant}', { assistant: short(p) })}</th>)}
                 </tr></thead>
                 <tbody>{data.top_outlets.map((r) => {
                   const href = siteUrl(r.domain)
@@ -154,7 +202,7 @@ export default function AiAnswers() {
                           {href && <> <a href={href} target="_blank" rel="noreferrer noopener" aria-label={t('Open {domain}', { domain: r.domain })}>↗</a></>}
                           {r.outlet_id == null && <> <span className="pill">{t('not in the register')}</span></>}</div></td>
                       <td className="small">{labels[r.scope] || (r.outlet_id == null ? labels.unregistered : labels.unknown_scope)}</td>
-                      {one ? <><td className="num">{fmtNum(r.cited)}</td><td className="num">{fmtNum(r.searched)}</td></>
+                      {one ? <><td className="num">{fmtNum(r.cited)}</td>{isApi && <td className="num">{fmtNum(r.searched)}</td>}</>
                         : providers.map((p) => <td key={p.key} className="num">{fmtNum(r.by_provider?.[p.key] ?? 0)}</td>)}
                     </tr>)
                 })}</tbody>
@@ -163,20 +211,18 @@ export default function AiAnswers() {
 
           <h3>{t('Libyan outlets never cited ({n})', { n: never.length })}</h3>
           <p className="small muted" style={{ marginTop: 0 }}>{t('Libyan outlets in the register with articles in the last 12 weeks that no answer in this window cited. With only {n} answers this is weak evidence about any single outlet.', { n: data.n_answers })}</p>
-          {never.length === 0 ? <p className="small muted">{t('Every Libyan outlet with recent articles was cited at least once.')}</p> : (
+          {never.length === 0 ? <p className="small muted">{t('Every Libyan outlet with recent articles was cited at least once.')}</p> : isApi ? (
             <>
               <div className="small" style={{ margin: '6px 0 4px' }}><b>{t('Appeared in search results, never cited ({n})', { n: never.filter((r) => r.appeared_in_results).length })}</b></div>
               {appeared.length ? <div className="chips">{appeared.map(chip)}</div> : <p className="small muted" style={{ margin: 0 }}>{t('None.')}</p>}
               <div className="small" style={{ margin: '10px 0 4px' }}><b>{t('Never appeared in search results ({n})', { n: never.filter((r) => !r.appeared_in_results).length })}</b></div>
               {unseen.length ? <div className="chips">{unseen.map(chip)}</div> : <p className="small muted" style={{ margin: 0 }}>{t('None.')}</p>}
-              {never.length > NEVER_SHOWN && <button className="btn small ghost" style={{ marginTop: 6 }} onClick={() => setAllNever(!allNever)}>
-                {allNever ? t('Show fewer') : t('Show all {n}', { n: never.length })}</button>}
-            </>)}
+            </>) : <div className="chips">{neverShown.map(chip)}</div>}
+          {never.length > NEVER_SHOWN && <button className="btn small ghost" style={{ marginTop: 6 }} onClick={() => setAllNever(!allNever)}>
+            {allNever ? t('Show fewer') : t('Show all {n}', { n: never.length })}</button>}
         </>)}
 
-      <p className="small muted" style={{ marginTop: 14, marginBottom: 0 }}>
-        {t('These answers come from the assistants’ developer APIs with web search on, not from the apps people use, which can answer differently. It is one fixed set of questions, so it says nothing about other topics. Each assistant is counted on its own and the counts are never added together, because the two services define searched and cited differently. Nothing here is part of any gap score. The answers themselves are not kept, only which sources were searched and cited.')}
-      </p>
+      <p className="small muted" style={{ marginTop: 14, marginBottom: 0 }}>{words.caveat}</p>
     </section>
   )
 }

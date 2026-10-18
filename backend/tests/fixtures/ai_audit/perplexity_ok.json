@@ -1,0 +1,133 @@
+{
+  "id": "resp_4f1c2b7e-9a3d-4e61-8b2f-7c0d5e9a1b23",
+  "created_at": 1792368000,
+  "model": "perplexity/sonar",
+  "object": "response",
+  "output": [
+    {
+      "results": [
+        {
+          "id": 1,
+          "snippet": "SNIPPET-MUST-NOT-BE-KEPT Tripoli was calm on Thursday after a week of talks between armed groups.",
+          "title": "Security update from Tripoli",
+          "url": "https://libyaobserver.ly/news/security-update-tripoli",
+          "date": "2026-10-15",
+          "last_updated": "2026-10-16",
+          "source": "web"
+        },
+        {
+          "id": 2,
+          "snippet": "Talks between the rival governments resumed in Tunis.",
+          "title": "Libya talks resume in Tunis",
+          "url": "https://www.reuters.com/world/africa/libya-talks-2026-10-14/",
+          "date": "2026-10-14",
+          "last_updated": "2026-10-14",
+          "source": "web"
+        },
+        {
+          "id": 3,
+          "snippet": "Libya is a country in the Maghreb region of North Africa.",
+          "title": "Libya - Wikipedia",
+          "url": "https://en.wikipedia.org/wiki/Libya",
+          "date": null,
+          "last_updated": "2026-10-10",
+          "source": "web"
+        }
+      ],
+      "type": "search_results",
+      "queries": [
+        "Libya security situation October 2026",
+        "Tripoli security news"
+      ]
+    },
+    {
+      "results": [
+        {
+          "id": 4,
+          "snippet": "Calm returned to the capital after the September clashes.",
+          "title": "Calm returns to Tripoli",
+          "url": "https://libyaherald.com/2026/10/calm-returns/",
+          "date": "2026-10-13",
+          "last_updated": "2026-10-13",
+          "source": "web"
+        },
+        {
+          "id": 5,
+          "snippet": "Talks between the rival governments resumed in Tunis.",
+          "title": "Libya talks resume in Tunis",
+          "url": "https://www.reuters.com/world/africa/libya-talks-2026-10-14/",
+          "date": "2026-10-14",
+          "last_updated": "2026-10-14",
+          "source": "web"
+        }
+      ],
+      "type": "search_results",
+      "queries": [
+        "Tripoli clashes 2026",
+        "Libya security situation October 2026"
+      ]
+    },
+    {
+      "id": "msg_8d2e4a61-3b7f-4c9a-a1e5-0f6b2d9c7e44",
+      "content": [
+        {
+          "text": "The capital has been calm this week after the September clashes.[1][4] Talks between the rival governments resumed in Tunis on 14 October.[2] Armed groups remain present in parts of Tripoli.[1][5] Libya has had rival administrations since 2014.[9]",
+          "type": "output_text",
+          "annotations": [],
+          "logprobs": []
+        }
+      ],
+      "role": "assistant",
+      "status": "completed",
+      "type": "message"
+    }
+  ],
+  "status": "completed",
+  "error": null,
+  "usage": {
+    "input_tokens": 9120,
+    "output_tokens": 640,
+    "total_tokens": 9760,
+    "cost": {
+      "currency": "USD",
+      "input_cost": 0.00228,
+      "output_cost": 0.0016,
+      "total_cost": 0.00888,
+      "cache_creation_cost": null,
+      "cache_read_cost": null,
+      "tool_calls_cost": 0.005
+    },
+    "input_tokens_details": {
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "cached_tokens": 0
+    },
+    "tool_calls_details": {
+      "search_web": {
+        "invocation": 2
+      }
+    },
+    "output_tokens_details": {
+      "reasoning_tokens": 0
+    }
+  },
+  "background": false,
+  "completed_at": 1792368014,
+  "incomplete_details": null,
+  "instructions": "Today's date is 2026-10-19.",
+  "max_output_tokens": 4000,
+  "max_tool_calls": 2,
+  "metadata": {},
+  "parallel_tool_calls": true,
+  "previous_response_id": null,
+  "reasoning": null,
+  "store": false,
+  "tool_choice": "auto",
+  "tools": [
+    {
+      "type": "web_search"
+    }
+  ],
+  "truncation": "disabled",
+  "user": null
+}

@@ -65,6 +65,42 @@
 #   cheaper but deprecated and its page lists no tools. The web search guide says web search does not
 #   support gpt-5 at minimal reasoning; effort is set to low here (the scope: "low or above"), which also
 #   keeps calls well inside the 120 s timeout.
+#
+# Perplexity (Agent API, web_search tool)
+# - Sonar Chat Completions support ended on 27 September 2026 (synchronous requests are being reformulated
+#   as Agent API requests); new projects use the Agent API. POST https://api.perplexity.ai/v1/agent with
+#   Authorization: Bearer. Request: model ("provider/model"; presets pick openai/* models, so the model is
+#   set explicitly), input (a string), instructions (the system prompt), tools, max_steps, max_output_tokens,
+#   store. language_preference exists and is not sent (the other assistants have no language setting).
+# - Tool: {type: "web_search", search_type: web | fast, max_results 1-50 per call (split across reformulated
+#   queries), max_tokens (search context across results), max_tokens_per_page, filters (domains, dates;
+#   none sent), user_location {country (ISO 3166-1 alpha-2), region, city, latitude, longitude}}.
+#   user_location sits on the tool, not in filters. No timezone field. Whether LY is accepted is untested:
+#   the provider resends without the country after a 400 that names it.
+# - Bounding searches: max_steps "Maximum number of research loop steps", 1-100, default 1 for a direct
+#   model; one step is one model turn that may call tools, and at the cap the agent makes one final pass to
+#   answer. max_tool_calls is not in the request reference but is echoed in every response and used in the
+#   migration guide ("max_tool_calls: 0 disables all tool calls"); it is sent and dropped once if rejected.
+# - Response: output [search_results {queries [..], results [{id, url, title, snippet, date (published,
+#   YYYY-MM-DD), last_updated, source}]}, message {role assistant, status, content [output_text {text,
+#   annotations}]}], status completed | failed | incomplete | in_progress | queued | cancelled, error
+#   {message, code, type}, usage {input_tokens, output_tokens, total_tokens, input_tokens_details,
+#   tool_calls_details.search_web.invocation, cost {input_cost, output_cost, tool_calls_cost, total_cost}}.
+# - Citations: "[n]" or "[web:n]" markers in the text point at result ids, but the docs say they appear
+#   only when the prompt asks, and the examples carry an empty annotations array. The audit never asks, so
+#   Perplexity's cited count is kept only where markers are present (providers.parse_perplexity).
+# - No refusal signal is documented (output_text is the only content type). HTTP 400 for invalid requests,
+#   401 for a bad key or an account out of credits, 429 for the rate limit.
+# - Rate limit: Tier 0 (no credits bought yet) allows 1 request per second in a rolling window, shared by
+#   all keys of the organisation. The runner leaves at least 1 second between two calls to one assistant.
+# - Pricing: web_search $2.50 per 1,000 invocations with search_type web ($1.00 with fast), plus model
+#   tokens; search context is billed on the tokens actually used. No per-request fee on the Agent API.
+#   perplexity/sonar costs $0.25 in / $2.50 out per MTok (cache reads $0.0625, not used here: every input
+#   token is priced at the full rate). openai/gpt-6-luna is cheaper ($0.10 / $0.50) and is the model of
+#   the "fast" preset, but it would make the queries an OpenAI model's, not Perplexity's own.
+# - Search options follow Perplexity's own presets: max_results 10 (the fast preset) and max_tokens 2000
+#   (the low, medium and high presets). They should keep one answer near USD 0.009 (2 searches, about
+#   9,000 tokens in and 700 out), an estimate until the first real run.
 
 as_of: "2026-10-18"   # quoted so it stays a string in price_basis JSON
 currency: USD
@@ -118,3 +154,30 @@ openai:
     - https://developers.openai.com/api/docs/pricing
     - https://developers.openai.com/api/docs/models/gpt-6-luna
     - https://developers.openai.com/api/docs/models/gpt-5-nano
+
+perplexity:
+  label: Perplexity (API)
+  tool: web_search
+  search_per_1000_usd: 2.5      # search_type web; set 1.0 with search_type fast
+  models:
+    - id: perplexity/sonar      # Perplexity's own model (a preset would pick an OpenAI one)
+      input_per_mtok: 0.25
+      output_per_mtok: 2.50
+  request:
+    max_output_tokens: 4000     # the same ceiling as the others, so the pre-call estimate holds
+    web_search:
+      search_type: web          # standard search, the default for a direct model
+      max_results: 10           # per call, as in Perplexity's fast preset
+      max_tokens: 2000          # search-context tokens per call, as in the low, medium and high presets
+  sources:
+    - https://docs.perplexity.ai/docs/agent-api/tools/web-search
+    - https://docs.perplexity.ai/api-reference/agent-post
+    - https://docs.perplexity.ai/docs/agent-api/migrate-from-sonar/overview
+    - https://docs.perplexity.ai/docs/agent-api/migrate-from-sonar/how-to
+    - https://docs.perplexity.ai/docs/agent-api/building-agents/define-the-run
+    - https://docs.perplexity.ai/docs/agent-api/presets
+    - https://docs.perplexity.ai/docs/agent-api/models
+    - https://docs.perplexity.ai/docs/agent-api/output-control
+    - https://docs.perplexity.ai/docs/getting-started/pricing
+    - https://docs.perplexity.ai/docs/admin/rate-limits-usage-tiers
+    - https://docs.perplexity.ai/docs/resources/faq

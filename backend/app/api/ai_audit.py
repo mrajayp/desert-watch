@@ -4,7 +4,12 @@ Who sees what: admins see everything. Everyone else sees the summary only once c
 says visible_to: team, and then only outlet- and domain-level counts. The assistant's own search queries,
 full links and result titles can carry private names, so they stay on the /api/admin routes.
 Counts are per assistant and never added across assistants (each API means something different by a
-search result and by a citation)."""
+search result and by a citation).
+
+Three origins, never counted in one figure: api (the automatic developer-API runs), panel (answers the team
+logged from the apps on their own phones) and browser (supervised browser sessions, asked from London). The
+summary takes one origin at a time (api unless asked); panel and browser entries come in through
+api/ai_panel.py, and the people who logged them are never named here."""
 from collections import Counter, defaultdict
 from datetime import date, datetime, timedelta, timezone
 from statistics import median
@@ -21,6 +26,7 @@ from ..dedupe import outlet_families
 from ..i18n import tr
 from ..models import AiAnswer, AiRun, AiSource, Country, Item, Outlet, User, utcnow
 from ..textnorm import detect_lang
+from .ai_panel import APPS, ASKED_IN, LOGGED, LOGGED_STATUSES, ORIGINS, TEAM_MEMBER, app_label, origin_clause
 from .common import country_or_404, outlet_categories
 
 router = APIRouter(prefix="/api")
@@ -75,33 +81,42 @@ def _public_domain(domain: str) -> str:
 def _status(s: Session, country_id: int, key: str, cfg: dict) -> str:
     if key not in audit.enabled_keys(cfg):
         return "disabled"
-    r = s.scalar(select(AiRun).where(AiRun.country_id == country_id, AiRun.provider == key)
+    r = s.scalar(select(AiRun).where(AiRun.country_id == country_id, AiRun.provider == key, origin_clause("api"))
                  .order_by(AiRun.id.desc()).limit(1))
     return r.status if r else "never_run"
 
 
 def ai_cited_4w(s: Session, u: User, outlet_id: int) -> int | None:
     """Citations of an outlet (and, for a website, of its own social accounts) in the last 4 weeks,
-    every assistant; None when the user may not see audit results (GET /api/outlets/{id})."""
+    every assistant, developer-API runs only (the team's logged entries are another origin and are never
+    added in); None when the user may not see audit results (GET /api/outlets/{id})."""
     if not can_see(u):
         return None
     start = audit.week_start_of(_today()) - timedelta(weeks=3)
     return int(s.scalar(select(func.count(AiSource.id)).join(AiAnswer, AiAnswer.id == AiSource.answer_id)
                         .join(AiRun, AiRun.id == AiAnswer.run_id)
                         .where(AiSource.role == "cited", AiAnswer.status.in_(audit.COUNTED), AiRun.week_start >= start,
+                               origin_clause("api"),
                                or_(AiSource.outlet_id == outlet_id, AiSource.family_id == outlet_id))) or 0)
 
 
 # ---------------------------------------------------------------- summary (Outlets page card)
 @router.get("/ai-audit/summary")
-def ai_summary(weeks: int = 4, provider: str = "all", lang: str = "all", country: str = "LY",
+def ai_summary(weeks: int = 4, provider: str = "all", lang: str = "all", country: str = "LY", origin: str = "api",
                s: Session = Depends(get_db), u: User = Depends(auth.current_user)):
+    """One origin at a time: api (default), panel or browser. For panel and browser the providers are apps,
+    nothing was searched (searched_per_answer and the other search figures are null, appeared_in_results too)
+    and each app, and the whole, carries asked_in counts."""
     cfg = audit.load_config()
     if not can_see(u, cfg):
         return {"visible": False}
     if weeks not in (4, 12):
         raise HTTPException(400, tr("Weeks must be 4 or 12."))
-    keys = audit.known_keys(cfg)
+    if origin not in ORIGINS:
+        raise HTTPException(400, tr("Unknown origin"))
+    logged = origin in LOGGED
+    keys = list(APPS) if logged else audit.known_keys(cfg)
+    counted = LOGGED_STATUSES if logged else audit.COUNTED
     if provider != "all" and provider not in keys:
         raise HTTPException(400, tr("Unknown provider"))
     if lang not in ("all", "ar", "en"):
@@ -111,27 +126,28 @@ def ai_summary(weeks: int = 4, provider: str = "all", lang: str = "all", country
     start, end = this_week - timedelta(weeks=weeks - 1), this_week + timedelta(days=6)
     chosen = keys if provider == "all" else [provider]
 
-    in_window = [AiRun.country_id == c.id, AiRun.week_start >= start, AiRun.week_start <= this_week,
-                 AiRun.provider.in_(chosen)] + ([AiAnswer.lang == lang] if lang != "all" else [])
+    in_window = [AiRun.country_id == c.id, origin_clause(origin), AiRun.week_start >= start,
+                 AiRun.week_start <= this_week, AiRun.provider.in_(chosen)] + ([AiAnswer.lang == lang] if lang != "all" else [])
     by_status = Counter()
     for prov, st, n in s.execute(select(AiRun.provider, AiAnswer.status, func.count(AiAnswer.id))
                                  .join(AiRun, AiRun.id == AiAnswer.run_id).where(*in_window)
                                  .group_by(AiRun.provider, AiAnswer.status)):
         by_status[(prov, st)] = n
     included = select(AiAnswer.id).join(AiRun, AiRun.id == AiAnswer.run_id).where(
-        *in_window, AiAnswer.status.in_(audit.COUNTED))
+        *in_window, AiAnswer.status.in_(counted))
     answers = {a.id: (a, prov) for a, prov in s.execute(
         select(AiAnswer, AiRun.provider).join(AiRun, AiRun.id == AiAnswer.run_id)
-        .where(*in_window, AiAnswer.status.in_(audit.COUNTED)))}
+        .where(*in_window, AiAnswer.status.in_(counted)))}
     sources = s.scalars(select(AiSource).where(AiSource.answer_id.in_(included))).all()
     fams = outlet_families(s)
     fam = lambda oid: fams.get(oid, (oid,))[0] if oid is not None else None  # noqa: E731
     cats = outlet_categories(s)
 
     providers = []
+    asked_total = Counter({k: 0 for k in ASKED_IN})
     for key in chosen:
         ans = [a for a, p in answers.values() if p == key]
-        if not ans and key not in audit.enabled_keys(cfg):
+        if not ans and (logged or key not in audit.enabled_keys(cfg)):
             continue
         mine = [x for x in sources if answers[x.answer_id][1] == key]
         cited_scope = Counter({k: 0 for k in (*SCOPES, "unknown_scope", "unregistered")})
@@ -140,6 +156,21 @@ def ai_summary(weeks: int = 4, provider: str = "all", lang: str = "all", country
             if x.role == "cited":
                 cited_scope[_scope(x.outlet_id, fam(x.outlet_id), cats)] += 1
                 cited_lang[_lang3(x.lang)] += 1
+        if logged:
+            # the links an app showed with its answer; no search figures exist for an app
+            asked = Counter({k: 0 for k in ASKED_IN})
+            for a in ans:
+                if a.asked_in in asked:
+                    asked[a.asked_in] += 1
+            asked_total.update(asked)
+            providers.append({
+                "key": key, "label": app_label(key), "answers": len(ans),
+                "no_sources": sum(a.status == "no_sources" for a in ans),
+                "no_search": None, "refused": None, "failed": None, "over_budget": None,
+                "searched_per_answer": None, "cited_per_answer": _spread([a.n_cited for a in ans]),
+                "cited_scope": dict(cited_scope), "cited_lang": dict(cited_lang), "query_lang": None,
+                "asked_in": dict(asked)})
+            continue
         query_lang = Counter({"ar": 0, "en": 0, "other": 0})
         for a in ans:
             for qtext in a.queries or []:
@@ -180,8 +211,9 @@ def ai_summary(weeks: int = 4, provider: str = "all", lang: str = "all", country
         top.append({"outlet_id": ident if kind == "o" else None, "name": o.name if o else ident if kind == "d" else str(ident),
                     "domain": o.domain if o else (ident if kind == "d" else None),
                     "scope": _scope(ident, ident, cats) if kind == "o" else "unregistered",
-                    "cited": g["cited"], "searched": g["searched"], "by_provider": dict(g["by_provider"])})
-    top.sort(key=lambda r: (-r["cited"], -r["searched"], str(r["name"]).lower()))
+                    "cited": g["cited"], "searched": None if logged else g["searched"],
+                    "by_provider": dict(g["by_provider"])})
+    top.sort(key=lambda r: (-r["cited"], -(r["searched"] or 0), str(r["name"]).lower()))
 
     # Libyan register outlets with counted articles in the last 12 weeks that no included answer cited
     since12 = utcnow() - timedelta(weeks=12)
@@ -196,14 +228,14 @@ def ai_summary(weeks: int = 4, provider: str = "all", lang: str = "all", country
     outlets = {o.id: o for o in s.scalars(select(Outlet).where(Outlet.id.in_(libyan), Outlet.active.is_(True)))} if libyan else {}
     # social: a register page or account with no website on record (the card may label or set these apart)
     never = sorted(({"outlet_id": h, "name": outlets[h].name, "domain": outlets[h].domain, "articles_12w": articles[h],
-                     "appeared_in_results": h in seen_heads, "social": fams.get(h, (h, False))[1]}
+                     "appeared_in_results": None if logged else h in seen_heads, "social": fams.get(h, (h, False))[1]}
                     for h in libyan if h in outlets),
                    key=lambda r: (-r["articles_12w"], r["name"].lower()))[:NEVER_CITED_MAX]
 
-    return {"visible": True, "weeks": weeks, "window": {"from": start.isoformat(), "to": end.isoformat()},
-            "status": {k: _status(s, c.id, k, cfg) for k in keys}, "providers": providers,
+    return {"visible": True, "origin": origin, "weeks": weeks, "window": {"from": start.isoformat(), "to": end.isoformat()},
+            "status": {} if logged else {k: _status(s, c.id, k, cfg) for k in keys}, "providers": providers,
             "coverage_scope": dict(coverage), "top_outlets": top[:TOP_OUTLETS], "never_cited": never,
-            "n_answers": len(answers)}
+            "n_answers": len(answers), "asked_in": dict(asked_total) if logged else None}
 
 
 # ---------------------------------------------------------------- admin
@@ -229,14 +261,24 @@ def _iso(d) -> str | None:
 
 
 @router.get("/admin/ai-audit/runs")
-def ai_runs(country: str = "LY", s: Session = Depends(get_db), _: User = Depends(auth.require_admin)):
+def ai_runs(country: str = "LY", origin: str = "all", s: Session = Depends(get_db), _: User = Depends(auth.require_admin)):
+    """Runs of every origin (or one: origin=api|panel|browser). With all, the latest RUNS_MAX developer-API
+    runs and the latest RUNS_MAX logged ones, so a busy panel week cannot push the API runs off the list.
+    Panel and browser runs cost nothing and are never counted against the cap."""
     cfg = audit.load_config()
+    if origin != "all" and origin not in ORIGINS:
+        raise HTTPException(400, tr("Unknown origin"))
     c = country_or_404(s, country)
     today = _today()
     week = audit.week_start_of(today)
     ytd = float(s.scalar(select(func.coalesce(func.sum(AiRun.cost_usd), 0.0)).where(
         AiRun.week_start >= date(today.year, 1, 1))) or 0.0)
-    rows = s.scalars(select(AiRun).where(AiRun.country_id == c.id).order_by(AiRun.id.desc()).limit(RUNS_MAX)).all()
+    base = select(AiRun).where(AiRun.country_id == c.id).order_by(AiRun.id.desc()).limit(RUNS_MAX)
+    if origin == "all":
+        rows = sorted([*s.scalars(base.where(origin_clause("api"))), *s.scalars(base.where(AiRun.origin.in_(LOGGED)))],
+                      key=lambda r: -r.id)
+    else:
+        rows = s.scalars(base.where(origin_clause(origin))).all()
     counts: dict = defaultdict(Counter)
     if rows:
         for rid, st, n in s.execute(select(AiAnswer.run_id, AiAnswer.status, func.count(AiAnswer.id))
@@ -246,8 +288,11 @@ def ai_runs(country: str = "LY", s: Session = Depends(get_db), _: User = Depends
     return {"cap_usd": float(cfg.get("weekly_cap_usd", 1.0)), "week_start": week.isoformat(),
             "week_cost_usd": round(audit.spent_this_week(s, week), 4), "ytd_cost_usd": round(ytd, 4),
             "runs": [{"id": r.id, "week_start": r.week_start.isoformat(), "provider": r.provider,
-                      "label": tr(audit.LABELS.get(r.provider, r.provider)), "model": r.model, "tool": r.tool,
-                      "status": r.status, "answers": sum(counts[r.id][x] for x in audit.COUNTED),
+                      "origin": r.origin or "api",
+                      "label": app_label(r.provider) if r.origin in LOGGED else tr(audit.LABELS.get(r.provider, r.provider)),
+                      "model": r.model, "tool": r.tool, "status": r.status,
+                      "answers": sum(counts[r.id][x] for x in (LOGGED_STATUSES if r.origin in LOGGED else audit.COUNTED)),
+                      "no_sources": counts[r.id]["no_sources"],
                       "asked": sum(n for st, n in counts[r.id].items() if st != "over_budget"),
                       "over_budget": counts[r.id]["over_budget"], "cost_usd": round(r.cost_usd or 0, 4),
                       "usage": r.usage or {}, "price_basis": r.price_basis or {}, "settings": r.settings or {},
@@ -264,7 +309,10 @@ def _source_json(x: AiSource, names: dict, cited: bool) -> dict:
 
 
 @router.get("/admin/ai-audit/answers")
-def ai_answers(run_id: int, s: Session = Depends(get_db), _: User = Depends(auth.require_admin)):
+def ai_answers(run_id: int, s: Session = Depends(get_db), u: User = Depends(auth.require_admin)):
+    """One run's answers with every link. A panel or browser entry has no queries and no searched links (its
+    links are the ones the app showed, as cited); whoever logged it is shown only as "A team member" (mine
+    tells the signed-in admin their own entries)."""
     run = s.get(AiRun, run_id)
     if not run:
         raise HTTPException(404, tr("Unknown run"))
@@ -279,29 +327,35 @@ def ai_answers(run_id: int, s: Session = Depends(get_db), _: User = Depends(auth
     out = []
     for a in rows:
         q = qs.get(a.question_key) or {}
-        out.append({"id": a.id, "question_key": a.question_key, "question": q.get(a.lang) or a.question_key,
+        logged = (a.origin or "api") in LOGGED
+        out.append({"id": a.id, "origin": a.origin or "api", "asked_in": a.asked_in,
+                    "author": tr(TEAM_MEMBER) if logged else None, "mine": bool(logged and a.logged_by == u.id),
+                    "question_key": a.question_key, "question": q.get(a.lang) or a.question_key,
                     "question_version": a.question_version,
                     "question_changed": bool(q) and q.get("version") != a.question_version,
                     "lang": a.lang, "status": a.status, "answer_lang": a.answer_lang, "answer_chars": a.answer_chars,
                     "queries": a.queries or [], "n_searched": a.n_searched, "n_cited": a.n_cited, "searches": a.searches,
-                    "cost_usd": round(a.cost_usd or 0, 6),
+                    "cost_usd": round(a.cost_usd or 0, 6), "created_at": _iso(a.created_at),
                     "searched": [_source_json(x, names, False) for x in srcs[a.id] if x.role == "searched"],
                     "cited": [_source_json(x, names, True) for x in srcs[a.id] if x.role == "cited"]})
     return out
 
 
 @router.get("/admin/ai-audit/unknown-domains")
-def ai_unknown_domains(weeks: int = 12, country: str = "LY", s: Session = Depends(get_db),
+def ai_unknown_domains(weeks: int = 12, country: str = "LY", origin: str = "api", s: Session = Depends(get_db),
                        _: User = Depends(auth.require_admin)):
     """Domains no register outlet matched (social platforms and open-posting sites are left out: their
-    accounts are not kept). ly marks a .ly domain, a likely Libyan outlet to add."""
+    accounts are not kept). ly marks a .ly domain, a likely Libyan outlet to add. One origin at a time
+    (api unless asked: panel or browser), so the counts never mix them."""
+    if origin not in ORIGINS:
+        raise HTTPException(400, tr("Unknown origin"))
     c = country_or_404(s, country)
     start = audit.week_start_of(_today()) - timedelta(weeks=max(1, min(weeks, 104)) - 1)
     agg: dict = defaultdict(lambda: {"cited": 0, "searched": 0})
     for dom, role, n in s.execute(select(AiSource.domain, AiSource.role, func.count(AiSource.id))
                                   .join(AiAnswer, AiAnswer.id == AiSource.answer_id).join(AiRun, AiRun.id == AiAnswer.run_id)
                                   .where(AiSource.outlet_id.is_(None), AiSource.match == "unknown", AiRun.country_id == c.id,
-                                         AiRun.week_start >= start)
+                                         AiRun.week_start >= start, origin_clause(origin))
                                   .group_by(AiSource.domain, AiSource.role)):
         agg[dom][role] += n
     out = [{"domain": d, "cited": v["cited"], "searched": v["searched"], "ly": d.endswith(".ly")} for d, v in agg.items()]

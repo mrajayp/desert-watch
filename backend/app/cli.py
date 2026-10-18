@@ -36,6 +36,11 @@
                             the weekly AI answers audit (config/ai_audit.yaml). --dry-run lists the planned answers
                             and the estimated cost and makes no call. --cap replaces the weekly cap for this run
   ai-audit-rematch          match the stored AI audit links to the outlet register again (after a register change)
+  ai-panel-import FILE [--origin browser|panel] [--by EMAIL] [--country LY] [--dry-run]
+                            log the source links of a supervised browser session (origin browser, the default:
+                            asked from London). FILE is a JSON list of {question_key, lang, app, links, no_sources};
+                            links is text or a list of URLs. Every entry is checked first: one bad entry stores none.
+                            --by keeps an account as the author (it may then delete them). Answer text is never stored
 
 theme model (app/ml):
   train-theme-model [--gold PATH] [--out PATH]  train base + small model and evaluate (LOCAL ONLY, ~1 GB RAM)
@@ -299,6 +304,21 @@ def main(argv: list[str]):
         from .ai_audit.matcher import rematch
         with SessionLocal() as s:
             print(rematch(s))
+    elif cmd == "ai-panel-import":
+        import json
+        from pathlib import Path
+        from .api.ai_panel import import_entries
+        opt = lambda k, d=None: args[args.index(k) + 1] if k in args else d  # noqa: E731
+        if not args or args[0].startswith("--"):
+            print("usage: ai-panel-import FILE [--origin browser|panel] [--by EMAIL] [--country LY] [--dry-run]")
+            return 1
+        items = json.loads(Path(args[0]).read_text(encoding="utf-8"))
+        with SessionLocal() as s:
+            res = import_entries(s, items, origin=opt("--origin", "browser"), country=opt("--country", "LY"),
+                                 by=opt("--by"), dry_run="--dry-run" in args)
+        print(json.dumps(res, ensure_ascii=False, indent=1))
+        if res.get("errors"):
+            return 1
     elif cmd == "recompute":
         from .jobs import recompute
         print(recompute(weeks=int(args[args.index("--weeks") + 1]) if "--weeks" in args else None), "cells")

@@ -2,12 +2,19 @@
 // manual run, a per-answer drill-down (the assistant's own search queries and the searched and cited
 // URLs with titles, which can carry private names, so they are shown here only) and the domains the
 // assistants used that are not in the outlet register.
+// Runs have an origin: api (the automatic developer-API run, the only one that costs money and counts
+// against the cap), panel (links team members logged from the apps on their phones, one run per app and
+// week) and browser (supervised browser sessions from London). Panel and browser entries show their
+// links and never who logged them; an admin can delete one (DELETE /api/ai-panel/entries/{id}).
 import { Fragment, useEffect, useState } from 'react'
 import { api, qs } from '../api'
-import { fmtDate, fmtNum, isAr, N_, t, tn } from '../i18n'
+import { useApp } from '../App'
+import { fmtDate, fmtNum, isAr, N_, pick, t, tn } from '../i18n'
 
 // brand names stay as they are in both languages
-const ASSISTANT = { anthropic: 'Claude', openai: 'ChatGPT' } // i18n-ok: brand names
+const ASSISTANT = { anthropic: 'Claude', openai: 'ChatGPT', perplexity: 'Perplexity' } // i18n-ok: brand names
+const ORIGIN = { api: N_('developer API'), panel: N_('team, apps'), browser: N_('browser session') }
+const ASKED_IN = { LY: N_('from {country}'), other: N_('from elsewhere'), London: N_('from London') }
 // codes from the API, shown in the interface language; unknown codes as they are
 const RUN_STATUS = {
   running: N_('running'), ok: N_('ok'), partial: N_('partial'), error: N_('error'), awaiting_key: N_('awaiting key'),
@@ -15,7 +22,7 @@ const RUN_STATUS = {
 }
 const ANSWER_STATUS = {
   ok: N_('ok'), no_search: N_('answered without searching'), refused: N_('refused'), rate_limited: N_('rate limited'),
-  error: N_('error'), over_budget: N_('over budget'),
+  error: N_('error'), over_budget: N_('over budget'), no_sources: N_('no sources shown'),
 }
 const LANG = { ar: N_('Arabic'), en: N_('English'), und: N_('language unclear') }
 const MATCH = { path: N_('matched by path'), exact: N_('matched by host'), parent: N_('matched by parent domain'), social: N_('matched social account') }
@@ -24,8 +31,11 @@ const SKIP = {
   awaiting_key: N_('waiting for an API key'), disabled: N_('switched off'), already_run: N_('already ran this week'),
   running: N_('running now'), unknown_provider: N_('not an assistant this audit knows'), no_questions: N_('no questions in the country config'),
 }
-const code = (table, k) => (table[k] ? t(table[k]) : k)
+const code = (table, k, vars) => (table[k] ? t(table[k], vars) : k)
 const who = (k) => ASSISTANT[k] || k
+const originOf = (r) => r.origin || 'api'
+// an automatic run is named by its assistant, a logged one by its app (the API sends the app's label)
+const runName = (r) => (originOf(r) === 'api' ? who(r.provider) : r.label || r.provider)
 // US dollars with 2 decimals: $0.41 in English, 0.41 دولار in Arabic (Intl's Arabic currency form
 // comes out as "US$ 0.41" mirrored inside right-to-left text)
 const usd = (x) => (x == null ? '–' : t('${amount}', { amount: fmtNum(x, { minimumFractionDigits: 2, maximumFractionDigits: 2, useGrouping: false }) }))
@@ -43,11 +53,14 @@ export default function AiAuditAdmin() {
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState(null)
   const [open, setOpen] = useState(null) // the run whose answers are shown
+  const [domOrigin, setDomOrigin] = useState('api') // unknown domains are listed for one origin at a time
+  const loadDomains = () => api('/api/admin/ai-audit/unknown-domains' + qs({ weeks: 12, origin: domOrigin })).then(setDomains).catch(() => setDomains([]))
   const load = () => {
     api('/api/admin/ai-audit/runs').then((r) => { setD(r); setErr(null) }).catch((e) => setErr(e.message))
-    api('/api/admin/ai-audit/unknown-domains' + qs({ weeks: 12 })).then(setDomains).catch(() => setDomains([]))
+    loadDomains()
   }
   useEffect(() => { load() }, [])
+  useEffect(() => { setDomains(null); loadDomains() }, [domOrigin])
   const choose = (patch) => { setOpts({ ...opts, ...patch }); setPlan(null) }
   const planRun = async () => {
     setBusy(true); setMsg(null)
@@ -74,7 +87,7 @@ export default function AiAuditAdmin() {
     <section className="card" style={{ marginTop: 16 }}>
       <div className="card-head">
         <div><h2>{t('AI answers audit')}</h2>
-          <p className="sub">{t('Each week the same questions go to Claude and ChatGPT, in Arabic and in English, with web search on. The search queries, URLs and titles below are shown on this page only, because they can carry private names. Everyone else sees counts per outlet and domain, and only once the audit is opened to the team.')}</p></div>
+          <p className="sub">{t('Each week the same questions go to Claude, ChatGPT and Perplexity through their developer services, in Arabic and in English, with web search on. Team members can also log the links the AI apps on their phones showed, and an admin can log a supervised browser session. The three origins are listed and counted apart, and only the automatic runs cost money. The search queries, URLs and titles below are shown on this page only, because they can carry private names. Everyone else sees counts per outlet and domain, and only once the audit is opened to the team.')}</p></div>
         <button className="btn small" onClick={load}>{t('Refresh')}</button>
       </div>
       {err && <p className="err">{err}</p>}
@@ -90,9 +103,10 @@ export default function AiAuditAdmin() {
 
       <div className="row" style={{ marginBottom: 10 }}>
         <select value={opts.provider || ''} onChange={(e) => choose({ provider: e.target.value || null })} aria-label={t('Assistant')}>
-          <option value="">{t('Both assistants')}</option>
+          <option value="">{t('All assistants')}</option>
           <option value="anthropic">{ASSISTANT.anthropic}</option>
           <option value="openai">{ASSISTANT.openai}</option>
+          <option value="perplexity">{ASSISTANT.perplexity}</option>
         </select>
         <label className="small row"><input type="checkbox" checked={opts.force} onChange={(e) => choose({ force: e.target.checked })} />{t('Run again even if it already ran this week')}</label>
         <button className="btn" disabled={busy} onClick={planRun}>{t('Plan this week’s run')}</button>
@@ -119,35 +133,40 @@ export default function AiAuditAdmin() {
       {!d ? (!err && <div className="empty">{t('Loading…')}</div>) : d.runs.length === 0 ? <p className="small muted">{t('No runs yet. The audit runs every Monday at 04:20 UTC, or from the button above.')}</p> : (
         <div className="scroll" style={{ maxHeight: 640 }}>
           <table className="data">
-            <thead><tr><th>{t('Week')}</th><th>{t('Assistant')}</th><th>{t('Model')}</th><th>{t('Status')}</th><th className="num">{t('Answers')}</th><th className="num">{t('Cost')}</th><th /></tr></thead>
+            <thead><tr><th>{t('Week')}</th><th>{t('Origin')}</th><th>{t('Assistant or app')}</th><th>{t('Model')}</th><th>{t('Status')}</th><th className="num">{t('Answers')}</th><th className="num">{t('Cost')}</th><th /></tr></thead>
             <tbody>{d.runs.map((r) => (
               <Fragment key={r.id}>
                 <tr>
                   <td className="small">{fmtDate(r.week_start)}{r.forced && <> <span className="pill">{t('forced')}</span></>}</td>
-                  <td>{who(r.provider)}</td>
+                  <td className="small">{code(ORIGIN, originOf(r))}</td>
+                  <td dir="auto">{runName(r)}</td>
                   <td className="mono small" dir="ltr">{r.model || '–'}</td>
                   <td className="small">{code(RUN_STATUS, r.status)}
                     {r.error && <div className="muted" dir="auto" style={{ maxWidth: 420, whiteSpace: 'pre-wrap' }}>{r.error}</div>}</td>
-                  <td className="num">{fmtNum(r.answers)}{r.over_budget > 0 && <div className="small muted">{t('{n} over budget', { n: fmtNum(r.over_budget) })}</div>}</td>
-                  <td className="num">{usd(r.cost_usd)}</td>
+                  <td className="num">{fmtNum(r.answers)}{r.over_budget > 0 && <div className="small muted">{t('{n} over budget', { n: fmtNum(r.over_budget) })}</div>}
+                    {originOf(r) !== 'api' && r.no_sources > 0 && <div className="small muted">{t('no sources shown: {n}', { n: fmtNum(r.no_sources) })}</div>}</td>
+                  <td className="num">{originOf(r) === 'api' ? usd(r.cost_usd) : <span className="muted" title={t('Not counted against the cap')}>–</span>}</td>
                   <td><button className="btn small" aria-expanded={open === r.id} onClick={() => setOpen(open === r.id ? null : r.id)}>{open === r.id ? t('Hide answers') : t('Answers')}</button></td>
                 </tr>
-                {open === r.id && <tr><td colSpan={7}><RunAnswers run={r} /></td></tr>}
+                {open === r.id && <tr><td colSpan={8}><RunAnswers run={r} /></td></tr>}
               </Fragment>))}
             </tbody>
           </table>
         </div>)}
 
       <h3>{t('Domains not in the register (12 weeks)')}</h3>
-      <p className="small muted" style={{ marginTop: 0 }}>{t('Domains the assistants searched or cited that match no outlet. They are candidates for the register: nothing is added on its own. Libyan .ly domains are marked.')}</p>
+      <p className="small muted" style={{ marginTop: 0 }}>{t('Domains in the answers, searched or cited, that match no outlet, for one origin at a time. They are candidates for the register: nothing is added on its own. Libyan .ly domains are marked.')}</p>
+      <span className="seg" role="group" aria-label={t('Origin')} style={{ marginBottom: 8, flexWrap: 'wrap' }}>
+        {Object.keys(ORIGIN).map((k) => <button key={k} aria-pressed={domOrigin === k} onClick={() => setDomOrigin(k)}>{t(ORIGIN[k])}</button>)}
+      </span>
       {!domains ? <div className="empty">{t('Loading…')}</div> : domains.length === 0 ? <p className="small muted">{t('None.')}</p> : (
         <div className="scroll" style={{ maxHeight: 320 }}>
           <table className="data">
-            <thead><tr><th>{t('Domain')}</th><th className="num">{t('Cited')}</th><th className="num" title={t('Times it appeared in search results')}>{t('Searched')}</th></tr></thead>
+            <thead><tr><th>{t('Domain')}</th><th className="num">{t('Cited')}</th>{domOrigin === 'api' && <th className="num" title={t('Times it appeared in search results')}>{t('Searched')}</th>}</tr></thead>
             <tbody>{domains.map((x) => (
               <tr key={x.domain}>
                 <td><span dir="ltr">{x.domain}</span>{x.ly && <> <span className="pill flag">{'.ly'}</span></>}</td>
-                <td className="num">{fmtNum(x.cited)}</td><td className="num">{fmtNum(x.searched)}</td>
+                <td className="num">{fmtNum(x.cited)}</td>{domOrigin === 'api' && <td className="num">{fmtNum(x.searched)}</td>}
               </tr>))}</tbody>
           </table>
         </div>)}
@@ -157,9 +176,50 @@ export default function AiAuditAdmin() {
 
 // one run's answers: the question, the assistant's own searches, and every searched and cited link
 function RunAnswers({ run }) {
+  const { meta } = useApp()
   const [rows, setRows] = useState(null)
   const [err, setErr] = useState(null)
-  useEffect(() => { api('/api/admin/ai-audit/answers' + qs({ run_id: run.id })).then(setRows).catch((e) => setErr(e.message)) }, [run.id])
+  const load = () => api('/api/admin/ai-audit/answers' + qs({ run_id: run.id })).then(setRows).catch((e) => setErr(e.message))
+  useEffect(() => { load() }, [run.id])
+  const logged = originOf(run) !== 'api'
+  const remove = async (a) => {
+    if (!window.confirm(t('Delete this entry? Its links are taken out of the audit.'))) return
+    try { await api(`/api/ai-panel/entries/${a.id}`, { method: 'DELETE' }); load() } catch (e) { setErr(e.message) }
+  }
+  if (logged) {
+    const country = pick(meta?.country, 'name')
+    const browser = originOf(run) === 'browser'
+    return (
+      <div style={{ padding: '4px 0' }}>
+        <p className="small muted" style={{ marginTop: 0 }}>{browser
+          ? t('A supervised browser session from London, in a signed-in account. Only the source links were logged. Not counted against the cap.')
+          : t('Logged by team members in the apps on their own phones. Only the source links were logged. Not counted against the cap.')}</p>
+        {err && <p className="err">{err}</p>}
+        {!rows ? (!err && <div className="empty">{t('Loading…')}</div>) : rows.length === 0 ? <p className="small muted">{t('No answers recorded for this run.')}</p> : (
+          rows.map((a) => {
+            const links = a.cited || []
+            const matched = links.filter((x) => x.outlet_id != null).length
+            return (
+              <details key={a.id} style={{ borderTop: '1px solid var(--grid)', padding: '6px 0' }}>
+                <summary className="small" style={{ cursor: 'pointer' }}>
+                  <span className="mono">{a.question_key}</span> · {code(LANG, a.lang)} · {code(ANSWER_STATUS, a.status)}
+                  {a.asked_in && <> · {code(ASKED_IN, a.asked_in, { country })}</>}
+                  {' · '}{t('{n} links, {matched} matched to an outlet', { n: fmtNum(links.length), matched: fmtNum(matched) })}
+                  {a.created_at && <> · {when(a.created_at)}</>}
+                </summary>
+                <div style={{ paddingInlineStart: 14 }}>
+                  {a.question && <p dir="auto" style={{ margin: '6px 0' }}>{a.question}{a.question_changed && <> <span className="pill">{t('the wording has changed since')}</span></>}</p>}
+                  <p className="small muted" style={{ margin: '2px 0 6px' }}>{browser ? t('Logged in a supervised browser session') : a.author || t('Logged by a team member')}
+                    {a.mine && <> <span className="pill">{t('your entry')}</span></>}</p>
+                  <div className="small"><b>{t('Links ({n})', { n: links.length })}</b></div>
+                  <Links rows={links} />
+                  <button className="btn small ghost" onClick={() => remove(a)}>{t('Delete entry')}</button>
+                </div>
+              </details>)
+          }))}
+      </div>
+    )
+  }
   const s = run.settings || {}
   // the location sent with the questions; a list when the provider refused the first one and got a second
   const place = (o) => Object.entries(o || {}).map(([k, v]) => `${k}: ${v}`).join(', ')

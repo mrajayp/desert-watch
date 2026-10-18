@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { api } from '../api'
 import { useApp } from '../App'
 import { LENS_TEXT, fmt, gapLabel } from '../charts/scales'
+import AiPanelTask from '../components/AiPanelTask'
 import ArticleRow from '../components/ArticleRow'
 import { LabelForm, NotCounted, ThemePills } from '../components/ThemeLabels'
 import { fmtDate, isAr, pick, t, tn } from '../i18n'
@@ -103,6 +104,8 @@ export default function Contribute() {
           </>)}
       </section>
       {me.role === 'admin' && <p className="small muted" style={{ marginTop: 8 }}>{t('Admins: suggestions arrive in Admin → Suggestions.')}</p>}
+
+      <AiPanelTask n="9" ro={ro} />
     </main>
   )
 }

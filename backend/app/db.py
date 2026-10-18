@@ -65,6 +65,9 @@ ADDED_COLUMNS = {
              "approved_by": "INTEGER"},
     "key_event": {"label_ar": "VARCHAR(300)"},
     "digest": {"content_md_ar": "TEXT"},
+    # the AI answers audit's three origins (api | panel | browser); existing rows are developer-API runs
+    "ai_run": {"origin": "VARCHAR(10) DEFAULT 'api'"},
+    "ai_answer": {"origin": "VARCHAR(10) DEFAULT 'api'", "logged_by": "INTEGER", "asked_in": "VARCHAR(8)"},
 }
 
 

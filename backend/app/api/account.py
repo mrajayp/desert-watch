@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .. import auth
+from . import ai_panel
 from ..db import get_db
 from ..learning import record_events
 from ..models import (ArticleAssessment, AuthSession, Comment, Event, Feedback, GapClaim, GapVote, Item, KeyEvent, Label,
@@ -146,7 +147,8 @@ def export_me(u: User = Depends(auth.current_user), s: Session = Depends(get_db)
             "suggestions": rows(Suggestion, Suggestion.user_id), "feedback": rows(Feedback, Feedback.user_id),
             "added_items": added, "key_events": rows(KeyEvent, KeyEvent.added_by),
             "outlet_labels": rows(OutletCategory, OutletCategory.set_by),
-            "events": rows(Event, Event.pseudo_id, u.pseudo_id), "labels": rows(Label, Label.pseudo_id, u.pseudo_id)}
+            "events": rows(Event, Event.pseudo_id, u.pseudo_id), "labels": rows(Label, Label.pseudo_id, u.pseudo_id),
+            "ai_answer_entries": ai_panel.entries_for_export(s, u.id)}
 
 
 FREE_TEXT = ("note", "notes", "reason", "comment", "why", "body", "text")   # suggestion payload keys holding the user's own words
@@ -156,8 +158,8 @@ FREE_TEXT = ("note", "notes", "reason", "comment", "why", "body", "text")   # su
 def delete_me(response: Response, u: User = Depends(auth.current_user), s: Session = Depends(get_db),
               dw_session: str | None = Cookie(default=None)):
     """Deletes the account and everything attributable to it. What the team still needs (votes, ratings,
-    added articles, outlet labels, key events) is kept without the person or their words; labels are kept
-    without the pseudo_id. Every session of the account ends."""
+    added articles, outlet labels, key events, logged AI answers) is kept without the person or their words;
+    labels are kept without the pseudo_id. Every session of the account ends."""
     u = s.merge(u)
     for e in s.scalars(select(Event).where(Event.pseudo_id == u.pseudo_id)):
         s.delete(e)
@@ -184,6 +186,7 @@ def delete_me(response: Response, u: User = Depends(auth.current_user), s: Sessi
         oc.set_by = None
     for ke in s.scalars(select(KeyEvent).where(KeyEvent.added_by == u.id)):
         ke.added_by = None
+    ai_panel.forget_author(s, u.id)     # AI answers the person logged from an app: kept, without them
     auth.end_session(s, dw_session, response)
     for sess in s.scalars(select(AuthSession).where(AuthSession.user_id == u.id)):
         s.delete(sess)

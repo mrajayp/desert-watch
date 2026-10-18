@@ -24,7 +24,7 @@ from contextlib import contextmanager
 from datetime import date, datetime, timedelta, timezone
 
 import yaml
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from .. import settings
@@ -36,10 +36,10 @@ from .matcher import Matcher, clean_url
 
 log = logging.getLogger("desert_watch.ai_audit")
 
-PROVIDER_KEYS = ("anthropic", "openai")
+PROVIDER_KEYS = ("anthropic", "openai", "perplexity")
 # The same English labels as providers.py, here so the API can translate them without importing the SDKs.
-LABELS = {"anthropic": N_("Claude (Anthropic)"), "openai": N_("ChatGPT (OpenAI)")}
-KEY_NAMES = {"anthropic": "ANTHROPIC_API_KEY", "openai": "OPENAI_API_KEY"}
+LABELS = {"anthropic": N_("Claude (Anthropic)"), "openai": N_("ChatGPT (OpenAI)"), "perplexity": N_("Perplexity (API)")}
+KEY_NAMES = {"anthropic": "ANTHROPIC_API_KEY", "openai": "OPENAI_API_KEY", "perplexity": "PERPLEXITY_API_KEY"}
 LANGS = ("ar", "en")
 ANSWER_STATUSES = ("ok", "no_search", "refused", "rate_limited", "error")
 COUNTED = ("ok", "no_search")          # an answer came back, with or without a search
@@ -105,7 +105,7 @@ def _scrub(text: str) -> str:
         v = os.environ.get(name)
         if v and len(v) >= 8:
             text = text.replace(v, "[key]")
-    text = re.sub(r"\b(sk|key|token)-[A-Za-z0-9_\-]{6,}", r"\1-[redacted]", text)
+    text = re.sub(r"\b(sk|key|token|pplx)-[A-Za-z0-9_\-]{6,}", r"\1-[redacted]", text)
     return re.sub(r"(?i)(bearer|x-api-key[\"']?\s*[:=])\s*\S+", r"\1 [redacted]", text)[:1000]
 
 
@@ -148,8 +148,10 @@ def _estimate(P, prices: dict, key: str, cfg: dict, provider=None) -> float:
 
 # ---------------------------------------------------------------- runs of the week
 def _week_runs(s: Session, country_id: int, week: date, key: str) -> list[AiRun]:
+    # developer-API runs only: a panel or browser run (api/ai_panel.py) never blocks or counts as one
     return s.scalars(select(AiRun).where(AiRun.country_id == country_id, AiRun.week_start == week,
-                                         AiRun.provider == key).order_by(AiRun.id.desc())).all()
+                                         AiRun.provider == key, or_(AiRun.origin == "api", AiRun.origin.is_(None)))
+                     .order_by(AiRun.id.desc())).all()
 
 
 def _blocking(runs: list[AiRun], force: bool = False) -> str | None:

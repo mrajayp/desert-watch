@@ -1,0 +1,5 @@
+{
+  "error": {
+    "message": "validation failed: max_output_tokens is required when using Anthropic models."
+  }
+}

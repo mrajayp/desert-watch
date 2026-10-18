@@ -27,7 +27,9 @@ EXTRA_HEALTH = {
     # the weekly AI answers audit, one line per assistant (ai_audit/runner.py)
     "ai_audit_anthropic": N_("AI answers audit: Claude"),
     "ai_audit_openai": N_("AI answers audit: ChatGPT"),
+    "ai_audit_perplexity": N_("AI answers audit: Perplexity"),
 }
 # Hours before a source counts as stale (48 unless listed). Search data is imported by hand each week;
 # the AI answers audit runs once a week (Monday 04:20 UTC), so it is stale after 8 days.
-STALE_HOURS = {"gtrends": 10 * 24, "ai_audit_anthropic": 8 * 24, "ai_audit_openai": 8 * 24}
+STALE_HOURS = {"gtrends": 10 * 24, "ai_audit_anthropic": 8 * 24, "ai_audit_openai": 8 * 24,
+               "ai_audit_perplexity": 8 * 24}

@@ -1,0 +1,58 @@
+{
+  "id": "resp_0b9e7d21-5c4a-4f38-9e12-6a3b8c1d2e55",
+  "created_at": 1792368100,
+  "model": "perplexity/sonar",
+  "object": "response",
+  "output": [
+    {
+      "id": "msg_2a7c9e14-8f3b-4d61-b0a2-5e9d1c4f7a38",
+      "content": [
+        {
+          "text": "ليبيا دولة في شمال أفريقيا تقع على البحر المتوسط.",
+          "type": "output_text",
+          "annotations": [],
+          "logprobs": []
+        }
+      ],
+      "role": "assistant",
+      "status": "completed",
+      "type": "message"
+    }
+  ],
+  "status": "completed",
+  "error": null,
+  "usage": {
+    "input_tokens": 410,
+    "output_tokens": 95,
+    "total_tokens": 505,
+    "cost": {
+      "currency": "USD",
+      "input_cost": 0.0001025,
+      "output_cost": 0.0002375,
+      "total_cost": 0.00034,
+      "cache_creation_cost": null,
+      "cache_read_cost": null
+    },
+    "input_tokens_details": {
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "cached_tokens": 0
+    },
+    "output_tokens_details": {
+      "reasoning_tokens": 0
+    }
+  },
+  "background": false,
+  "completed_at": 1792368103,
+  "incomplete_details": null,
+  "instructions": null,
+  "max_output_tokens": 4000,
+  "max_tool_calls": 2,
+  "store": false,
+  "tool_choice": "auto",
+  "tools": [
+    {
+      "type": "web_search"
+    }
+  ]
+}

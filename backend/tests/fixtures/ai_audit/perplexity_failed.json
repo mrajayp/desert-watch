@@ -1,0 +1,22 @@
+{
+  "id": "resp_7e3a1c58-2d9b-4a76-8f40-1b6c9e2d5a71",
+  "created_at": 1792368200,
+  "model": "perplexity/sonar",
+  "object": "response",
+  "output": [],
+  "status": "failed",
+  "error": {
+    "code": "server_error",
+    "message": "The model failed to generate a response.",
+    "type": "server_error"
+  },
+  "usage": {
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "total_tokens": 0
+  },
+  "background": false,
+  "incomplete_details": null,
+  "max_tool_calls": 2,
+  "store": false
+}

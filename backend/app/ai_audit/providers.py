@@ -1,5 +1,6 @@
-"""The two assistants the AI answers audit asks: Claude (Anthropic Messages API, web search server tool)
-and ChatGPT (OpenAI Responses API, hosted web_search tool).
+"""The three assistants the AI answers audit asks through their developer APIs: Claude (Anthropic Messages
+API, web search server tool), ChatGPT (OpenAI Responses API, hosted web_search tool) and Perplexity (Agent
+API, web_search tool; added 2026-10-18, it waits for PERPLEXITY_API_KEY).
 
 Each provider asks one question in a new conversation and returns a ProviderAnswer: the assistant's own
 search queries, every result its search tool returned ("searched"), the links its answer cites ("cited"),
@@ -7,15 +8,16 @@ token and search usage, and the location it sent. What the request carries is fi
 decisions (docs/research/ai_answers_audit_scope.md section 4):
 - a one-line system prompt with today's date (when cfg date_line is true) and nothing else; the question
   is the only user message; the assistant is never asked to cite; no domain filters;
-- at most cfg max_searches searches (Anthropic max_uses, OpenAI max_tool_calls);
+- at most cfg max_searches searches (Anthropic max_uses, OpenAI max_tool_calls, Perplexity max_steps and
+  max_tool_calls);
 - an explicit location (Tripoli, Libya). OpenAI defaults to the United States without one. Anthropic may
   reject the country code LY with a 400; the provider then resends city and timezone only and records
-  what it sent.
+  what it sent. Perplexity does the same with city and region.
 
 Privacy: answer_text stays in memory so the runner can measure the answer's language and length; it is
-never stored, and Anthropic's cited_text is never read into a Source. Errors are short and never carry a
-key or the request. Domain matching is not done here (that is the core matcher's job): URLs come back as
-the API gave them, minus OpenAI's real-time pseudo-sources.
+never stored, and neither Anthropic's cited_text nor Perplexity's result snippets are ever read into a
+Source. Errors are short and never carry a key or the request. Domain matching is not done here (that is
+the core matcher's job): URLs come back as the API gave them, minus OpenAI's real-time pseudo-sources.
 
 The facts these adapters rely on, with the pages they were read on, are in config/ai_audit_prices.yaml."""
 from __future__ import annotations
@@ -23,6 +25,7 @@ from __future__ import annotations
 import logging
 import os
 import re
+import time
 from dataclasses import dataclass, field
 from datetime import date
 
@@ -46,6 +49,17 @@ OPENAI_TIMEOUT = 120.0
 OPENAI_MAX_OUTPUT_TOKENS = 4000
 PSEUDO_SOURCES = ("oai-sports", "oai-weather", "oai-finance")   # real-time feeds listed among sources
 OPENAI_POLICY_CODES = {"bio_policy", "misalignment_policy_violation", "invalid_prompt"}
+
+PERPLEXITY_URL = "https://api.perplexity.ai/v1/agent"
+PERPLEXITY_TIMEOUT = 120.0
+PERPLEXITY_MAX_OUTPUT_TOKENS = 4000
+PERPLEXITY_MODEL = "perplexity/sonar"
+# Tier 0 allows 1 request per second in a rolling window, shared by every key of the organisation. The
+# runner already paces calls; a resend inside one ask() (location or parameter fallback) waits this long.
+PERPLEXITY_RESEND_GAP = 1.1
+PERPLEXITY_TOOL_OPTIONS = ("search_type", "max_results", "max_tokens", "max_tokens_per_page")
+# Inline markers in the answer text: "[3]" (numbered) or "[web:3]" (source-typed); n is a search result id.
+PERPLEXITY_MARKER = re.compile(r"\[(?:web:)?(\d{1,3})\]")
 
 
 @dataclass
@@ -135,8 +149,8 @@ def estimate_usd(prices: dict, provider_key: str, model: str, searches: int, inp
 
 # ---------------------------------------------------------------- shared helpers
 
-_KEYLIKE = re.compile(r"\b(?:sk-[A-Za-z0-9_\-*]{3,}|sess-[A-Za-z0-9_\-]{8,})")
-_KEY_ENV = ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "OPENAI_API_KEY")
+_KEYLIKE = re.compile(r"\b(?:sk-[A-Za-z0-9_\-*]{3,}|sess-[A-Za-z0-9_\-]{8,}|pplx-[A-Za-z0-9_\-*]{6,})")
+_KEY_ENV = ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "OPENAI_API_KEY", "PERPLEXITY_API_KEY")
 
 
 def safe_message(msg, limit: int = 300) -> str:
@@ -666,14 +680,262 @@ def parse_openai(data: dict, model: str, loc: dict) -> ProviderAnswer:
         error=safe_message(error) if error else None)
 
 
+# ---------------------------------------------------------------- Perplexity
+
+def _perplexity_location(loc: dict | None) -> dict:
+    """The web_search tool's user_location: ISO 3166-1 alpha-2 country, region and city. The tool takes
+    latitude and longitude too, but no type and no timezone, so those are never sent."""
+    loc = loc or DEFAULT_LOCATION
+    return {k: str(loc[k]) for k in ("country", "region", "city") if loc.get(k)}
+
+
+def _perplexity_error(resp) -> tuple[str | None, str]:
+    """(code, message) from an error body {"error": {"message", "code", "type"}} (ErrorInfo)."""
+    try:
+        body = resp.json()
+    except Exception:  # noqa: BLE001
+        body = None
+    err = body.get("error") if isinstance(body, dict) and isinstance(body.get("error"), dict) else {}
+    return err.get("code") or err.get("type"), safe_message(err.get("message") or f"HTTP {resp.status_code}")
+
+
+def _is_model_rejection(status: int, code, msg: str) -> bool:
+    m = msg.lower()
+    if status == 404 or code in ("model_not_found", "invalid_model"):
+        return True
+    return status == 400 and "model" in m and any(
+        w in m for w in ("not found", "not supported", "unsupported", "unknown model", "invalid model",
+                         "not available", "does not exist"))
+
+
+class PerplexityProvider:
+    """Perplexity's Agent API (POST /v1/agent) with the web_search tool and Perplexity's own model.
+
+    The request: model perplexity/sonar (presets would pick an OpenAI model), the question as input, the
+    date line as instructions, one web_search tool with user_location and the search options from the
+    price file (search type, results and search-context tokens per call), no filters, store false.
+    language_preference is not sent: the other assistants have no language setting, so the question's own
+    language steers all three alike. Searches are bounded twice: max_steps (documented: one step is one
+    model turn that may call tools, default 1 for a direct model) and max_tool_calls (the Open Responses
+    field the response echoes; the migration guide uses it). If the API rejects max_tool_calls, the
+    provider resends without it once and relies on max_steps from then on.
+
+    No SDK retries and no retry on 429: a rate-limited answer is recorded and the runner's streak rule
+    handles a run of them."""
+
+    key = "perplexity"
+    label = "Perplexity (API)"
+
+    def __init__(self, http=None, sleep=None):
+        self._http = http
+        self._sleep = sleep or time.sleep
+        self._rejected: set[str] = set()   # models the API refused
+        self._no_country = False           # LY was rejected once: send region + city from then on
+        self._no_tool_cap = False          # max_tool_calls was rejected once: rely on max_steps
+
+    def available(self) -> bool:
+        return bool(os.environ.get("PERPLEXITY_API_KEY"))
+
+    def next_model(self, cfg: dict) -> str:
+        ids = _model_ids(_provider_block(cfg, self.key), PERPLEXITY_MODEL)
+        return next((m for m in ids if m not in self._rejected), ids[-1])
+
+    def _post(self, body: dict, key: str):
+        headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
+        if self._http is not None:
+            return self._http.post(PERPLEXITY_URL, json=body, headers=headers, timeout=PERPLEXITY_TIMEOUT)
+        import httpx
+        with httpx.Client(timeout=PERPLEXITY_TIMEOUT) as http:
+            return http.post(PERPLEXITY_URL, json=body, headers=headers)
+
+    def _body(self, model: str, question: str, loc: dict, request: dict, max_searches: int, line) -> dict:
+        tool = {"type": "web_search", "user_location": loc}
+        options = request.get("web_search") or {}
+        for k in PERPLEXITY_TOOL_OPTIONS:
+            if options.get(k) is not None:
+                tool[k] = options[k]
+        body = {
+            "model": model,
+            "input": question,
+            "tools": [tool],
+            "max_steps": max_searches,
+            "max_output_tokens": int(request.get("max_output_tokens") or PERPLEXITY_MAX_OUTPUT_TOKENS),
+            "store": False,
+        }
+        if not self._no_tool_cap:
+            body["max_tool_calls"] = max_searches
+        if line:
+            body["instructions"] = line
+        return body
+
+    def ask(self, question: str, lang: str, *, today: date, cfg: dict) -> ProviderAnswer:
+        block = _provider_block(cfg, self.key)
+        models = _model_ids(block, PERPLEXITY_MODEL)
+        request = block.get("request") or {}
+        full_loc = _perplexity_location((cfg or {}).get("location"))
+        key = os.environ.get("PERPLEXITY_API_KEY")
+        if not key:
+            return ProviderAnswer(status="error", model=models[0], error="PERPLEXITY_API_KEY is not set")
+        max_searches = _max_searches(cfg)
+        max_out = int(request.get("max_output_tokens") or PERPLEXITY_MAX_OUTPUT_TOKENS)
+        budget = (cfg or {}).get("answer_budget_usd")   # the runner's cap minus spent
+        line = _date_line(cfg, today)
+        last_error, loc = None, full_loc
+        tried = 0
+        for model in models:
+            if model in self._rejected:
+                continue
+            if budget is not None and not _model_fits(cfg, block, self.key, model, max_searches, max_out, budget):
+                # a fallback model can cost more than the one the runner estimated: never start it past the cap
+                return ProviderAnswer(status="error", model=model, location_sent=loc,
+                                      error=f"{model} not tried: one answer could pass the weekly cap")
+            resends = 0
+            while True:
+                loc = {k: v for k, v in full_loc.items() if k != "country"} if self._no_country else full_loc
+                if tried:
+                    self._sleep(PERPLEXITY_RESEND_GAP)
+                tried += 1
+                try:
+                    resp = self._post(self._body(model, question, loc, request, max_searches, line), key)
+                except Exception as e:  # noqa: BLE001 - timeouts and connection errors become a status
+                    err = f"{type(e).__name__}: {safe_message(e)}"
+                    log.warning("ai audit: Perplexity call failed (%s)", err)
+                    # a timeout may still be billed: the runner charges the pre-call estimate
+                    return ProviderAnswer(status="error", model=model, location_sent=loc, error=safe_message(err),
+                                          cost_unknown=True)
+                if resp.status_code == 200:
+                    try:
+                        data = resp.json()
+                    except Exception:  # noqa: BLE001
+                        return ProviderAnswer(status="error", model=model, location_sent=loc,
+                                              error="response was not JSON", cost_unknown=True)
+                    return parse_perplexity(data if isinstance(data, dict) else {}, model, loc)
+                code, msg = _perplexity_error(resp)
+                low = msg.lower()
+                if resp.status_code == 400 and resends < 2:
+                    if "max_tool_calls" in low and not self._no_tool_cap:
+                        log.warning("ai audit: Perplexity rejected max_tool_calls; resending with max_steps only (%s)", msg)
+                        self._no_tool_cap = True
+                        resends += 1
+                        continue
+                    if ("user_location" in low or "country" in low) and "country" in loc and not self._no_country:
+                        log.warning("ai audit: Perplexity rejected the location; resending without the country (%s)", msg)
+                        self._no_country = True
+                        resends += 1
+                        continue
+                if _is_model_rejection(resp.status_code, code, msg):
+                    log.warning("ai audit: Perplexity model %s refused (%s); trying the next model", model, msg)
+                    self._rejected.add(model)
+                    last_error = f"{model}: {msg}"
+                    break
+                # 401 also covers an account out of credits (Perplexity FAQ)
+                status = "rate_limited" if resp.status_code == 429 else "error"
+                err = f"HTTP {resp.status_code}" + (f" {code}" if code else "") + f": {msg}"
+                log.warning("ai audit: Perplexity call failed (%s)", err)
+                return ProviderAnswer(status=status, model=model, location_sent=loc, error=safe_message(err))
+        return ProviderAnswer(status="error", model=models[-1], location_sent=loc,
+                              error=safe_message(last_error or "no listed model accepted the request"))
+
+
+def parse_perplexity(data: dict, model: str, loc: dict) -> ProviderAnswer:
+    """One answer from an Agent API response (stream false): output items search_results {queries,
+    results [{id, url, title, snippet, date, last_updated, source}]} and message {content [output_text
+    {text, annotations}]}, usage {input_tokens, output_tokens, tool_calls_details.search_web.invocation}.
+
+    searched: every result of every search_results item, deduplicated by URL in order of first appearance.
+    Result snippets are page text and are never read.
+
+    cited: Perplexity has no citation field that is always filled. The docs say inline markers ("[n]" or
+    "[web:n]", n a result id) appear only when the prompt asks for them, and the audit never asks (the
+    owner's rule for every assistant), and the documented examples carry an empty annotations array. So
+    cited holds url_citation annotations when the response has any, else the results the answer's
+    markers point to, else nothing. An empty list means no marker was found, not that no source was used:
+    Perplexity's cited count is reported only where markers are present. A marker whose id points at two
+    different URLs (ids repeated across searches) is skipped rather than guessed."""
+    col = _Collector()
+    queries, texts, annotations = [], [], []
+    by_id: dict[str, set[str]] = {}
+    search_items = 0
+    for item in data.get("output") or []:
+        if not isinstance(item, dict):
+            continue
+        t = item.get("type")
+        if t == "search_results":
+            search_items += 1
+            queries.extend(item.get("queries") or [])
+            for r in item.get("results") or []:
+                if not isinstance(r, dict):
+                    continue
+                url = str(r.get("url") or "").strip()
+                if not url.lower().startswith(("http://", "https://")):
+                    continue
+                # date is the publication date; last_updated stands in when it is missing (Anthropic's
+                # page_age is a last-updated date too)
+                col.search_result(url, r.get("title"), r.get("date") or r.get("last_updated"))
+                if r.get("id") is not None:
+                    by_id.setdefault(str(r["id"]), set()).add(url)
+        elif t == "message":
+            for c in item.get("content") or []:
+                if not isinstance(c, dict) or c.get("type") != "output_text":
+                    continue
+                texts.append(c.get("text") or "")
+                for a in c.get("annotations") or []:
+                    if isinstance(a, dict) and a.get("type") == "url_citation" and a.get("url"):
+                        annotations.append((str(a["url"]), a.get("title")))
+    text = "\n".join(t for t in texts if t)
+    if annotations:
+        for url, title in annotations:
+            col.citation(url, title)
+    else:
+        for m in PERPLEXITY_MARKER.finditer(text):
+            urls = by_id.get(m.group(1)) or set()
+            if len(urls) == 1:
+                col.citation(next(iter(urls)))
+    # The runner prices usage from the price file, as for the other assistants (usage.cost is not read).
+    # input_tokens is priced at the full input rate even where part of it was a cache read: an over-estimate.
+    usage = data.get("usage") or {}
+    web = (usage.get("tool_calls_details") or {}).get("search_web") or {}
+    # billed invocations; each search_results item is one call when usage does not say
+    searches = int(web["invocation"] or 0) if isinstance(web, dict) and web.get("invocation") is not None else search_items
+    err = data.get("error") if isinstance(data.get("error"), dict) else {}
+    code = err.get("code") or err.get("type")
+    reason = (data.get("incomplete_details") or {}).get("reason") if isinstance(data.get("incomplete_details"), dict) else None
+    state = data.get("status")
+    error, unknown = None, False
+    # Perplexity documents no refusal signal: no refusal content part (output_text is the only content
+    # type) and no list of error codes. The one mapped is the Open Responses incomplete_details reason
+    # content_filter, a field its responses carry. A model that declines in plain words is an answer.
+    if reason == "content_filter" or code == "content_filter":
+        status, error = "refused", "model declined (content_filter)"
+    elif code and "rate_limit" in str(code):
+        status, error = "rate_limited", f"{code}: {err.get('message') or ''}"
+    elif state in ("failed", "cancelled") or err:
+        status, error = "error", f"{code or state}: {err.get('message') or ''}"
+    elif state in ("queued", "in_progress"):
+        # a request without background mode should come back finished; its usage may be partial
+        status, error, unknown = "error", f"response not finished ({state})", True
+    elif not (search_items or searches):
+        status = "no_search"
+    else:
+        status = "ok"
+    if reason == "max_output_tokens":
+        log.info("ai audit: %s answer reached max_output_tokens", model)
+    return ProviderAnswer(
+        status=status, model=str(data.get("model") or model), queries=_unique(queries),
+        searched=list(col.searched.values()), cited=list(col.cited.values()), answer_text=text,
+        input_tokens=int(usage.get("input_tokens") or 0), output_tokens=int(usage.get("output_tokens") or 0),
+        searches=searches, location_sent=dict(loc), error=safe_message(error) if error else None,
+        cost_unknown=unknown)
+
+
 # ---------------------------------------------------------------- registry
 
-PROVIDERS = (AnthropicProvider, OpenAIProvider)
+PROVIDERS = (AnthropicProvider, OpenAIProvider, PerplexityProvider)
 
 
 def get_providers(cfg: dict) -> dict:
     """The providers switched on in config/ai_audit.yaml (providers: {anthropic: {enabled: true}, ...}),
-    in a fixed order: Claude, then ChatGPT. A provider that is not listed is off."""
+    in a fixed order: Claude, ChatGPT, then Perplexity. A provider that is not listed is off."""
     block = (cfg or {}).get("providers") or {}
     out = {}
     for cls in PROVIDERS:

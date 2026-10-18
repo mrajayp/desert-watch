@@ -498,7 +498,7 @@ class AiRun(Base):
     __tablename__ = "ai_run"
     id: Mapped[int] = mapped_column(primary_key=True)
     country_id: Mapped[int] = mapped_column(ForeignKey("country.id"), index=True)
-    provider: Mapped[str] = mapped_column(String(20), index=True)     # anthropic | openai
+    provider: Mapped[str] = mapped_column(String(20), index=True)     # anthropic | openai | ..., or an app key
     model: Mapped[str | None] = mapped_column(String(80))
     tool: Mapped[str | None] = mapped_column(String(60))
     week_start: Mapped[date] = mapped_column(Date, index=True)        # Monday, UTC
@@ -512,6 +512,11 @@ class AiRun(Base):
     price_basis: Mapped[dict] = mapped_column(JSON, default=dict)     # as_of + the rates used
     error: Mapped[str | None] = mapped_column(Text)
     forced: Mapped[bool] = mapped_column(Boolean, default=False)
+    # api: the automatic developer-API run. panel: answers journalists logged from the apps on their own phones.
+    # browser: a supervised session an admin ran in a signed-in browser. The three are never counted together.
+    # A panel or browser run is one row per (country, week, app, origin), made with the week's first entry
+    # (api/ai_panel.py): provider is the app key, model is null and cost stays 0, so it never touches the cap.
+    origin: Mapped[str] = mapped_column(String(10), default="api", server_default="api")
 
 
 class AiAnswer(Base):
@@ -524,7 +529,7 @@ class AiAnswer(Base):
     question_version: Mapped[str] = mapped_column(String(8))          # first 8 hex of sha1(en + ar)
     lang: Mapped[str] = mapped_column(String(2))                      # the language asked: ar | en
     # ok | no_search | refused | rate_limited | error | over_budget
-    status: Mapped[str] = mapped_column(String(14))
+    status: Mapped[str] = mapped_column(String(14))                   # panel and browser entries: ok | no_sources
     answer_lang: Mapped[str | None] = mapped_column(String(4))
     answer_chars: Mapped[int | None] = mapped_column(Integer)
     queries: Mapped[list] = mapped_column(JSON, default=list)         # admin-only
@@ -533,6 +538,11 @@ class AiAnswer(Base):
     searches: Mapped[int] = mapped_column(Integer, default=0)
     cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    origin: Mapped[str] = mapped_column(String(10), default="api", server_default="api")   # api | panel | browser
+    # panel and browser entries: who logged it (their right to delete it; never shown to anyone else, set to
+    # NULL when the account is deleted) and where it was asked from: LY | other | London (a browser session)
+    logged_by: Mapped[int | None] = mapped_column(Integer)
+    asked_in: Mapped[str | None] = mapped_column(String(8))
 
 
 class AiSource(Base):
