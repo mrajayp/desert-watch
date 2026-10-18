@@ -125,9 +125,11 @@ class Rules:
         n = normalise(text)
         return any(f" {t} " in n for t in self.country_terms) or bool(self.places_in(text))
 
-    def places_in(self, text: str) -> list[int]:
-        """Region ids the place rules give this text, with the country anchor for ambiguous aliases."""
-        return tag_places(text, self.places, self.country_terms)
+    def places_in(self, text: str, outlet_id: int | None = None) -> list[int]:
+        """Region ids the place rules give this text, with the country anchor for ambiguous aliases.
+        A story from an outlet of the country is anchored by its outlet (its local news names the
+        district alone); the guard itself (mentions_country) passes no outlet."""
+        return tag_places(text, self.places, self.country_terms, anchored=outlet_id in self.local_outlets)
 
 
 def rule_for(t: Theme) -> ThemeRule:
@@ -293,7 +295,7 @@ def tag_item(s: Session, item: Item, rules: Rules, forced_theme_ids: tuple[int, 
     for tid in set(forced_theme_ids) - set(hits) - existing:
         s.add(ItemTheme(item_id=item.id, theme_id=tid, method="query", active=False, theme_version=versions.get(tid, 1),
                         evidence=evidence("query", [], query)))
-    region_ids = set(rules.places_in(text))
+    region_ids = set(rules.places_in(text, item.outlet_id))
     existing_r = {ir.region_id for ir in s.scalars(select(ItemRegion).where(ItemRegion.item_id == item.id))}
     for rid in region_ids - existing_r:
         s.add(ItemRegion(item_id=item.id, region_id=rid))

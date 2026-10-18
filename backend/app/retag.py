@@ -92,7 +92,7 @@ def plan_item(item: Item, rules: Rules, links: dict, regions: dict | None = None
         if (lk.method, lk.active, lk.theme_version, lk.evidence) != new:
             p.links[r.theme_id] = (*new, False)
     if regions is not None:
-        placed = set(rules.places_in(" ".join(x for x in (item.title, snippet) if x)))
+        placed = set(rules.places_in(" ".join(x for x in (item.title, snippet) if x), item.outlet_id))
         for rid in placed - regions.keys():
             p.regions[rid] = (True, True)
         for rid, ir in regions.items():

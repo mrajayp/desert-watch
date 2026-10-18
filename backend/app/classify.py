@@ -301,13 +301,15 @@ def classify_themes(text: str, rules: list[ThemeRule]) -> dict[int, list[str]]:
     return out
 
 
-def tag_places(text: str, rules: list[PlaceRule], country_terms: list[str] | tuple = ()) -> list[int]:
+def tag_places(text: str, rules: list[PlaceRule], country_terms: list[str] | tuple = (), anchored: bool = False) -> list[int]:
     """Region ids whose aliases appear in the text. An ambiguous alias (PlaceRule) counts only when
     the text is anchored: it also names the country (`country_terms`, normalised variants of the
-    name and demonyms) or an unambiguous alias of any region. A negated alias never counts."""
+    name and demonyms) or an unambiguous alias of any region, or the caller says the story is
+    anchored already (it comes from an outlet of the country, whose "الزاوية" is the city).
+    A negated alias never counts."""
     n = normalise(text)
     toks = set(n.split())
     plain = {r.region_id for r in rules if r.plain_hit(n, toks)}
-    anchored = bool(plain) or any(f" {t} " in n for t in country_terms)
+    anchored = anchored or bool(plain) or any(f" {t} " in n for t in country_terms)
     weak = {r.region_id for r in rules if r.region_id not in plain and r.weak_hit(n, toks)} if anchored else set()
     return [r.region_id for r in rules if r.region_id in plain or r.region_id in weak]

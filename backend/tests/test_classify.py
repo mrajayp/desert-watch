@@ -63,6 +63,8 @@ def test_place_homonyms_need_an_anchor_and_negatives_veto():
     assert tag_places("خمس سنوات على الحرب في ليبيا", p, libya) == []
     # the definite form is the city, but only beside the country or an unambiguous place
     assert tag_places("اشتباكات في الخمس", p, libya) == []
+    assert tag_places("اشتباكات في الخمس", p, libya, anchored=True) == [20]   # a Libyan outlet's own local story
+    assert tag_places("خمس نصائح لتوفير الكهرباء", p, libya, anchored=True) == []   # the bare word stays "five"
     assert tag_places("اشتباكات في الخمس غرب ليبيا", p, libya) == [20]
     assert tag_places("الطريق بين الخمس وزليتن مغلق", p, libya) == [20]
     assert tag_places("حريق بمصنع بالخمس والشركة الليبية تحقق", p, libya) == [20]   # a demonym anchors too

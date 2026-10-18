@@ -175,6 +175,22 @@ def test_place_homonyms_do_not_pass_the_guard_or_tag_districts(db):
     assert db.get(ItemRegion, (it.id, reg["murqub"])) is None
 
 
+def test_a_libyan_outlets_own_story_places_an_ambiguous_district(db):
+    """A Libyan outlet writing "الزاوية" means the city, so its local news keeps the district tag
+    without naming Libya; the same words from an unknown outlet place nothing."""
+    cid = db.scalar(select(Country.id))
+    rules = load_rules(db, cid)
+    reg = {r.slug: r.id for r in db.scalars(select(Region))}
+    local = next(o for o in db.scalars(select(Outlet)) if o.id in rules.local_outlets)
+    assert reg["zawiya"] in rules.places_in("اشتباكات مسلحة في الزاوية", local.id)
+    assert reg["zawiya"] not in rules.places_in("اشتباكات مسلحة في الزاوية")
+    assert reg["zawiya"] not in rules.places_in("زاوية جديدة في الصراع", local.id)       # "a new angle": bare word, not the city
+    it, _ = store_article(db, cid, rules, url=f"https://{local.domain}/zawiya-1", title="اشتباكات مسلحة في الزاوية",
+                          published_at=DAY, source_key="rss")
+    db.commit()
+    assert it.relevant and db.get(ItemRegion, (it.id, reg["zawiya"])) is not None
+
+
 def test_alert_region_tag_follows_the_text_after_retag(db):
     """A district alert's tag (method 'query') is a prior: active only while the text places the story there."""
     from app.retag import retag_all
