@@ -405,9 +405,9 @@ def service_health(s: Session = Depends(get_db), _: User = Depends(auth.require_
             "last_recompute": last("recompute")}
 
 
-@router.get("/admin/methods")
+@router.get("/admin/methods", include_in_schema=False)
 def methods(_: User = Depends(auth.require_admin)):
-    """'How the numbers work': plain-language description of every calculation, for admins."""
-    from pathlib import Path
-    from ..i18n import content_path
-    return {"markdown": content_path(Path(__file__).resolve().parent.parent / "content", "how_the_numbers_work").read_text(encoding="utf-8")}
+    """'How the numbers work' moved to GET /api/content/how_the_numbers_work (api/content.py). This
+    redirect stays for one release so an open tab of the old Admin page still gets the text."""
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse("/api/content/how_the_numbers_work", status_code=307)

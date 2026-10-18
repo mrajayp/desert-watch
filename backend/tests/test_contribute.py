@@ -49,10 +49,10 @@ def test_contribute_gaps_start_at_the_red_threshold_and_carry_the_scored_count(c
     assert gaps[0]["articles"] == 7 and gaps[0]["articles_all"] == 12 and gaps[0]["coverage"] == 12
 
 
-def test_methods_page_is_admin_only(client, users):
-    login(client, "j@example.org", "journo-password-1")
-    assert client.get("/api/admin/methods").status_code == 403
-    client.post("/api/auth/logout")
+def test_old_methods_route_redirects_to_the_content_route(client, users):
+    # /api/admin/methods became GET /api/content/how_the_numbers_work; the old path redirects for one release
     login(client, "admin@example.org", "admin-password-1")
+    r = client.get("/api/admin/methods", follow_redirects=False)
+    assert r.status_code == 307 and r.headers["location"] == "/api/content/how_the_numbers_work"
     md = client.get("/api/admin/methods").json()["markdown"]
     assert md.startswith("# How the numbers work") and "gap score" in md

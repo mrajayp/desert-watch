@@ -55,6 +55,22 @@ def test_invite_flow(client, users):
                                                         "display_name": "N"}).status_code == 400
 
 
+def test_help_is_for_every_account_and_the_method_notes_for_admins(client, users):
+    assert client.get("/api/content/help").status_code == 401
+    login(client, "j@example.org", "journo-password-1")
+    md = client.get("/api/content/help").json()["markdown"]
+    # the glossary anchors the interface links to (/help#lens, /help#not-judged, /help#gap ...)
+    assert md.startswith("# Help") and all(f"{{#{a}}}" in md for a in ("gap", "need-signal", "lens", "not-judged", "week", "warning", "updates"))
+    ar = client.get("/api/content/help", headers={"X-Lang": "ar"}).json()["markdown"]
+    assert ar.startswith("# المساعدة") and "{#not-judged}" in ar
+    assert client.get("/api/content/how_the_numbers_work").status_code == 403
+    assert client.get("/api/content/nothing").status_code == 404
+    assert client.get("/api/content/..%2Fsettings").status_code == 404
+    client.post("/api/auth/logout")
+    login(client, "admin@example.org", "admin-password-1")
+    assert client.get("/api/content/how_the_numbers_work").json()["markdown"].startswith("# How the numbers work")
+
+
 def test_journalist_cannot_admin(client, users):
     login(client, "j@example.org", "journo-password-1")
     assert client.post("/api/admin/invites", json={"email": "x@example.org"}).status_code == 403

@@ -6,7 +6,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import i18n, settings
-from .api import account, admin, ai_audit, ai_panel, contribute, gaps, items, labelling, outlets, signals, social
+from .api import account, admin, ai_audit, ai_panel, content, contribute, gaps, items, labelling, outlets, signals, social
 from .db import SessionLocal, init_db
 from .seed import seed_all
 
@@ -45,7 +45,7 @@ async def interface_language(request: Request, call_next):
 
 
 for r in (account.router, gaps.router, items.router, social.router, outlets.router, admin.router, contribute.router,
-          labelling.router, signals.router, ai_audit.router, ai_panel.router):
+          labelling.router, signals.router, ai_audit.router, ai_panel.router, content.router):
     app.include_router(r)
 
 
