@@ -11,8 +11,9 @@ the answer cited, matched read-only to the outlet register (matcher.py), the ans
 The answer text itself only passes through memory and is never stored.
 
 Unscored: the audit writes only ai_run, ai_answer and ai_source (plus source_run for the health strip),
-never Item, ItemTheme or CellWeek. Provider calls run outside the scheduler's job lock; each answer's rows
-are written in a short transaction that waits for the lock (see _writing)."""
+never Item, ItemTheme or CellWeek. Provider calls run outside the job lock (joblock.py, shared with the
+scheduler and the CLI); each answer's rows are written in a short transaction that waits for the lock
+by polling (see _writing)."""
 import hashlib
 import logging
 import os
@@ -111,8 +112,10 @@ def _scrub(text: str) -> str:
 
 @contextmanager
 def _writing(lock):
-    """A short write. Waits for the scheduler's job lock (a full recompute can hold it a while), then
-    writes anyway after WRITE_WAIT_SECONDS: SQLite's busy timeout still keeps the writes apart."""
+    """A short write. Waits for the job lock (a full recompute can hold it a while), then writes anyway
+    after WRITE_WAIT_SECONDS: SQLite's busy timeout still keeps the writes apart. `lock` is a
+    joblock.JobLock (the cross-process lock, polled every quarter second until the timeout) or any
+    object with acquire(timeout=)/release(); None writes without waiting (tests)."""
     got = False
     if lock is not None:
         got = lock.acquire(timeout=WRITE_WAIT_SECONDS)

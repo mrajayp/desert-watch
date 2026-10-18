@@ -3,6 +3,7 @@ scoring (M2, X3), the nightly check, register-model (m4), the review queue's gen
 story pickup by outlet family (X5), the network write transactions (m3) and seeded feeds (m5)."""
 import sqlite3
 from datetime import datetime, timedelta
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -196,6 +197,67 @@ def test_hourly_skips_the_model_child_when_nothing_is_new(db, tmp_path, monkeypa
     db.commit()
     jobs.hourly()
     assert calls == [("theme_model", "classify-items", "--days", "3", "--catch-up", str(jobs.CATCH_UP))]
+
+
+# ---------------------------------------------------------------- C-R1.8: the recomputes as children
+def test_scheduled_recomputes_run_as_children_under_the_parents_lock(db, monkeypatch):
+    import subprocess
+    from app import joblock, jobs
+    calls = []
+
+    def fake_run(cmd, **kw):
+        calls.append((cmd, kw["env"]))
+        return subprocess.CompletedProcess(cmd, 0, stdout='recompute: 3 new duplicates\n{"cells": 41, "changed": 41}\n', stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    monkeypatch.delenv(joblock.HELD_ENV, raising=False)
+    assert jobs.recompute_child(weeks=12) == {"cells": 41, "changed": 41}
+    cmd, env = calls[0]
+    assert cmd[1:] == ["-m", "app.cli", "recompute", "--weeks", "12"] and env[joblock.HELD_ENV] == "1"
+    assert jobs.recompute_child()["cells"] == 41 and calls[1][0][1:] == ["-m", "app.cli", "recompute"]
+    runs = db.scalars(select(SourceRun).where(SourceRun.source_key == "recompute")).all()
+    assert [(r.status, r.rows) for r in runs] == [("ok", 41), ("ok", 41)]
+    assert jobs.JOBS["recompute"] is jobs.recompute_child
+    src = (Path(__file__).resolve().parents[1] / "app" / "jobs.py").read_text(encoding="utf-8")
+    assert 'sched.add_job(recompute_child, "cron", minute=45' in src and 'sched.add_job(recompute_child, "cron", hour=3, minute=30' in src
+    assert 'sched.add_job(recompute, "cron"' not in src
+
+
+def test_the_recompute_command_prints_json_for_the_parent_and_seeds_nothing(db, monkeypatch, capsys):
+    import json
+    from app import cli, jobs
+    monkeypatch.setattr(jobs, "recompute", lambda weeks=None: 5 if weeks == 12 else 9)
+    seeded = []
+    monkeypatch.setattr("app.seed.seed_all", lambda s: seeded.append(1))
+    assert cli.main(["recompute", "--weeks", "12"]) == 0
+    assert json.loads(capsys.readouterr().out.strip().splitlines()[-1]) == {"cells": 5, "changed": 5}
+    assert seeded == []                                  # hourly children never seed (deleted key events would return)
+    assert cli.main(["recompute"]) == 0 and json.loads(capsys.readouterr().out.strip().splitlines()[-1])["cells"] == 9
+
+
+def test_nightly_checkpoints_the_wal_and_marks_recurring_when_the_module_exists(db, monkeypatch):
+    import sys
+    import types
+    from app import jobs
+    from app.db import engine
+    monkeypatch.setattr(jobs, "collect", lambda key, **kw: None)
+    monkeypatch.setattr(jobs, "_resolve_links", lambda *a, **k: None)
+    monkeypatch.setattr(jobs, "model_job", lambda *a: None)
+    monkeypatch.setattr(jobs.learning, "purge_old_events", lambda s: 0)
+    monkeypatch.setattr(jobs.learning, "purge_account_leftovers", lambda s: {})
+    monkeypatch.setitem(sys.modules, "app.recurring", None)   # not written yet: the night goes on without it
+    _store(db, "https://ex.ly/wal", "Militia clashes in Tripoli, Libya")
+    wal = Path(engine.url.database + "-wal")
+    jobs.nightly()
+    assert not wal.exists() or wal.stat().st_size == 0        # wal_checkpoint(TRUNCATE) ran
+    marked = []
+    fake = types.ModuleType("app.recurring")
+    # the real one (app/recurring.py) returns its counts as a dict; nightly logs them and returns "marked"
+    fake.mark_recurring = lambda s: marked.append(1) or {"headlines": 1, "marked": 3, "cleared": 0, "articles": 3, "days": 30,
+                                                          "since": "2026-09-18"}
+    monkeypatch.setitem(sys.modules, "app.recurring", fake)
+    jobs.nightly()
+    assert marked == [1]
 
 
 def test_nightly_check_skips_before_loading_the_bundle(db, tmp_path, monkeypatch):

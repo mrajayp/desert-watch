@@ -5,7 +5,8 @@
   invite EMAIL [ROLE]       prints an invite path
   collect KEY [--weeks N] [--themes a,b]  run one collector (rss, gnews, gdelt, gdelt_timeline, wikipedia, ...)
   backfill [WEEKS]          gnews + wikipedia + gdelt history + rss
-  recompute                 duplicates + scores + network + labels
+  recompute [--weeks N]     duplicates + scores + network + labels (the scheduler runs it as a child process)
+  backup                    the nightly off-site database backup now (VACUUM INTO, quick_check, gzip, upload, prune)
   dedupe                    mark every duplicate copy of a story (full pass)
   mark-recurring [--days 30] [--min 3] [--since YYYY-MM-DD]  flag recurring posts (daily rates, weather...) so no count
                             treats them as stories: the same headline minus digits and weekdays, 3+ times within 30 days at
@@ -53,13 +54,21 @@ theme model (app/ml):
   train-small-model         refit the label-trained part of the live model; promote it if it does no worse
   model-status              live model, registry, labels per theme
   activate-model VERSION [--let-nightly] | rollback-model  live by hand; nightly versions then stay inactive
+
+Commands that write data take the job lock (app/joblock.py) first, the same lock the scheduler's jobs
+hold. If a scheduled job is running, the command says so and waits for it to finish.
+Deploy steps, backups and restores: docs/DEPLOY.md.
 """
 import getpass
 import os
 import sys
 
-from .db import SessionLocal, init_db
-from .seed import seed_all
+# Quick or read-only commands that do not wait for a running job. A --dry-run never waits either.
+# ai-audit is not held for its whole run (the assistant calls take minutes): each answer's write takes
+# the lock on its own, as the scheduled run does.
+NO_LOCK = {"init", "create-admin", "invite", "review", "alerts-list", "model-status", "train-theme-model", "ai-audit"}
+# Commands the scheduler runs as children: no seed_all, which would bring back deleted key events every hour.
+NO_SEED = {"recompute"}
 
 
 def _ai_audit_plan_text(res: list[dict]) -> str:
@@ -90,13 +99,24 @@ def main(argv: list[str]):
         print(__doc__)
         return 1
     cmd, args = argv[0], argv[1:]
+    if cmd in NO_LOCK or "--dry-run" in args:
+        return _run(cmd, args)
+    from .joblock import held
+    with held(note=lambda m: print(m, file=sys.stderr, flush=True), job=f"cli {cmd}"):
+        return _run(cmd, args)
+
+
+def _run(cmd: str, args: list[str]):
+    from .db import SessionLocal, init_db
+    from .seed import seed_all
     init_db()
     from .ml.commands import COMMANDS as ML_COMMANDS, run as run_ml
     if cmd in ML_COMMANDS:  # no seed_all: the scheduler runs these hourly, and seeding brings back deleted key events
         return run_ml(cmd, args)
-    with SessionLocal() as s:
-        seed_all(s)
-        s.commit()
+    if cmd not in NO_SEED:
+        with SessionLocal() as s:
+            seed_all(s)
+            s.commit()
     if cmd == "init":
         print("ok")
     elif cmd == "create-admin":
@@ -304,10 +324,11 @@ def main(argv: list[str]):
     elif cmd == "ai-audit":
         import json
         from .ai_audit.runner import run_all
+        from .joblock import JobLock
         opt = lambda k, d=None: args[args.index(k) + 1] if k in args else d  # noqa: E731
         res = run_all(provider=opt("--provider"), force="--force" in args, dry_run="--dry-run" in args,
                       limit=int(opt("--limit")) if opt("--limit") else None,
-                      cap=float(opt("--cap")) if opt("--cap") else None)
+                      cap=float(opt("--cap")) if opt("--cap") else None, lock=JobLock("cli ai-audit"))
         if "--dry-run" in args and "--json" not in args:
             print(_ai_audit_plan_text(res))
         else:
@@ -332,8 +353,13 @@ def main(argv: list[str]):
         if res.get("errors"):
             return 1
     elif cmd == "recompute":
+        import json
         from .jobs import recompute
-        print(recompute(weeks=int(args[args.index("--weeks") + 1]) if "--weeks" in args else None), "cells")
+        n = recompute(weeks=int(args[args.index("--weeks") + 1]) if "--weeks" in args else None)
+        print(json.dumps({"cells": n, "changed": n}))   # the last line is what the scheduler's child_job reads
+    elif cmd == "backup":
+        from .jobs import backup
+        print(backup())
     else:
         print(__doc__)
         return 1

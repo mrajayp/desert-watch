@@ -26,7 +26,7 @@ def test_md_schedule_matches_jobs():
                                    "articles, then scores and the network for the last 12 weeks.")
     jobs = (ROOT / "backend" / "app" / "jobs.py").read_text(encoding="utf-8")
     six_hourly = jobs.split("def six_hourly")[1].split("@_locked")[0]
-    assert 'collect("fb_url")' in six_hourly
+    assert '("fb_url")' in six_hourly   # collected under its own lock since the per-collector lock (C-R1.2)
     assert "Facebook link readings" in _schedule("Every six hours")
     for prefix in ("Hourly", "Every six hours", "Nightly"):
         assert sum(line.startswith(f"- {prefix}:") for line in MD.splitlines()) == 1

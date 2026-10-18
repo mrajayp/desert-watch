@@ -78,24 +78,28 @@ def _retag_theme(theme_id: int, recompute: bool = True, classify: bool | None = 
     links count only when the rules confirm them, user and model links are kept (retag.py).
     With a model live the model then re-scores every article (classify_all, as after Activate), before
     the recompute. classify defaults to recompute: sync-themes retags several themes without either
-    and is told to run classify-items --all once at the end."""
+    and is told to run classify-items --all once at the end. The whole thing runs under the job lock
+    (joblock.py): a save from Admin waits for a running job instead of writing beside it, and the
+    scheduler's next job waits for the retag."""
+    from .. import joblock
     from ..jobs import JOBS
     from ..ml.registry import active
     from ..retag import retag_theme
     from ..scoring import compute_all
     classify = recompute if classify is None else classify
-    with SessionLocal() as s:
-        retag_theme(s, theme_id)
-        live = active(s)
-    if live and classify:
-        JOBS["classify_all"]()
-    elif live:
-        print(f"A theme model is live ({live.version}): run classify-items --all after the themes are retagged.")
-    if recompute:
+    with joblock.held(job="retag_theme"):
         with SessionLocal() as s:
-            compute_all(s)
-            from ..gtrends import flag_missing_weeks
-            flag_missing_weeks(s)  # search lens: the same rule as jobs.recompute
+            retag_theme(s, theme_id)
+            live = active(s)
+        if live and classify:
+            JOBS["classify_all"]()
+        elif live:
+            print(f"A theme model is live ({live.version}): run classify-items --all after the themes are retagged.")
+        if recompute:
+            with SessionLocal() as s:
+                compute_all(s)
+                from ..gtrends import flag_missing_weeks
+                flag_missing_weeks(s)  # search lens: the same rule as jobs.recompute
 
 
 @router.post("/themes")
