@@ -1,0 +1,39 @@
+# AI answers audit: which outlets AI assistants search and cite when asked about Libya.
+# Scope and method: docs/research/ai_answers_audit_scope.md. Owner decision 2026-10-18:
+# "Claude plus ChatGPT, $1 cap, build it".
+#
+# Once a week (Monday 04:20 UTC, jobs.start_scheduler) every question in config/countries/<country>.yaml
+# (ai_audit.questions) is asked in Arabic and in English, one new conversation each, ordered question,
+# then language, then assistant, so a cap stop leaves balanced coverage. Results are never scored:
+# the audit writes only its own tables (ai_run, ai_answer, ai_source).
+# Prices: config/ai_audit_prices.yaml (dated, with official sources).
+
+# One cap for ALL assistants together, in US dollars. Before each answer the runner checks
+# spent this week + estimate <= cap; if not, the remaining answers are recorded as over_budget.
+weekly_cap_usd: 1.0
+
+# Searches per question (Anthropic max_uses, OpenAI max_tool_calls).
+max_searches: 2
+
+# Who sees results: admins | team (every signed-in user). Admins only for the first 4 weeks.
+visible_to: admins
+
+# A one-line system prompt giving today's date, and nothing else (the "this week" questions need it).
+date_line: true
+
+# Sent as the user's location. OpenAI defaults to the United States when it is left out. If Anthropic
+# rejects country LY, the provider resends city and timezone only and records what it sent.
+location: {city: Tripoli, region: Tripoli, country: LY, timezone: Africa/Tripoli}
+
+# The assistants. ANTHROPIC_API_KEY is the digest's key; OPENAI_API_KEY is set by the owner as a
+# Fly secret (until then the run records awaiting_key). Never put a key in this file.
+providers:
+  anthropic: {enabled: true}
+  openai: {enabled: true}
+
+# Size of one answer for the pre-call budget check (the real cost is computed from the usage). Kept on
+# the high side so the last answer before the cap cannot overshoot it: output is the max_tokens /
+# max_output_tokens ceiling of one request (4000) and input about twice a typical two-search answer.
+# At the listed rates one answer is estimated at USD 0.028 (USD 0.02 of it the two searches), so all 32
+# answers of a week (USD 0.90) still fit under the cap; a typical week costs about USD 0.75.
+estimate: {input_tokens: 60000, output_tokens: 4000}

@@ -103,5 +103,19 @@
   "ReliefWeb reports": "تقارير ReliefWeb",
   "Facebook link engagement": "التفاعل مع الروابط على فيسبوك",
   "Starts when an admin sets its access key ({keys}).": "يبدأ عندما يضيف أحد المشرفين مفتاح الوصول الخاص به ({keys}).",
-  "Starts when an admin sets its access key.": "يبدأ عندما يضيف أحد المشرفين مفتاح الوصول الخاص به."
+  "Starts when an admin sets its access key.": "يبدأ عندما يضيف أحد المشرفين مفتاح الوصول الخاص به.",
+  "Claude (Anthropic)": "Claude (من شركة Anthropic)",
+  "ChatGPT (OpenAI)": "ChatGPT (من شركة OpenAI)",
+  "AI answers audit: Claude": "تدقيق إجابات الذكاء الاصطناعي: Claude",
+  "AI answers audit: ChatGPT": "تدقيق إجابات الذكاء الاصطناعي: ChatGPT",
+  "Set the {key} secret to start this audit.": "يبدأ هذا التدقيق عند ضبط المفتاح السري {key}.",
+  "Switched off in config/ai_audit.yaml.": "معطّل في config/ai_audit.yaml.",
+  "The weekly cap was reached: the remaining answers were not asked.": "بلغ التدقيق الحد الأسبوعي للإنفاق، لذلك لم تُطرح الأسئلة المتبقية.",
+  "Stopped after {n} refused or rate-limited answers in a row.": "توقّف بعد {n} إجابات متتالية مرفوضة أو مقيّدة بحدّ عدد الطلبات.",
+  "Stopped after {n} minutes.": "توقّف بعد {n} دقيقة.",
+  "Weeks must be 4 or 12.": "يجب أن يكون عدد الأسابيع 4 أو 12.",
+  "Unknown provider": "مزوّد غير معروف",
+  "Unknown language": "لغة غير معروفة",
+  "Unknown run": "تشغيل غير معروف",
+  "The AI answers audit is already running.": "تدقيق إجابات الذكاء الاصطناعي قيد التشغيل بالفعل."
 }

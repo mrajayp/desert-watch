@@ -490,6 +490,71 @@ class WikiReading(Base):
     views: Mapped[int] = mapped_column(Integer)
 
 
+# ---------------------------------------------------------------- AI answers audit (ai_audit/)
+class AiRun(Base):
+    """One assistant's weekly run of the AI answers audit (docs/research/ai_answers_audit_scope.md).
+    One per (country, week_start, provider) unless an admin forces another. Never scored: the audit
+    writes only ai_run, ai_answer and ai_source."""
+    __tablename__ = "ai_run"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    country_id: Mapped[int] = mapped_column(ForeignKey("country.id"), index=True)
+    provider: Mapped[str] = mapped_column(String(20), index=True)     # anthropic | openai
+    model: Mapped[str | None] = mapped_column(String(80))
+    tool: Mapped[str | None] = mapped_column(String(60))
+    week_start: Mapped[date] = mapped_column(Date, index=True)        # Monday, UTC
+    started_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime)
+    # running | ok | partial | error | awaiting_key | over_budget | disabled
+    status: Mapped[str] = mapped_column(String(14), default="running")
+    settings: Mapped[dict] = mapped_column(JSON, default=dict)        # location_sent, max_searches, fly_region, date_line
+    usage: Mapped[dict] = mapped_column(JSON, default=dict)           # input_tokens, output_tokens, searches
+    cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
+    price_basis: Mapped[dict] = mapped_column(JSON, default=dict)     # as_of + the rates used
+    error: Mapped[str | None] = mapped_column(Text)
+    forced: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
+class AiAnswer(Base):
+    """One question asked in one language in a run. The answer text is never stored: only its
+    language and length, worked out in memory. The assistant's own queries are admin-only."""
+    __tablename__ = "ai_answer"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    run_id: Mapped[int] = mapped_column(ForeignKey("ai_run.id", ondelete="CASCADE"), index=True)
+    question_key: Mapped[str] = mapped_column(String(40))
+    question_version: Mapped[str] = mapped_column(String(8))          # first 8 hex of sha1(en + ar)
+    lang: Mapped[str] = mapped_column(String(2))                      # the language asked: ar | en
+    # ok | no_search | refused | rate_limited | error | over_budget
+    status: Mapped[str] = mapped_column(String(14))
+    answer_lang: Mapped[str | None] = mapped_column(String(4))
+    answer_chars: Mapped[int | None] = mapped_column(Integer)
+    queries: Mapped[list] = mapped_column(JSON, default=list)         # admin-only
+    n_searched: Mapped[int] = mapped_column(Integer, default=0)
+    n_cited: Mapped[int] = mapped_column(Integer, default=0)
+    searches: Mapped[int] = mapped_column(Integer, default=0)
+    cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class AiSource(Base):
+    """A link an answer's search returned (searched) or the answer cited (cited), matched read-only
+    to the outlet register (ai_audit/matcher.py). url and title are admin-only; an unlisted social
+    account is kept as its platform only."""
+    __tablename__ = "ai_source"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    answer_id: Mapped[int] = mapped_column(ForeignKey("ai_answer.id", ondelete="CASCADE"), index=True)
+    role: Mapped[str] = mapped_column(String(8))                      # searched | cited
+    rank: Mapped[int] = mapped_column(Integer, default=0)
+    url: Mapped[str] = mapped_column(String(2000))                    # admin-only
+    domain: Mapped[str] = mapped_column(String(200), index=True)
+    outlet_id: Mapped[int | None] = mapped_column(ForeignKey("outlet.id", ondelete="SET NULL"), index=True)
+    family_id: Mapped[int | None] = mapped_column(Integer)
+    match: Mapped[str] = mapped_column(String(8))                     # path | exact | parent | social | unknown
+    title: Mapped[str | None] = mapped_column(Text)                   # admin-only
+    lang: Mapped[str] = mapped_column(String(4), default="und")       # ar | en | und
+    date: Mapped[str | None] = mapped_column(String(40))
+    citations: Mapped[int] = mapped_column(Integer, default=0)
+
+
 class NodeMetric(Base):
     __tablename__ = "node_metric"
     __table_args__ = (UniqueConstraint("country_id", "node", "graph"),)

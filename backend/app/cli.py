@@ -32,6 +32,10 @@
   resolve-links [--days N] [--limit N] [--minutes N]  find the outlet's own link for Google News items
                             (default 14 days, at most 400 site searches and 15 minutes. Probes and post dates come on top of the searches)
   reach-snapshot [--limit N]            Tranco web rank for Libyan outlets + the 100 busiest (outlet.external['reach'])
+  ai-audit [--provider anthropic|openai] [--force] [--dry-run [--json]] [--limit N] [--cap USD]
+                            the weekly AI answers audit (config/ai_audit.yaml). --dry-run lists the planned answers
+                            and the estimated cost and makes no call. --cap replaces the weekly cap for this run
+  ai-audit-rematch          match the stored AI audit links to the outlet register again (after a register change)
 
 theme model (app/ml):
   train-theme-model [--gold PATH] [--out PATH]  train base + small model and evaluate (LOCAL ONLY, ~1 GB RAM)
@@ -48,6 +52,29 @@ import sys
 
 from .db import SessionLocal, init_db
 from .seed import seed_all
+
+
+def _ai_audit_plan_text(res: list[dict]) -> str:
+    """`ai-audit --dry-run` as a few readable lines: the plan per assistant, the estimate against the cap,
+    what an assistant still waiting for its key would add, and why anything was skipped. No call is made."""
+    from collections import Counter
+    lines = []
+    if not res:
+        return "No country has AI audit questions (ai_audit.questions in config/countries/*.yaml)."
+    for r in res:
+        per = Counter(p["provider"] for p in r.get("planned", []))
+        lines.append(f"{r.get('country')}  week from {r.get('week_start')}  cap USD {r.get('cap_usd', 0):.2f}"
+                     f"  spent this week USD {r.get('spent_this_week_usd', 0):.4f}")
+        for k, n in per.items():
+            lines.append(f"  {k}: {n} answers planned")
+        lines.append(f"  estimated USD {r.get('estimated_usd', 0):.4f} for {len(r.get('planned', []))} answers;"
+                     f" {r.get('fits_cap', 0)} fit under the cap")
+        for w in r.get("awaiting_key") or []:
+            lines.append(f"  {w['provider']}: waiting for its API key; once set it adds {w['answers']} answers,"
+                         f" about USD {w['estimated_usd']:.4f}")
+        for sk in r.get("skipped") or []:
+            lines.append(f"  skipped {sk.get('provider') or '(all)'}: {sk.get('reason')}")
+    return "\n".join(lines)
 
 
 def main(argv: list[str]):
@@ -257,6 +284,21 @@ def main(argv: list[str]):
         with SessionLocal() as s:
             print(json.dumps(snapshot(s, limit=int(args[args.index("--limit") + 1]) if "--limit" in args else None),
                              ensure_ascii=False, indent=1))
+    elif cmd == "ai-audit":
+        import json
+        from .ai_audit.runner import run_all
+        opt = lambda k, d=None: args[args.index(k) + 1] if k in args else d  # noqa: E731
+        res = run_all(provider=opt("--provider"), force="--force" in args, dry_run="--dry-run" in args,
+                      limit=int(opt("--limit")) if opt("--limit") else None,
+                      cap=float(opt("--cap")) if opt("--cap") else None)
+        if "--dry-run" in args and "--json" not in args:
+            print(_ai_audit_plan_text(res))
+        else:
+            print(json.dumps(res, ensure_ascii=False, indent=1))
+    elif cmd == "ai-audit-rematch":
+        from .ai_audit.matcher import rematch
+        with SessionLocal() as s:
+            print(rematch(s))
     elif cmd == "recompute":
         from .jobs import recompute
         print(recompute(weeks=int(args[args.index("--weeks") + 1]) if "--weeks" in args else None), "cells")

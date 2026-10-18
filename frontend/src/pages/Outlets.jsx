@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import BlindSpots from '../components/BlindSpots'
+import AiAnswers from '../components/AiAnswers'
 import { api, qs } from '../api'
 import { useApp } from '../App'
 import Filters from '../components/Filters'
@@ -95,6 +96,7 @@ export default function Outlets() {
             onSelectDistrict={(rid) => openGap(meta.themes[0].id, rid, { from: 'cluster_table' })} />}
         </section>
         <BlindSpots />
+        <AiAnswers />
         <section className="card" style={{ marginTop: 16 }}>
           <div className="card-head">
             <h2>{t('Outlets ({n})', { n: shown.length })}</h2>

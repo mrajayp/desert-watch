@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { api } from '../api'
 import { useApp } from '../App'
 import SourceHealth from '../components/SourceHealth'
+import AiAuditAdmin from '../components/AiAuditAdmin'
 import { fmtDate, fmtNum, isAr, pick, t, tn } from '../i18n'
 import { Markdown } from './Digest'
 
@@ -136,6 +137,7 @@ export default function Admin() {
       <UsersCard />
       <FeedbackCard />
       <AlertsCard />
+      <AiAuditAdmin />
       <section className="card" style={{ marginTop: 16 }}>
         <div className="card-head"><h2>{t('Data sources')}</h2>
           <div className="row">{['rss', 'youtube', 'galerts', 'gnews', 'gnews_social', 'digest', 'gdelt', 'gdelt_timeline', 'wikipedia', 'recompute'].map((j) => <button key={j} className="btn small" onClick={() => run(j)}>{t('Run {job}', { job: j })}</button>)}</div></div>

@@ -5,5 +5,6 @@ import trends from './trends.js'
 import articles from './articles.js'
 import outlets from './outlets.js'
 import contribute from './contribute.js'
+import ai from './ai.js'
 
-export default { ...contribute, ...outlets, ...articles, ...trends, ...overview, ...shell }
+export default { ...ai, ...contribute, ...outlets, ...articles, ...trends, ...overview, ...shell }

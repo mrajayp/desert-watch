@@ -1,0 +1,120 @@
+# AI answers audit: prices and request settings per provider (docs/research/ai_answers_audit_scope.md).
+#
+# Read by app.ai_audit.providers.load_prices(). estimate_usd() turns usage into dollars; the runner checks
+# spent_this_week + estimate <= weekly_cap_usd (config/ai_audit.yaml) before every answer and stores the
+# rates it used as price_basis on each run. Each provider block is also merged into the cfg that
+# Provider.ask() receives, so `models` (in preference order) and `request` steer the calls.
+#
+# Every figure below was read on the official pages listed under `sources` on 2026-10-18. Re-read them
+# before changing a model or a rate, and change `as_of` with them.
+#
+# What was verified, 2026-10-18
+#
+# Anthropic (Messages API, web search server tool)
+# - Tool type "web_search_20250305" (basic). Newer versions (web_search_20260209, web_search_20260318) add
+#   dynamic filtering, which runs search from code execution and drops results before they reach the model,
+#   so "searched" would stop meaning "consulted". The basic version defaults allowed_callers to ["direct"]
+#   and is ZDR-eligible.
+# - Tool fields used: name "web_search", max_uses, user_location {type: "approximate", city, region,
+#   country (ISO 3166-1 alpha-2), timezone (IANA)}. At least one location field is required. "The API rejects
+#   unsupported country codes with a 400 error" and no list is published, so LY may be refused: the
+#   provider then resends city + timezone only and records what it sent. No allowed/blocked domains.
+# - Response blocks: server_tool_use {name: web_search, input.query}; web_search_tool_result whose content is
+#   a list of web_search_result {url, title, page_age, encrypted_content}, or on error a single
+#   web_search_tool_result_error {error_code}. Error codes: too_many_requests, invalid_tool_input,
+#   max_uses_exceeded, query_too_long, request_too_large, unavailable (all inside an HTTP 200). A request
+#   for an organisation that switched web search off fails with a 400 invalid_request_error instead.
+# - Citations are always on: text blocks carry citations of type web_search_result_location {url, title,
+#   encrypted_index, cited_text (up to 150 characters)}. cited_text is never stored.
+# - usage.server_tool_use.web_search_requests counts billed searches. $10 per 1,000 searches plus tokens;
+#   "If an error occurs during web search, the web search will not be billed."
+# - stop_reason "pause_turn": send the paused assistant content back unchanged, with the same tools, and cap
+#   the continuations. stop_reason "refusal" comes with stop_details.category.
+# - Model support: the web search and tool reference pages list no models and point to the Models API field
+#   capabilities.server_tools.web_search.supported. The provider reads it (GET /v1/models/{id}) and falls
+#   back to the next model below if it is false or the API rejects the tool.
+# - Claude Haiku 5.5: adaptive thinking is on by default and "counts toward max_tokens", so max_tokens is
+#   4000, not the ~1200 a no-thinking answer needs (the extra 2800 tokens cost at most $0.0014 per answer).
+#   Its prompting guide recommends giving today's date when the model has a search tool. Prices step up for
+#   prompts over 100,000 tokens (each request priced on its own).
+#
+# OpenAI (Responses API, hosted web_search tool)
+# - POST https://api.openai.com/v1/responses with tools [{type: "web_search", user_location {type:
+#   "approximate", country, city, region, timezone}, search_context_size low | medium (default) | high}].
+#   API reference: user_location "If omitted or null, defaults to the United States", so it is always sent.
+# - include ["web_search_call.action.sources"] adds action.sources [{type: "url", url}] to each search call:
+#   "the complete list of URLs the model consulted". The guide says real-time feeds appear there labelled
+#   oai-sports, oai-weather or oai-finance; the provider drops them.
+# - max_tool_calls: "The maximum number of total calls to built-in tools" in a response, across all built-in
+#   tool calls, so open_page / find_in_page actions use the same budget as searches.
+# - store "Defaults to true when omitted" (kept at least 30 days): the provider sends store false.
+# - Output items: web_search_call {id, status: in_progress | searching | completed | failed | incomplete,
+#   action: search {queries, query (deprecated), sources} | open_page {url} | find_in_page {pattern, url}};
+#   message {content: output_text {text, annotations: url_citation {url, title, start_index, end_index}} or
+#   refusal {refusal}}. The guide: a search action "will usually (but not always)" include its queries.
+# - response.status completed | failed | in_progress | cancelled | queued | incomplete;
+#   incomplete_details.reason max_output_tokens | max_messages | content_filter | steered; error.code includes
+#   server_error, rate_limit_exceeded, invalid_prompt, bio_policy. usage {input_tokens, output_tokens
+#   (reasoning included, see output_tokens_details.reasoning_tokens)}.
+# - Pricing: web search $10.00 / 1k calls + search content tokens billed at model rates. The guide says
+#   "Search actions incur a tool call cost"; open_page and find_in_page are not described as billed, and the
+#   provider counts search actions only.
+# - Model: gpt-6-luna, the cheapest current flagship model ($0.10 / $0.50 per MTok; prompts over 272K input
+#   tokens pay 2x input and 1.5x output); its model page lists Web search as supported in the Responses API
+#   and reasoning.effort none | low | medium (default) | high | xhigh | max. gpt-5-nano ($0.05 / $0.40) is
+#   cheaper but deprecated and its page lists no tools. The web search guide says web search does not
+#   support gpt-5 at minimal reasoning; effort is set to low here (the scope: "low or above"), which also
+#   keeps calls well inside the 120 s timeout.
+
+as_of: "2026-10-18"   # quoted so it stays a string in price_basis JSON
+currency: USD
+
+anthropic:
+  label: Claude (Anthropic)
+  tool: web_search_20250305
+  search_per_1000_usd: 10.0
+  models:                       # preference order; the provider reports the model it used
+    - id: claude-haiku-5-5
+      input_per_mtok: 0.10
+      output_per_mtok: 0.50
+      long_context:             # whole request priced higher when its prompt is over 100,000 tokens
+        above_input_tokens: 100000
+        input_per_mtok: 0.50
+        output_per_mtok: 2.50
+    - id: claude-haiku-4-5      # fallback only if Haiku 5.5 refuses the tool; about 2.3x the cost per answer
+      input_per_mtok: 1.00
+      output_per_mtok: 5.00
+  request:
+    max_tokens: 4000            # thinking + answer (Haiku 5.5 thinks by default; effort left at its default)
+  sources:
+    - https://platform.claude.com/docs/en/agents-and-tools/tool-use/web-search-tool
+    - https://platform.claude.com/docs/en/agents-and-tools/tool-use/server-tools
+    - https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-reference
+    - https://platform.claude.com/docs/en/about-claude/pricing
+    - https://platform.claude.com/docs/en/models/overview
+    - https://platform.claude.com/docs/en/models/haiku-5-5/overview
+    - https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-haiku-5-5
+    - https://platform.claude.com/docs/en/build-with-claude/handling-stop-reasons
+
+openai:
+  label: ChatGPT (OpenAI)
+  tool: web_search
+  search_per_1000_usd: 10.0
+  models:
+    - id: gpt-6-luna
+      input_per_mtok: 0.10
+      output_per_mtok: 0.50
+      long_context:
+        above_input_tokens: 272000
+        input_per_mtok: 0.20
+        output_per_mtok: 0.75
+  request:
+    reasoning_effort: low
+    search_context_size: medium   # the API default, sent explicitly so the run settings show it
+    max_output_tokens: 4000       # visible output plus reasoning tokens
+  sources:
+    - https://developers.openai.com/api/docs/guides/tools-web-search
+    - https://developers.openai.com/api/reference/resources/responses/methods/create
+    - https://developers.openai.com/api/docs/pricing
+    - https://developers.openai.com/api/docs/models/gpt-6-luna
+    - https://developers.openai.com/api/docs/models/gpt-5-nano

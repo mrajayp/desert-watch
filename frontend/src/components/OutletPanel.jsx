@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { api, qs } from '../api'
 import { useApp } from '../App'
 import { DIMENSIONS } from '../charts/scales'
-import { fmtDate, fmtNum, isAr, t } from '../i18n'
+import { fmtDate, fmtNum, isAr, t, tn } from '../i18n'
 
 const N_ = (s) => s // marks English for the catalogue; translated with t() when shown
 import Comments from './Comments'
@@ -47,9 +47,11 @@ export default function OutletPanel({ id }) {
   const [form, setForm] = useState({ dimension: 'alignment', value: '', confidence: 'reported', evidence_url: '', note: '' })
   const [base, setBase] = useState('')
   const [msg, setMsg] = useState(null)
+  const [aiCited, setAiCited] = useState(null) // AI answers audit: null when the user may not see it
   const load = async () => {
     const all = await api('/api/outlets' + qs({ days: 365 }))
     setO(all.find((x) => x.id === id))
+    api(`/api/outlets/${id}`).then((r) => setAiCited(typeof r?.ai_cited_4w === 'number' ? r.ai_cited_4w : null)).catch(() => setAiCited(null))
     setHist(await api(`/api/outlets/${id}/history`))
     setItems(await api('/api/items' + qs({ outlet_id: id, days: 84, limit: 20 })))
   }
@@ -98,6 +100,7 @@ export default function OutletPanel({ id }) {
           <div className="muted">{t('Social Media scraped data, {from} to {to}', { from: o.external.social_media_scrape.period?.from ?? '', to: o.external.social_media_scrape.period?.to ?? '' })}</div></td></tr>}
         {o.quality && <tr><th>{t('Quality (team)')}</th><td>{t('accuracy {accuracy} · depth {depth} · local voices {local}', { accuracy: num(o.quality.accuracy), depth: num(o.quality.depth), local: num(o.quality.local_sourcing) })} <span className="muted">(n={o.quality.n})</span></td></tr>}
       </tbody></table>
+      {typeof aiCited === 'number' && <p className="small" style={{ margin: '8px 0 0' }}>{tn(aiCited, 'Cited by AI assistants: {n} time in 4 weeks', 'Cited by AI assistants: {n} times in 4 weeks')}</p>}
       <OutletReach id={id} />
 
       {me.role === 'admin' && (

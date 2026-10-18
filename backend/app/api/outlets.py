@@ -362,3 +362,18 @@ def outlet_reach_api(oid: int, s: Session = Depends(get_db), _: User = Depends(a
     if not o:
         raise HTTPException(404, tr("Unknown outlet"))
     return outlet_reach(s, o)
+
+
+# ---------------------------------------------------------------- one outlet
+# Registered last: /outlets/taxonomy and /outlets/blind-spots above must match before {oid}.
+@router.get("/outlets/{oid}")
+def outlet_detail(oid: int, s: Session = Depends(get_db), u: User = Depends(auth.current_user)):
+    """One outlet. ai_cited_4w: citations by AI assistants in the last 4 weeks (the AI answers audit), or
+    None when the user may not see audit results yet."""
+    from .ai_audit import ai_cited_4w
+    o = s.get(Outlet, oid)
+    if not o:
+        raise HTTPException(404, tr("Unknown outlet"))
+    return {"id": o.id, "name": o.name, "domain": o.domain, "languages": o.languages, "base_city": o.base_city,
+            "base_country": o.base_country, "monitored": o.monitored is not False, "active": o.active,
+            "categories": outlet_categories(s, [o.id]).get(o.id, {}), "ai_cited_4w": ai_cited_4w(s, u, o.id)}

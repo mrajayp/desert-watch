@@ -1,0 +1,48 @@
+{
+  "id": "msg_01AuditPause2",
+  "type": "message",
+  "role": "assistant",
+  "model": "claude-haiku-5-5",
+  "content": [
+    {
+      "type": "server_tool_use",
+      "id": "srvtoolu_01Pause2",
+      "name": "web_search",
+      "input": {"query": "Libya municipal elections 2026"}
+    },
+    {
+      "type": "web_search_tool_result",
+      "tool_use_id": "srvtoolu_01Pause2",
+      "content": [
+        {
+          "type": "web_search_result",
+          "url": "https://www.alwasat.ly/news/libya/elections",
+          "title": "Municipal elections",
+          "encrypted_content": "EqgfCioIARgBIiQpause2",
+          "page_age": null
+        }
+      ]
+    },
+    {
+      "type": "text",
+      "text": "Municipal elections were held in several towns.",
+      "citations": [
+        {
+          "type": "web_search_result_location",
+          "url": "https://hnec.ly/news/1",
+          "title": "HNEC announcement",
+          "encrypted_index": "Eo8pause",
+          "cited_text": "CITED-TEXT-MUST-NOT-BE-KEPT"
+        }
+      ]
+    }
+  ],
+  "stop_reason": "end_turn",
+  "stop_sequence": null,
+  "stop_details": null,
+  "usage": {
+    "input_tokens": 15000,
+    "output_tokens": 600,
+    "server_tool_use": {"web_search_requests": 1, "web_fetch_requests": 0}
+  }
+}

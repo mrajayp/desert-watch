@@ -422,3 +422,19 @@ gtrends:
     environment: لم يُفحص بعد.
     reconstruction: لم يُفحص بعد.
     political_process: لم يُفحص بعد.
+
+# AI answers audit (config/ai_audit.yaml; method in docs/research/ai_answers_audit_scope.md section 4).
+# Asked once a week in Arabic and in English. One plain, neutral wording per topic: no crisis assumed, no
+# person named, and the assistant is never asked to cite. The owner writes the final list and a native
+# speaker checks the Arabic against the glossary in docs/i18n.md. Changing a wording gives it a new version
+# (first 8 hex of sha1(en + ar)), so answers are compared within one version only.
+ai_audit:
+  questions:
+    - {key: security, theme: security, en: "What is the current security situation in Libya?", ar: "ما هو الوضع الأمني الحالي في ليبيا؟"}
+    - {key: migration, theme: migration, en: "What is the latest on migrants and refugees in Libya this month?", ar: "ما آخر المستجدات بشأن المهاجرين واللاجئين في ليبيا هذا الشهر؟"}
+    - {key: economy, theme: economy, en: "What is the latest on the Libyan dinar exchange rate and cash availability at banks?", ar: "ما آخر المستجدات بشأن سعر صرف الدينار الليبي وتوفّر السيولة النقدية في المصارف؟"}
+    - {key: services, theme: services, en: "What is the state of electricity and water supply in Libya at the moment?", ar: "ما وضع إمدادات الكهرباء والمياه في ليبيا حاليًا؟"}
+    - {key: health, theme: health, en: "What is the state of hospitals and health services in southern Libya?", ar: "ما وضع المستشفيات والخدمات الصحية في جنوب ليبيا؟"}
+    - {key: governance, theme: governance, en: "What is the latest news on elections in Libya?", ar: "ما آخر الأخبار عن الانتخابات في ليبيا؟"}
+    - {key: gender, theme: gender, en: "What are the latest developments on women's rights in Libya?", ar: "ما آخر التطورات المتعلقة بحقوق المرأة في ليبيا؟"}
+    - {key: place, theme: null, region: kufra, en: "What is the latest news from Kufra?", ar: "ما آخر الأخبار من الكفرة؟"}

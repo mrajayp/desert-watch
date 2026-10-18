@@ -1,0 +1,18 @@
+{
+  "id": "msg_01AuditRefusal",
+  "type": "message",
+  "role": "assistant",
+  "model": "claude-haiku-5-5",
+  "content": [],
+  "stop_reason": "refusal",
+  "stop_sequence": null,
+  "stop_details": {
+    "type": "refusal",
+    "category": "general_harms",
+    "explanation": null
+  },
+  "usage": {
+    "input_tokens": 905,
+    "output_tokens": 0
+  }
+}

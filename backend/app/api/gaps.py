@@ -119,6 +119,8 @@ def sources_health(s: Session = Depends(get_db), _: User = Depends(auth.current_
         last_ok = s.scalar(select(SourceRun).where(SourceRun.source_key == key, SourceRun.status.in_(("ok", "partial")))
                            .order_by(SourceRun.id.desc()).limit(1))
         stale = last_ok is None or (utcnow() - (last_ok.finished_at or last_ok.started_at)).total_seconds() > STALE_HOURS.get(key, 48) * 3600
+        if last is None and key.startswith("ai_audit_"):
+            stale = False   # a weekly job that has not had its first Monday yet is not a fault
         error = (last.error or "")[:300] if last else None
         if last and last.status == "awaiting_key" and lang() == "ar":   # the stored hint is English; keep its key names
             keys = ", ".join(k for k in re.findall(r"\b[A-Z][A-Z0-9_]{3,}\b", error) if "_" in k)

@@ -210,6 +210,15 @@ def weekly_digest(force: bool = False):
         return run.status
 
 
+def ai_audit(provider: str | None = None, force: bool = False):
+    """The weekly AI answers audit (ai_audit/runner.py). Not wrapped in _locked: the assistant calls take
+    minutes, and holding the lock through them would hold up the hourly collectors. Each answer's short
+    write takes the lock instead. Kept out of JOBS: a manual run goes through the Admin card, which shows
+    the cost first (POST /api/admin/ai-audit/run)."""
+    from .ai_audit.runner import run_all
+    return run_all(provider=provider, force=force, lock=_LOCK)
+
+
 JOBS = {
     "rss": lambda: _locked(collect)("rss"),
     "youtube": lambda: _locked(collect)("youtube"),
@@ -243,5 +252,7 @@ def start_scheduler():
     sched.add_job(weekly_digest, "cron", day_of_week="tue-thu", hour=6, minute=0)
     sched.add_job(weekly_digest, "cron", day_of_week="mon", hour=6, minute=0)  # after Sunday's data
     sched.add_job(reach_snapshot, "cron", day=1, hour=4, minute=40)            # outlet web rank, monthly
+    # after the nightly full recompute (03:30) and before the Monday digest (06:00)
+    sched.add_job(ai_audit, "cron", day_of_week="mon", hour=4, minute=20)
     sched.start()
     return sched

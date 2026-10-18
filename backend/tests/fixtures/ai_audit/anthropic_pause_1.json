@@ -1,0 +1,35 @@
+{
+  "id": "msg_01AuditPause1",
+  "type": "message",
+  "role": "assistant",
+  "model": "claude-haiku-5-5",
+  "content": [
+    {
+      "type": "server_tool_use",
+      "id": "srvtoolu_01Pause1",
+      "name": "web_search",
+      "input": {"query": "Libya elections news"}
+    },
+    {
+      "type": "web_search_tool_result",
+      "tool_use_id": "srvtoolu_01Pause1",
+      "content": [
+        {
+          "type": "web_search_result",
+          "url": "https://hnec.ly/news/1",
+          "title": "HNEC announcement",
+          "encrypted_content": "EqgfCioIARgBIiQpause1",
+          "page_age": "October 12, 2026"
+        }
+      ]
+    }
+  ],
+  "stop_reason": "pause_turn",
+  "stop_sequence": null,
+  "stop_details": null,
+  "usage": {
+    "input_tokens": 8000,
+    "output_tokens": 100,
+    "server_tool_use": {"web_search_requests": 1, "web_fetch_requests": 0}
+  }
+}
