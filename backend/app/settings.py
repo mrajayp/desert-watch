@@ -24,6 +24,15 @@ RELIEFWEB_APPNAME = os.environ.get("RELIEFWEB_APPNAME")
 SERPAPI_KEY = os.environ.get("SERPAPI_KEY")
 GOOGLE_TRENDS_API_KEY = os.environ.get("GOOGLE_TRENDS_API_KEY")  # official API: closed alpha
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY")
+# Off-site backups (backup.py): an S3-compatible bucket. Fly's Tigris integration (`fly storage create`)
+# sets exactly these names as secrets; until they exist the nightly backup records "awaiting_key".
+AWS_ACCESS_KEY_ID = os.environ.get("AWS_ACCESS_KEY_ID")
+AWS_SECRET_ACCESS_KEY = os.environ.get("AWS_SECRET_ACCESS_KEY")
+AWS_ENDPOINT_URL_S3 = os.environ.get("AWS_ENDPOINT_URL_S3")
+AWS_REGION = os.environ.get("AWS_REGION", "auto")
+BUCKET_NAME = os.environ.get("BUCKET_NAME")
+BACKUP_PREFIX = os.environ.get("DW_BACKUP_PREFIX", "backups/")
+BACKUP_KEEP = {"daily": 7, "weekly": 4, "monthly": 3}   # retention after a successful upload
 # Facebook link engagement: a Meta developer app's id and secret (app token = "<id>|<secret>").
 FB_APP_ID = os.environ.get("DW_FB_APP_ID")
 FB_APP_SECRET = os.environ.get("DW_FB_APP_SECRET")

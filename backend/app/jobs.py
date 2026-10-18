@@ -296,6 +296,7 @@ JOBS = {
     "resolve_links": resolve_links,
     "fb_url": lambda: _locked(collect)("fb_url"),
     "reach": reach_snapshot,
+    "backup": backup,
     "classify": lambda: _locked(model_job)("theme_model", *CLASSIFY_HOURLY),
     "classify_all": lambda: _locked(model_job)("theme_model", "classify-items", "--all"),
 }
@@ -306,6 +307,7 @@ def start_scheduler():
     sched = BackgroundScheduler(timezone="UTC", job_defaults={"coalesce": True, "max_instances": 1})
     sched.add_job(hourly, "cron", minute=7)
     sched.add_job(six_hourly, "cron", hour="*/6", minute=17)
+    sched.add_job(backup, "cron", hour=1, minute=15)                            # off-site copy, before the night's writes
     sched.add_job(nightly, "cron", hour=2, minute=5)
     sched.add_job(recompute_child, "cron", minute=45, kwargs={"weeks": 12})   # recent weeks hourly, as a child
     sched.add_job(recompute_child, "cron", hour=3, minute=30)                   # full history nightly, as a child

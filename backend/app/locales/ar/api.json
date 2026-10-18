@@ -117,5 +117,6 @@
   "Unknown provider": "مزوّد غير معروف",
   "Unknown language": "لغة غير معروفة",
   "Unknown run": "تشغيل غير معروف",
-  "The AI answers audit is already running.": "تدقيق إجابات الذكاء الاصطناعي قيد التشغيل بالفعل."
+  "The AI answers audit is already running.": "تدقيق إجابات الذكاء الاصطناعي قيد التشغيل بالفعل.",
+  "Nightly database backup (off-site)": "النسخة الاحتياطية الليلية لقاعدة البيانات (خارج الخادم)"
 }
