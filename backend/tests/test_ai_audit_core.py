@@ -467,3 +467,13 @@ def test_summary_names_only_the_platform_for_an_unregistered_hosted_blog():
     assert api._public_domain("some-person.blogspot.com") == "blogspot.com"
     assert api._public_domain("jane.substack.com") == "substack.com"
     assert api._public_domain("unknown-site.ly") == "unknown-site.ly"
+
+
+
+def test_a_failed_run_that_spent_nothing_does_not_block_the_week():
+    from app.models import AiRun
+    free = AiRun(provider="anthropic", status="error", cost_usd=0.0, usage={"searches": 0})
+    paid = AiRun(provider="anthropic", status="error", cost_usd=0.02, usage={"searches": 2})
+    assert runner._blocking([free]) is None
+    assert runner._blocking([paid]) == "already_run"
+    assert runner._blocking([free, paid]) == "already_run"

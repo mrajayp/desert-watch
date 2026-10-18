@@ -86,11 +86,19 @@ def load_prices() -> dict:
 
 
 def _price_block(prices: dict, provider_key: str) -> dict:
-    if isinstance(prices.get(provider_key), dict):
-        return prices[provider_key]
-    if isinstance(prices.get("providers"), dict) and isinstance(prices["providers"].get(provider_key), dict):
-        return prices["providers"][provider_key]
-    return prices if "models" in prices else {}
+    """The block holding the provider's models and rates. `prices` is the whole price file, one provider's
+    block, or the cfg Provider.ask() receives (config/ai_audit.yaml merged with that block). The merged cfg
+    also carries `providers: {anthropic: {enabled: true}}` from ai_audit.yaml, which has no prices, so a
+    block only counts when it lists models."""
+    own = prices.get(provider_key)
+    if isinstance(own, dict) and own.get("models"):
+        return own
+    if prices.get("models"):
+        return prices
+    nested = prices.get("providers")
+    if isinstance(nested, dict) and isinstance(nested.get(provider_key), dict) and nested[provider_key].get("models"):
+        return nested[provider_key]
+    return own if isinstance(own, dict) else {}
 
 
 def model_rates(prices: dict, provider_key: str, model: str) -> dict:

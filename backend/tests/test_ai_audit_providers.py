@@ -498,3 +498,24 @@ def test_safe_message_redacts_keys(monkeypatch):
     out = P.safe_message("bad key abcdefgh-secret-value and sk-ant-api03-XYZ123 and sk-proj-abc***def " + "x" * 500)
     assert "abcdefgh-secret-value" not in out and "sk-ant" not in out and "sk-proj" not in out
     assert len(out) <= 300
+
+
+
+def test_cost_checks_inside_the_provider_read_the_real_config_files():
+    """Regression (first live run, 2026-10-18): the merged cfg the runner passes to ask() also holds
+    ai_audit.yaml's `providers: {anthropic: {enabled: true}}`; the price lookup took that block, found no
+    models and refused every answer as 'could pass the weekly cap' with nothing spent."""
+    from app.ai_audit import providers as P
+    from app.ai_audit import runner
+    cfg = runner.load_config()
+    prices = P.load_prices()
+    for key in ("anthropic", "openai"):
+        ask_cfg = {**runner._ask_cfg(cfg, prices, key), "answer_budget_usd": 1.0}
+        block = P._provider_block(ask_cfg, key)
+        model = P._model_ids(block, "x")[0]
+        assert P.model_rates(ask_cfg, key, model)["id"] == model
+        assert 0 < P.estimate_usd(ask_cfg, key, model, 2, 30000, 4000) < 0.1
+        assert P.estimate_usd(ask_cfg, key, model, 2, 30000, 4000) == P.estimate_usd(prices, key, model, 2, 30000, 4000)
+    a_cfg = {**runner._ask_cfg(cfg, prices, "anthropic"), "answer_budget_usd": 1.0}
+    assert P._model_fits(a_cfg, P._provider_block(a_cfg, "anthropic"), "anthropic", "claude-haiku-5-5", 2, 4000, 1.0)
+    assert not P._model_fits(a_cfg, P._provider_block(a_cfg, "anthropic"), "anthropic", "claude-haiku-5-5", 2, 4000, 0.001)

@@ -155,11 +155,14 @@ def _week_runs(s: Session, country_id: int, week: date, key: str) -> list[AiRun]
 def _blocking(runs: list[AiRun], force: bool = False) -> str | None:
     """'running' or 'already_run' when this week's runs rule out another one. A run that made no call
     (awaiting_key, disabled) does not count. A run left 'running' for hours was interrupted: it still
-    counts, since it may have spent money; an admin can force another. `force` passes 'already_run' but
+    counts, since it may have spent money; an admin can force another. A run that failed having spent
+    nothing does not count either. `force` passes 'already_run' but
     never a run still going (another process, such as a CLI run, could be spending the same cap)."""
     for r in runs:
         if r.status in ("awaiting_key", "disabled"):
             continue
+        if r.status == "error" and not (r.cost_usd or 0) and not int((r.usage or {}).get("searches") or 0):
+            continue   # failed before spending anything (a config or network fault): it may run again
         if r.status == "running" and r.started_at and utcnow() - r.started_at < STALE_RUNNING:
             return "running"
         if force:
