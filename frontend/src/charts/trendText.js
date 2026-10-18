@@ -7,67 +7,66 @@ import { t, tn, utcFormat } from '../i18n.js'
 // marks a string for the Arabic catalogue where a table is defined; t() translates it when it is shown
 const N_ = (s) => s
 
-// per lens: the need in the tooltip, the usual-level phrase, the words when a theme has none and,
-// on the lenses with a need floor, the words when a window has too little need to judge ([pill, sentence])
+// per lens: the need in the tooltip, the level phrase, the words when a theme has none and, on the
+// lenses with a need floor, the words when 4 weeks have too little need to judge ([pill, sentence]).
+// The pill words are short and lower-case: they follow "Not judged ·".
 export const LENS_NEED = {
-  audience: { label: N_('Wikipedia views'), usual: N_('this much reader interest'), none: N_('No reader data linked to this theme'), short: N_('No reader data') },
-  events: { label: N_('Conflict and protest events'), usual: N_('this many events'), none: N_('No event data linked to this theme'), short: N_('No event data'),
-    few: [N_('Too few events to judge'), N_('There were too few events to judge')] },
-  humanitarian: { label: N_('ReliefWeb reports'), usual: N_('this many ReliefWeb reports'), none: N_('No ReliefWeb reports linked to this theme'), short: N_('No ReliefWeb data'),
-    few: [N_('Too few reports to judge'), N_('There were too few ReliefWeb reports to judge')] },
-  journalist: { label: N_('Gaps flagged by the team'), usual: N_('this many team flags'), none: N_('No team flags on this theme'), short: N_('No team flags'),
-    few: [N_('Too few team flags to judge'), N_('There were too few team flags to judge')] },
-  search: { label: N_('Google searches (index)'), usual: N_('this much search interest'), none: N_('Too few searches in Libya to compare'), short: N_('Too few searches to compare') },
+  audience: { label: N_('Wikipedia views'), usual: N_('this much reader interest'), none: N_('No reader data linked to this theme'), short: N_('no reader data') },
+  events: { label: N_('Conflict and protest events'), usual: N_('this many events'), none: N_('No event data linked to this theme'), short: N_('no event data'),
+    few: [N_('too few events'), N_('There were too few events to judge')] },
+  humanitarian: { label: N_('ReliefWeb reports'), usual: N_('this many ReliefWeb reports'), none: N_('No ReliefWeb reports linked to this theme'), short: N_('no ReliefWeb data'),
+    few: [N_('too few reports'), N_('There were too few ReliefWeb reports to judge')] },
+  journalist: { label: N_('Gaps flagged by the team'), usual: N_('this many team flags'), none: N_('No team flags on this theme'), short: N_('no team flags'),
+    few: [N_('too few team flags'), N_('There were too few team flags to judge')] },
+  search: { label: N_('Google searches (index)'), usual: N_('this much search interest'), none: N_('Too few searches in Libya to compare'), short: N_('too few searches to compare') },
 }
-// reference: the lens's meta reference. A pooled lens compares a theme with what other topics get, so its
-// level is the expected one. The other lenses compare a theme with its own record, its usual level.
+// reference: the lens's meta reference. A pooled lens compares a theme with what other topics get; the
+// other lenses compare a theme with its own record (its usual level). Either way the level a theme is
+// held to is called the expected level in the interface; "usual level" survives only in the legend
+// and in "this theme's usual level", which names the own-record comparison.
 export const lensNeed = (lens, reference) => {
   const need = LENS_NEED[lens] || LENS_NEED.audience
   return reference === 'pooled' ? { ...need, pooled: true } : need
 }
-export const levelWord = (need) => (need?.pooled ? 'expected' : 'usual')
 // the grey line in the legend
 export const levelLegend = (need) => (need?.pooled ? t('Expected level for {what}, going by other topics', { what: t(need.usual) })
   : t('Usual level for {what}', { what: t(need.usual) }))
 
-// why a week is not judged: [pill, sentence]. too_few_expected is about the usual level (under 3
-// articles for the reader data we have), not about how many articles the theme got.
+// why 4 weeks are not judged: [pill words, sentence]. too_few_expected is about the expected level
+// (under 3 articles for the reader data we have), not about how many articles the theme got.
 const REASONS = {
-  too_few_expected: [N_('Usual level too low to judge'), N_('The usual level is too low to judge')],
-  too_little_need: [N_('Too little data to judge'), N_('There was too little data to judge')],
-  no_search_data: [N_('No search data for a week'), N_('Google gave no search data for one of these 4 weeks')],
-  building_baseline: [N_('Still building a baseline'), N_('We are still building a baseline for this theme')],
-  in_progress: [N_('Still coming in'), N_('This week is still coming in')],
+  too_few_expected: [N_('expected level too low'), N_('The expected level is too low to judge')],
+  too_little_need: [N_('too little data'), N_('There was too little data to judge')],
+  no_search_data: [N_('no search data for a week'), N_('Google gave no search data for one of these 4 weeks')],
+  building_baseline: [N_('still building a baseline'), N_('We are still building a baseline for this theme')],
+  in_progress: [N_('still coming in'), N_('This week is still coming in')],
 }
-const POOLED_REASONS = {
-  too_few_expected: [N_('Expected level too low to judge'), N_('The expected level is too low to judge')],
-}
-const NOT_SCORED = [N_('Not scored yet'), N_('Not scored yet')]
+// '' for a reason code this file does not know: the pill then says only "Not judged"
 export function reasonText(reason, need, long) {
   const i = long ? 1 : 0
   if (reason === 'no_need_data') return t(long ? need.none : need.short)
   if (reason === 'too_little_need' && need.few) return t(need.few[i])
-  return t(((need.pooled && POOLED_REASONS[reason]) || REASONS[reason] || NOT_SCORED)[i])
+  return REASONS[reason] ? t(REASONS[reason][i]) : ''
+}
+// the pill on a theme that could not be judged: "Not judged · too few events"
+export function notJudged(reason, need) {
+  const why = reasonText(reason, need, false)
+  return why ? t('Not judged · {reason}', { reason: why }) : t('Not judged')
 }
 
 const times = (g) => { const x = Math.exp(g); return x >= 10 ? String(Math.round(x)) : x.toFixed(1) }
-// red_from either way: clearly fewer (red on the page), clearly more (neutral), or about as usual
-// (as expected on a pooled lens)
-export function shortfall(g, red, need) {
-  if (levelWord(need) === 'expected') {
-    return g >= red ? t('About {x} times fewer articles than expected', { x: times(g) })
-      : g <= -red ? t('About {x} times more articles than expected', { x: times(-g) }) : t('About as expected')
-  }
-  return g >= red ? t('About {x} times fewer articles than usual', { x: times(g) })
-    : g <= -red ? t('About {x} times more articles than usual', { x: times(-g) }) : t('About as usual')
+// red_from either way: clearly fewer (red on the page), clearly more (neutral), or about as expected
+export function shortfall(g, red) {
+  return g >= red ? t('About {x} times fewer articles than expected', { x: times(g) })
+    : g <= -red ? t('About {x} times more articles than expected', { x: times(-g) }) : t('About as expected')
 }
 export const articles = (n) => tn(n, '{num} article', '{num} articles', { num: fmt(n) }) // not {count}: overview.js has '{count} articles' as a plain label
-// one decimal under 10, so a usual level of 2.7 does not read as the 3-article minimum
+// one decimal under 10, so an expected level of 2.7 does not read as the 3-article minimum
 export const about = (v) => (v >= 10 ? t('about {n}', { n: fmt(v) }) : v >= 1 ? t('about {n}', { n: +v.toFixed(1) }) : t('less than 1'))
 export const judged = (r) => !r.in_progress && !r.insufficient && r.gap != null
 const against = (r, need) => (need?.pooled
   ? t('{articles} against {about} expected from other topics', { articles: articles(r.articles_4w), about: about(r.expected_4w) })
-  : t('{articles} against {about} usual', { articles: articles(r.articles_4w), about: about(r.expected_4w) }))
+  : t('{articles} against {about} expected from this theme’s usual level', { articles: articles(r.articles_4w), about: about(r.expected_4w) }))
 
 // the 4-week verdict for the week ending a row, as one or two sentences
 export function verdict(r, red, need) {
@@ -75,7 +74,10 @@ export function verdict(r, red, need) {
   if (r.reason === 'too_few_expected' && r.articles_4w != null && r.expected_4w != null) {
     return t('Last 4 weeks: {counts}. {verdict}.', { counts: against(r, need), verdict: reasonText(r.reason, need, true) })
   }
-  if (!judged(r)) return t('Last 4 weeks: not judged. {reason}.', { reason: reasonText(r.reason, need, true) })
+  if (!judged(r)) {
+    const why = reasonText(r.reason, need, true)
+    return why ? t('Last 4 weeks: not judged. {reason}.', { reason: why }) : t('Last 4 weeks: not judged.')
+  }
   return t('Last 4 weeks: {counts}. {verdict}.', { counts: against(r, need), verdict: shortfall(r.gap, red, need) })
 }
 
@@ -147,7 +149,7 @@ export function stepPath(rows, x, step, y, value) {
 // Panel groups. Most lenses: General first, then each named group (Gender). On the search lens the themes
 // Google can measure come first, and the rest keep their charts under a heading that says why there is
 // nothing to compare them with. Labels and the note stay English here (N_); TrendBars shows them with t().
-export const SEARCH_FEW = N_('Google reports too few searches from Libya on these themes to show interest, so there is no usual level to measure their coverage against. The bars still show the articles.')
+export const SEARCH_FEW = N_('Google reports too few searches from Libya on these themes to show interest, so there is no expected level to measure their coverage against. The bars still show the articles.')
 export function trendGroups(themes, data, lens) {
   const shown = themes.filter((t) => data?.themes?.[t.id]?.rows?.length)
   const byGroup = (list) => {

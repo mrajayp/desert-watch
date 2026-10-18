@@ -1,5 +1,5 @@
 // Shared encodings. Colours are CSS custom properties so light/dark swap in one place.
-import { fmtNum, t } from '../i18n.js'
+import { fmtNum, locale, t } from '../i18n.js'
 
 const N_ = (s) => s // marks English for the catalogue; translated with t() when read
 
@@ -31,11 +31,14 @@ export function gapFill(cell, red = RED_FROM) {
 }
 // a number with exactly d decimals and no grouping, in the interface language's digits and decimal mark
 const fixed = (v, d) => fmtNum(v, { minimumFractionDigits: d, maximumFractionDigits: d, useGrouping: false })
+// the one term for a gap that could not be judged is "Not judged"; the wording of a judged gap is the
+// same as the Trends verdict (charts/trendText.js shortfall), so a reader meets one phrase everywhere.
+// Over-coverage stays neutral here: the maps and lists are about deserts, not surpluses.
 export function gapLabel(g, red = RED_FROM) {
-  if (g == null) return t('insufficient evidence')
-  if (g < red) return t('about as expected')
+  if (g == null) return t('Not judged')
+  if (g < red) return t('About as expected')
   const x = Math.exp(g)
-  return t('about {x}× less coverage than expected', { x: x >= 10 ? fixed(Math.round(x), 0) : fixed(x, 1) })
+  return t('About {x} times fewer articles than expected', { x: x >= 10 ? fixed(Math.round(x), 0) : fixed(x, 1) })
 }
 
 export function covFill(n, max) {
@@ -83,6 +86,35 @@ export function categoryColor(dim, value) {
   return c ? css(c) : css('cat-unknown')
 }
 
+// The outlet taxonomy codes DIMENSIONS has no entry for (config/outlet_taxonomy.yaml), so a code is
+// never shown raw. The 2023-24 social-media scrape's own labels stay exactly as published.
+export const DIM_LABELS = lazy({
+  medium: N_('Medium'), reach: N_('Reach tier'),
+  scrape_source_type: N_('Social-media scrape: source type (2023-24)'), scrape_affiliation: N_('Social-media scrape: affiliation (2023-24)'),
+})
+export const RAW_VALUES = {
+  medium: lazy({
+    website: N_('website'), tv: N_('tv'), radio: N_('radio'), facebook: N_('facebook'), instagram: N_('instagram'),
+    telegram: N_('telegram'), x: N_('x'), tiktok: N_('tiktok'), youtube: N_('youtube'), print: N_('print'),
+  }),
+  reach: lazy({ national: N_('national'), regional: N_('regional'), local: N_('local'), niche: N_('niche'), unknown: N_('unknown') }),
+}
+export const dimLabel = (dim) => DIMENSIONS[dim]?.label || DIM_LABELS[dim] || dim
+export const dimValue = (dim, value) => DIMENSIONS[dim]?.values?.[value] || RAW_VALUES[dim]?.[value] || value
+
+// An article's language code as a name: Arabic, English, "Language not detected", or the browser's
+// own name for any other code (French, Italian...), never the code itself.
+const LANG_NAMES = lazy({ ar: N_('Arabic'), en: N_('English'), und: N_('Language not detected') })
+export function langName(code) {
+  const l = (code || 'und').toLowerCase()
+  if (l in LANG_NAMES) return LANG_NAMES[l]
+  try {
+    const name = new Intl.DisplayNames([locale()], { type: 'language' }).of(l)
+    if (name && name !== l) return name
+  } catch { /* not a language tag */ }
+  return code
+}
+
 export const FLAG_TEXT = lazy({
   coverage_drop: N_('Coverage dropped while need held'),
   little_arabic: N_('Little Arabic coverage'),
@@ -102,7 +134,7 @@ export const LENS_TEXT = {
   audience: lazy({ label: N_('International readers (Wikipedia)'), unit: N_('pageviews'), blurb: N_('Worldwide page views of the Wikipedia articles we picked for each theme, against the theme’s own recent record. Most views are of English pages, and the readers can be anywhere') }),
   events: lazy({ label: N_('Events'), unit: N_('events'), blurb: N_('Conflict & protest events (ACLED/UCDP) vs coverage') }),
   humanitarian: lazy({ label: N_('Humanitarian'), unit: N_('reports'), blurb: N_('ReliefWeb reports vs coverage') }),
-  journalist: lazy({ label: N_('Journalists'), unit: N_('flags'), blurb: N_('Gaps flagged by your team vs coverage') }),
+  journalist: lazy({ label: N_('Journalists'), unit: N_('team flags'), blurb: N_('Gaps flagged by your team vs coverage') }),
   search: lazy({ label: N_('Libyan searches (Google)'), unit: N_('search index'), blurb: N_('Google searches from people in Libya vs coverage, against the theme’s own recent history (national only)'), waiting: N_('waiting for the next import of search data') }),
 }
 

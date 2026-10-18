@@ -4,7 +4,7 @@ import { useApp } from '../App'
 import { useApi } from '../hooks/useApi'
 import { useMutation } from '../hooks/useMutation'
 import { usePageTitle } from '../hooks/usePageTitle'
-import { N_, fmtDate, isAr, pick, t } from '../i18n'
+import { N_, fmtDate, pick, t } from '../i18n'
 import { articlePath } from '../routes'
 import { CorrectionForm } from './ArticleRow'
 import Comments from './Comments'
@@ -18,9 +18,6 @@ const DIMS = [
   ['depth', N_('Depth'), [N_('Surface / rewrite'), N_('Some reporting'), N_('In-depth')]],
   ['local_sourcing', N_('Local voices'), [N_('None'), N_('Some'), N_('Central')]],
 ]
-// a publication day (YYYY-MM-DD): as is in English, with Libyan month names in Arabic
-const day = (d) => (isAr() ? fmtDate(d) : d)
-
 // One article: /articles/:id. Rate it, correct its topics and places, discuss it.
 export default function ItemPanel({ id }) {
   const { meta, closePanel, openOutlet, can } = useApp()
@@ -43,7 +40,7 @@ export default function ItemPanel({ id }) {
       {it && (
         <>
           {q.error && <ErrorBox error={q.error} onRetry={q.retry} compact />}
-          <p className="small muted">{day(it.published_at.slice(0, 10))} · <button className="btn small ghost" style={{ padding: 0 }} onClick={() => it.outlet && openOutlet(it.outlet.id)}>{it.outlet?.name}</button> · <a href={it.url} target="_blank" rel="noreferrer noopener">{t('open article ↗')}</a></p>
+          <p className="small muted">{fmtDate(it.published_at)} · <button type="button" className="textbtn" dir="auto" onClick={() => it.outlet && openOutlet(it.outlet.id)}>{it.outlet?.name}</button> · <a href={it.url} target="_blank" rel="noreferrer noopener">{t('open article ↗')}</a></p>
           {it.snippet && <p dir="auto">{it.snippet}</p>}
           <h3>{t('Topics and places')}</h3>
           <div className="row small">
@@ -55,17 +52,23 @@ export default function ItemPanel({ id }) {
           {fixing && can && <CorrectionForm item={it} onChanged={(r) => q.setData((d) => ({ ...d, ...r }))} />}
           {can && (
             <>
-              <h3>{t('Your assessment')}</h3>
+              <h3>{t('Your rating')}</h3>
               {DIMS.map(([k, label, opts]) => (
-                <div key={k} className="row" style={{ marginBottom: 6 }}>
-                  <span style={{ width: 100 }}>{t(label)}</span>
-                  <span className="seg" role="radiogroup" aria-label={t(label)}>
-                    {opts.map((o, i) => <button key={o} role="radio" aria-checked={form[k] === i + 1} aria-pressed={form[k] === i + 1} onClick={() => { setSaved(false); setForm({ ...form, [k]: i + 1 }) }}>{t(o)}</button>)}
+                <fieldset key={k} className="row" style={{ border: 0, padding: 0, margin: '0 0 6px', minInlineSize: 0 }}>
+                  <legend className="sr-only">{t(label)}</legend>
+                  <span style={{ width: 100 }} aria-hidden="true">{t(label)}</span>
+                  <span className="seg">
+                    {opts.map((o, i) => (
+                      <label key={o}>
+                        <input type="radio" name={`rating-${k}`} value={i + 1} checked={form[k] === i + 1}
+                          onChange={() => { setSaved(false); setForm({ ...form, [k]: i + 1 }) }} />
+                        <span>{t(o)}</span>
+                      </label>))}
                   </span>
-                </div>))}
+                </fieldset>))}
               <textarea dir="auto" placeholder={t('Optional note: what’s missing, what’s wrong, who should have been quoted…')} value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} />
               <div className="row" style={{ marginTop: 6 }}>
-                <button className="btn primary" disabled={save.busy || !form.accuracy || !form.depth || !form.local_sourcing} onClick={() => save.run()}>{t('Save assessment')}</button>
+                <button className="btn primary" disabled={save.busy || !form.accuracy || !form.depth || !form.local_sourcing} onClick={() => save.run()}>{t('Save rating')}</button>
                 {saved && <span className="small muted">{t('Saved')}</span>}
               </div>
               {save.error && <ErrorBox error={save.error} compact />}

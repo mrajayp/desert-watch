@@ -3,16 +3,25 @@ export default {
   // pages/Overview.jsx
   "All {group} themes": "جميع مواضيع {group}",
   "gender": "النوع الاجتماعي",
-  "{n}-week window": {
-    zero: "فترة 0 أسبوع",
-    one: "فترة أسبوع واحد",
-    two: "فترة أسبوعين",
-    few: "فترة {n} أسابيع",
-    many: "فترة {n} أسبوعًا",
-    other: "فترة {n} أسبوع",
+  // the weeks a score covers, ending on a Sunday: "4 weeks to 11 Oct 2026" (also the gap view's subtitle)
+  "{n} weeks to {date}": {
+    zero: "0 أسبوع حتى {date}",
+    one: "أسبوع واحد حتى {date}",
+    two: "أسبوعان حتى {date}",
+    few: "{n} أسابيع حتى {date}",
+    many: "{n} أسبوعًا حتى {date}",
+    other: "{n} أسبوع حتى {date}",
   },
-  "Source: Desert Watch monitored coverage (Google News, Google Alerts, GDELT, outlet and YouTube feeds, social posts Google indexes) · {window} ending {week}.":
-    "المصدر: التغطية المرصودة في Desert Watch (Google News، Google Alerts، GDELT، خلاصات وسائل الإعلام وقنوات يوتيوب، منشورات التواصل الاجتماعي التي يفهرسها غوغل) · {window} حتى {week}.",
+  "{lens} lens · {n} weeks to {date}": {
+    zero: "عدسة «{lens}» · 0 أسبوع حتى {date}",
+    one: "عدسة «{lens}» · أسبوع واحد حتى {date}",
+    two: "عدسة «{lens}» · أسبوعان حتى {date}",
+    few: "عدسة «{lens}» · {n} أسابيع حتى {date}",
+    many: "عدسة «{lens}» · {n} أسبوعًا حتى {date}",
+    other: "عدسة «{lens}» · {n} أسبوع حتى {date}",
+  },
+  "Source: Desert Watch monitored coverage (Google News, Google Alerts, GDELT, outlet and YouTube feeds, social posts Google indexes) · {window}.":
+    "المصدر: التغطية المرصودة في Desert Watch (Google News، Google Alerts، GDELT، خلاصات وسائل الإعلام وقنوات يوتيوب، منشورات التواصل الاجتماعي التي يفهرسها غوغل) · {window}.",
   "Lines join outlets to districts their articles name. Monitored coverage only. We see Facebook only through the posts Google indexes, and Telegram not at all.":
     "تصل الخطوط بين وسائل الإعلام والشعبيات التي تذكرها مقالاتها. التغطية المرصودة فقط. لا نرى فيسبوك إلا عبر المنشورات التي يفهرسها غوغل، ولا نرى تيليغرام إطلاقًا.",
   "Who covers where · {theme}": "من يغطي أين · {theme}",
@@ -28,12 +37,26 @@ export default {
   "Hide links under": "إخفاء الروابط التي تقل عن",
   "Minimum articles per link": "الحد الأدنى للمقالات في كل رابط",
   "Who covers where in {country} — {theme}": "من يغطي أين في {country} — {theme}",
-  "Least covered this week": "الأقل تغطية هذا الأسبوع",
-  "Biggest gaps this week": "أكبر الفجوات هذا الأسبوع",
+  "Least covered, {n} weeks to {date}": {
+    zero: "الأقل تغطية، 0 أسبوع حتى {date}",
+    one: "الأقل تغطية، أسبوع واحد حتى {date}",
+    two: "الأقل تغطية، أسبوعان حتى {date}",
+    few: "الأقل تغطية، {n} أسابيع حتى {date}",
+    many: "الأقل تغطية، {n} أسبوعًا حتى {date}",
+    other: "الأقل تغطية، {n} أسبوع حتى {date}",
+  },
+  "Biggest gaps, {n} weeks to {date}": {
+    zero: "أكبر الفجوات، 0 أسبوع حتى {date}",
+    one: "أكبر الفجوات، أسبوع واحد حتى {date}",
+    two: "أكبر الفجوات، أسبوعان حتى {date}",
+    few: "أكبر الفجوات، {n} أسابيع حتى {date}",
+    many: "أكبر الفجوات، {n} أسبوعًا حتى {date}",
+    other: "أكبر الفجوات، {n} أسبوع حتى {date}",
+  },
   "{blurb}. Click to review, vote and comment.": "{blurb}. يمكن النقر للمراجعة والتصويت والتعليق.",
-  "No theme is clearly falling behind its need signal this week; these are the least covered relative to it.":
-    "لا يتأخر أي موضوع بوضوح عن مؤشر الحاجة هذا الأسبوع؛ هذه هي المواضيع الأقل تغطية قياسًا به.",
-  "No cells with enough evidence for this lens and week.": "لا توجد خلايا ببيانات كافية لهذه العدسة وهذا الأسبوع.",
+  "No theme is clearly falling behind its need signal in these weeks; these are the least covered relative to it.":
+    "لا يتأخر أي موضوع بوضوح عن مؤشر الحاجة في هذه الأسابيع؛ هذه هي المواضيع الأقل تغطية قياسًا به.",
+  "Nothing has been judged for this lens and week.": "لم يُحكم على أي شيء لهذه العدسة وهذا الأسبوع.",
   "{articles} articles vs {need} {unit} · {gap}": "المقالات: {articles} مقابل {unit}: {need} · {gap}",
   "{n} from all sources": "{n} من جميع المصادر",
   "Shown to check the ranking isn't only reinforcing itself": "يُعرض هذا للتحقق من أن الترتيب لا يعزّز نفسه فحسب",
@@ -50,11 +73,10 @@ export default {
     other: "المقالات المرصودة على المستوى الوطني، {n} أسبوع حتى {week}.",
   },
   "Arabic vs English coverage of {country}": "التغطية بالعربية مقابل الإنجليزية عن {country}",
-  "{lens} lens · {window} ending {week}.": "عدسة «{lens}» · {window} حتى {week}.",
-  "Hatched cells are not judged, because the week is still coming in or there is too little data.":
-    "الخلايا المخطّطة لا يُحكم عليها، لأن بيانات الأسبوع ما زالت تصل أو لأن البيانات قليلة جدًا.",
-  "Hatched cells are not judged, because the week is still coming in or there is too little data (this lens is national only, so regional columns show coverage counts until regional need data arrives).":
-    "الخلايا المخطّطة لا يُحكم عليها، لأن بيانات الأسبوع ما زالت تصل أو لأن البيانات قليلة جدًا (هذه العدسة على المستوى الوطني فقط، لذا تعرض أعمدة المناطق أعداد التغطية إلى أن تصل بيانات الحاجة على مستوى المناطق).",
+  "Striped = not judged: the week is still coming in, or there is too little data.":
+    "المخطّط = لم يُحكم عليه: بيانات الأسبوع ما زالت تصل، أو البيانات قليلة جدًا.",
+  "Striped = not judged: the week is still coming in, or there is too little data. This lens is national only, so the regional columns show article counts until regional need data arrives.":
+    "المخطّط = لم يُحكم عليه: بيانات الأسبوع ما زالت تصل، أو البيانات قليلة جدًا. هذه العدسة على المستوى الوطني فقط، لذا تعرض أعمدة المناطق أعداد المقالات إلى أن تصل بيانات الحاجة على مستوى المناطق.",
   "Coverage gaps by theme and region — {country}": "فجوات التغطية حسب الموضوع والمنطقة — {country}",
   "Outlets in this view": "وسائل الإعلام في هذا العرض",
   "Click an outlet to see and suggest its categories. Categories need evidence; contested labels show their confidence.":
@@ -69,9 +91,9 @@ export default {
   "{n} real": "فجوة حقيقية ({n})",
   "{n} covered": "سبقت تغطيته ({n})",
   "{n} not newsworthy": "بلا قيمة إخبارية ({n})",
-  "No data for this cell": "لا توجد بيانات لهذه الخلية",
+  "No data for this theme and region": "لا توجد بيانات لهذا الموضوع وهذه المنطقة",
   "Under-coverage": "نقص التغطية",
-  "insufficient evidence": "بيانات غير كافية",
+  // the hatch legend reads "Not judged" (its key lives in trends.js with charts/trendText.js)
   "Number = articles from outlets we followed all year (4 weeks)": "الرقم = مقالات وسائل الإعلام التي تابعناها طوال العام (4 أسابيع)",
   "a journalist marked it a real gap": "صنّفها أحد الصحفيين فجوةً حقيقية",
 
@@ -137,8 +159,8 @@ export default {
   "Sources based outside Libya, grouped by country (at its media hub)": "مصادر مقرها خارج ليبيا، مجمّعة حسب البلد (في مركزه الإعلامي)",
   "Libyan outlets": "وسائل إعلام ليبية",
   "Origin not set": "المنشأ غير محدد",
-  "Bubble = articles in the window · arc = articles naming the district · → country is beyond the frame":
-    "الفقاعة = المقالات في الفترة · القوس = المقالات التي تذكر الشعبية · → البلد خارج إطار الخريطة",
+  "Bubble = articles in the weeks shown · arc = articles naming the district · → country is beyond the frame":
+    "الفقاعة = المقالات في الأسابيع المعروضة · القوس = المقالات التي تذكر الشعبية · → البلد خارج إطار الخريطة",
   // base countries (countryName)
   "Libya": "ليبيا",
   "United Kingdom": "المملكة المتحدة",

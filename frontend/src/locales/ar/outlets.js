@@ -189,8 +189,8 @@ export default {
   'Facebook blind spots ({n})': 'النقاط العمياء في فيسبوك ({n})',
   'Facebook pages we only see in part. We collect the posts Google News indexes for them, which is a small sample of what they publish. Reach is from {source} ({from} to {to}).':
     'صفحات فيسبوك لا نراها إلا جزئياً. نجمع لها المنشورات التي تفهرسها خدمة أخبار غوغل، وهي عينة صغيرة مما تنشره. أرقام الانتشار من {source} (من {from} إلى {to}).',
-  'Labels are shown exactly as published in that dataset and are disputed; they are not used in any filter or flag.':
-    'تُعرض التصنيفات كما نُشرت في تلك البيانات تماماً، وهي متنازع عليها؛ ولا تُستخدم في أي تصفية أو تنبيه.',
+  'Labels are shown exactly as published in that dataset and are disputed; they are not used in any filter or warning.':
+    'تُعرض التصنيفات كما نُشرت في تلك البيانات تماماً، وهي متنازع عليها؛ ولا تُستخدم في أي تصفية أو تحذير.',
   'Media': 'وسائل إعلام',
   'Official': 'جهات رسمية',
   'Page': 'الصفحة',
@@ -214,15 +214,14 @@ export default {
   'working': 'قيد العمل عليه',
   'published': 'نُشر',
   'dropped': 'أُلغي',
-  '{lens} lens · window {from} → {to}': 'العدسة: {lens} · الفترة من {from} إلى {to}',
+  // the subtitle "{lens} lens · {n} weeks to {date}" shares its key with the Map page (overview.js)
   'monitored articles': 'مقالات مرصودة',
-  'not scored': 'غير مُقيَّمة',
-  'vs this theme’s previous 12 weeks': 'مقارنةً بالأسابيع الـ12 السابقة لهذا الموضوع',
-  'vs comparable cells': 'مقارنةً بخلايا مماثلة',
-  'The score counts {count} of these, from the outlets we followed through the whole comparison, against {expected} expected.':
-    'تحتسب الدرجة {count} منها، من وسائل الإعلام التي تابعناها طوال فترة المقارنة، مقابل عدد متوقع يبلغ {expected}.',
-  'The score counts {count} of these, from the outlets we followed through the whole comparison, against {expected} usual.':
-    'تحتسب الدرجة {count} منها، من وسائل الإعلام التي تابعناها طوال فترة المقارنة، مقابل عدد معتاد يبلغ {expected}.',
+  'compared with this theme’s usual level': 'مقارنةً بالمستوى المعتاد لهذا الموضوع',
+  'compared with other topics': 'مقارنةً بالمواضيع الأخرى',
+  'The score counts {count} of these, from the outlets we followed all year, against {expected} expected from other topics.':
+    'تحتسب الدرجة {count} منها، من وسائل الإعلام التي تابعناها طوال العام، مقابل عدد متوقع يبلغ {expected} قياسًا بالمواضيع الأخرى.',
+  'The score counts {count} of these, from the outlets we followed all year, against {expected} expected from this theme’s usual level.':
+    'تحتسب الدرجة {count} منها، من وسائل الإعلام التي تابعناها طوال العام، مقابل عدد متوقع يبلغ {expected} قياسًا بالمستوى المعتاد لهذا الموضوع.',
   'Who is covering it': 'من يغطي الموضوع',
   'Previous 4 weeks: {articles} articles vs {need} {unit}. Monitored sources only.': 'الأسابيع الأربعة السابقة: عدد المقالات {articles} مقابل {need} ({unit}). المصادر المرصودة فقط.',
   'Is this a real gap?': 'هل هذه فجوة حقيقية؟',
@@ -237,7 +236,7 @@ export default {
   'Drop': 'إلغاء',
   'Visible to your team only.': 'لا يراه إلا أعضاء الفريق.',
   'What’s been written ({n})': 'ما كُتب حتى الآن ({n})',
-  'No monitored article in this window.': 'لا توجد مقالات مرصودة في هذه الفترة.',
+  'No monitored article in this period.': 'لا توجد مقالات مرصودة في هذه الفترة.',
   'Showing {shown} of {total} · see all': 'يظهر {shown} من {total} · عرض الكل',
   'No votes yet.': 'لا توجد أصوات بعد.',
   'Nobody has claimed this yet.': 'لا أحد يعمل على هذا حتى الآن.',
@@ -245,16 +244,16 @@ export default {
   'Monitored articles naming this district, 12 weeks.': 'المقالات المرصودة التي تذكر هذه الشعبية خلال 12 أسبوعًا.',
   '+ Add missing article': '+ إضافة مقال ناقص',
   'Official statements ({n})': 'البيانات الرسمية ({n})',
-  'UN, embassy and government statements on this theme in the window. Not counted as coverage.':
-    'بيانات الأمم المتحدة والسفارات والحكومة بشأن هذا الموضوع خلال الفترة. لا تُحتسب ضمن التغطية.',
+  'UN, embassy and government statements on this theme in the same weeks. Not counted as coverage.':
+    'بيانات الأمم المتحدة والسفارات والحكومة بشأن هذا الموضوع في الأسابيع نفسها. لا تُحتسب ضمن التغطية.',
   'Need signals ({n})': 'مؤشرات الحاجة ({n})',
-  'Gap = how much less coverage there is than expected given the need signal. Small cells are pulled towards the expected number. A cell is not scored when there is too little need data or we would expect fewer than {n} articles.': {
-    zero: 'الفجوة = مقدار نقص التغطية عن المتوقع بالنظر إلى مؤشر الحاجة. تُقرَّب أرقام الخلايا الصغيرة نحو الرقم المتوقع. لا تُقيَّم الخلية حين تكون بيانات الحاجة قليلة جداً أو حين يكون المتوقع أقل من {n} مقال.',
-    one: 'الفجوة = مقدار نقص التغطية عن المتوقع بالنظر إلى مؤشر الحاجة. تُقرَّب أرقام الخلايا الصغيرة نحو الرقم المتوقع. لا تُقيَّم الخلية حين تكون بيانات الحاجة قليلة جداً أو حين يكون المتوقع أقل من مقال واحد.',
-    two: 'الفجوة = مقدار نقص التغطية عن المتوقع بالنظر إلى مؤشر الحاجة. تُقرَّب أرقام الخلايا الصغيرة نحو الرقم المتوقع. لا تُقيَّم الخلية حين تكون بيانات الحاجة قليلة جداً أو حين يكون المتوقع أقل من مقالين.',
-    few: 'الفجوة = مقدار نقص التغطية عن المتوقع بالنظر إلى مؤشر الحاجة. تُقرَّب أرقام الخلايا الصغيرة نحو الرقم المتوقع. لا تُقيَّم الخلية حين تكون بيانات الحاجة قليلة جداً أو حين يكون المتوقع أقل من {n} مقالات.',
-    many: 'الفجوة = مقدار نقص التغطية عن المتوقع بالنظر إلى مؤشر الحاجة. تُقرَّب أرقام الخلايا الصغيرة نحو الرقم المتوقع. لا تُقيَّم الخلية حين تكون بيانات الحاجة قليلة جداً أو حين يكون المتوقع أقل من {n} مقالاً.',
-    other: 'الفجوة = مقدار نقص التغطية عن المتوقع بالنظر إلى مؤشر الحاجة. تُقرَّب أرقام الخلايا الصغيرة نحو الرقم المتوقع. لا تُقيَّم الخلية حين تكون بيانات الحاجة قليلة جداً أو حين يكون المتوقع أقل من {n} مقال.',
+  'Gap = how much less coverage there is than expected, given the need signal. A gap is not judged when there is too little need data, or when we would expect fewer than {n} articles.': {
+    zero: 'الفجوة = مقدار نقص التغطية عن المتوقع، بالنظر إلى مؤشر الحاجة. لا يُحكم على الفجوة حين تكون بيانات الحاجة قليلة جدًا، أو حين يكون المتوقع أقل من {n} مقال.',
+    one: 'الفجوة = مقدار نقص التغطية عن المتوقع، بالنظر إلى مؤشر الحاجة. لا يُحكم على الفجوة حين تكون بيانات الحاجة قليلة جدًا، أو حين يكون المتوقع أقل من مقال واحد.',
+    two: 'الفجوة = مقدار نقص التغطية عن المتوقع، بالنظر إلى مؤشر الحاجة. لا يُحكم على الفجوة حين تكون بيانات الحاجة قليلة جدًا، أو حين يكون المتوقع أقل من مقالين.',
+    few: 'الفجوة = مقدار نقص التغطية عن المتوقع، بالنظر إلى مؤشر الحاجة. لا يُحكم على الفجوة حين تكون بيانات الحاجة قليلة جدًا، أو حين يكون المتوقع أقل من {n} مقالات.',
+    many: 'الفجوة = مقدار نقص التغطية عن المتوقع، بالنظر إلى مؤشر الحاجة. لا يُحكم على الفجوة حين تكون بيانات الحاجة قليلة جدًا، أو حين يكون المتوقع أقل من {n} مقالًا.',
+    other: 'الفجوة = مقدار نقص التغطية عن المتوقع، بالنظر إلى مؤشر الحاجة. لا يُحكم على الفجوة حين تكون بيانات الحاجة قليلة جدًا، أو حين يكون المتوقع أقل من {n} مقال.',
   },
 
   // charts/ClusterMap.jsx

@@ -7,14 +7,15 @@ import GeoNetwork, { GeoLegend } from '../charts/GeoNetwork'
 import RegionalNetwork from '../charts/RegionalNetwork'
 import Heatmap from '../charts/Heatmap'
 import { LanguageBalance } from '../charts/Balance'
-import { INFO_FLAGS, DIMENSIONS, LENS_TEXT, RED_FROM, categoryOf, flagText, fmt, gapFill, gapLabel } from '../charts/scales'
+import { DIMENSIONS, LENS_TEXT, RED_FROM, categoryOf, fmt, gapFill, gapLabel } from '../charts/scales'
 import { weekEnd } from '../charts/trendText'
 import { ExportMenu } from '../charts/util'
 import { ErrorBox } from '../components/Notices'
 import SourceHealth from '../components/SourceHealth'
+import { WarningPills } from '../components/Warnings'
 import { useApi } from '../hooks/useApi'
 import { usePageTitle } from '../hooks/usePageTitle'
-import { fmtDate, isAr, pick, t } from '../i18n'
+import { fmtDate, pick, t } from '../i18n'
 
 // the first day of the window that ends with `week` (a Monday), `weeks` weeks long
 const windowStart = (week, weeks) => new Date(new Date(`${week}T00:00:00Z`).getTime() - (weeks - 1) * 7 * 864e5).toISOString().slice(0, 10)
@@ -128,11 +129,11 @@ export default function Overview() {
   const feedback = Object.fromEntries(cells.map((c) => [`${c.theme_id}:${c.region_id}`, c.votes]))
   // theme group codes come from the API (only "gender" today); the catalogue has their Arabic
   const themeName = themeId ? pick(meta.themes.find((x) => x.id === themeId)) : themeGroup ? t('All {group} themes', { group: t(themeGroup) }) : t('All themes')
-  // English keeps the ISO week as before; Arabic gets a written date
-  const week = isAr() ? fmtDate(filters.week) : filters.week
-  const windowText = t('{n}-week window', { n: meta.window_weeks })
+  // the weeks shown end on the Sunday of the selected week (filters.week is its Monday)
+  const week = filters.week ? fmtDate(weekEnd(filters.week)) : ''
+  const windowText = t('{n} weeks to {date}', { n: meta.window_weeks, date: week })
   const country = pick(meta.country)
-  const caption = t('Source: Desert Watch monitored coverage (Google News, Google Alerts, GDELT, outlet and YouTube feeds, social posts Google indexes) · {window} ending {week}.', { window: windowText, week }) + '\n' +
+  const caption = t('Source: Desert Watch monitored coverage (Google News, Google Alerts, GDELT, outlet and YouTube feeds, social posts Google indexes) · {window}.', { window: windowText }) + '\n' +
     t('Lines join outlets to districts their articles name. Monitored coverage only. We see Facebook only through the posts Google indexes, and Telegram not at all.') + '\n' + pick(meta.country.boundaries, 'attribution')
   // unplaced is counted over every source, so its share is of the all-source count
   const unplacedShare = nationalCells.length ? d3.sum(nationalCells, (c) => c.breakdown?.unplaced || 0) / Math.max(1, d3.sum(nationalCells, (c) => c.articles_all ?? c.coverage)) : null
@@ -191,10 +192,10 @@ export default function Overview() {
           </section>
         <div className="grid halves" style={{ marginTop: 16 }}>
           <section className="card">
-            <h2>{fallback ? t('Least covered this week') : t('Biggest gaps this week')}</h2>
+            <h2>{fallback ? t('Least covered, {n} weeks to {date}', { n: meta.window_weeks, date: week }) : t('Biggest gaps, {n} weeks to {date}', { n: meta.window_weeks, date: week })}</h2>
             <p className="sub">{t('{blurb}. Click to review, vote and comment.', { blurb: t(lensInfo.blurb) })}</p>
-            {fallback && <p className="small muted">{t('No theme is clearly falling behind its need signal this week; these are the least covered relative to it.')}</p>}
-            {ranked.length === 0 && <div className="empty">{t('No cells with enough evidence for this lens and week.')}</div>}
+            {fallback && <p className="small muted">{t('No theme is clearly falling behind its need signal in these weeks; these are the least covered relative to it.')}</p>}
+            {ranked.length === 0 && <div className="empty">{t('Nothing has been judged for this lens and week.')}</div>}
             {ranked.map((c, i) => {
               const th = meta.themes.find((x) => x.id === c.theme_id)
               const r = regionsById.get(c.region_id)
@@ -204,14 +205,14 @@ export default function Overview() {
               return (
                 <div key={`${c.theme_id}:${c.region_id}`} className="gapcard" role="button" tabIndex={0}
                   onClick={() => openGap(c.theme_id, c.region_id, { position: i, explore: !!c.explore, list: 'top_gaps' })}
-                  onKeyDown={(e) => e.key === 'Enter' && openGap(c.theme_id, c.region_id, { position: i, explore: !!c.explore, list: 'top_gaps' })}>
+                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openGap(c.theme_id, c.region_id, { position: i, explore: !!c.explore, list: 'top_gaps' }) } }}>
                   <div>
                     <div className="t">{pick(th)} · <span style={{ fontWeight: 400 }}>{pick(r)}</span></div>
                     <div className="small muted">{t('{articles} articles vs {need} {unit} · {gap}', { articles: fmt(n), need: fmt(c.need), unit: t(lensInfo.unit), gap: gapLabel(c.gap, red) })}
                       {all != null && all !== n && <span> · {t('{n} from all sources', { n: fmt(all) })}</span>}</div>
                     <div className="row" style={{ marginTop: 4 }}>
                       {c.explore && <span className="pill" title={t("Shown to check the ranking isn't only reinforcing itself")}>{t('Also worth a look')}</span>}
-                      {(c.flags || []).map((f) => <span key={f} className={INFO_FLAGS.has(f) ? "pill" : "pill flag"}>{flagText(f)}</span>)}
+                      <WarningPills codes={c.flags} />
                       {c.votes?.real > 0 && <span className="pill">{t('✓ {n} real', { n: c.votes.real })}</span>}
                       {c.votes?.covered > 0 && <span className="pill">{t('{n} covered', { n: c.votes.covered })}</span>}
                       {c.comments > 0 && <span className="pill">💬 {c.comments}</span>}
@@ -233,9 +234,9 @@ export default function Overview() {
         <section className="card" style={{ marginTop: 16 }}>
           <div className="card-head">
             <div><h2>{t('Gap by theme and region')}</h2>
-              <p className="sub">{t('{lens} lens · {window} ending {week}.', { lens, window: windowText, week })} {nationalOnly
-                ? t('Hatched cells are not judged, because the week is still coming in or there is too little data (this lens is national only, so regional columns show coverage counts until regional need data arrives).')
-                : t('Hatched cells are not judged, because the week is still coming in or there is too little data.')}</p></div>
+              <p className="sub">{t('{lens} lens · {n} weeks to {date}', { lens, n: meta.window_weeks, date: week })}. {nationalOnly
+                ? t('Striped = not judged: the week is still coming in, or there is too little data. This lens is national only, so the regional columns show article counts until regional need data arrives.')
+                : t('Striped = not judged: the week is still coming in, or there is too little data.')}</p></div>
             <ExportMenu svgRef={heatSvg} title={t('Coverage gaps by theme and region — {country}', { country })} caption={caption} filename="gap-heatmap" />
           </div>
           <Heatmap themes={meta.themes.filter((t) => inScope(t.id))} regions={heatRegions} cells={[...cells, ...regionalContext]} svgRef={heatSvg} unit={lensInfo.unit} lang={lang}

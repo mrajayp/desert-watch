@@ -11,7 +11,7 @@ import { LENS_TEXT, sourceLabel } from '../charts/scales'
 import { ExportMenu } from '../charts/util'
 import { useApi } from '../hooks/useApi'
 import { usePageTitle } from '../hooks/usePageTitle'
-import { fmtDate, isAr, pick, t } from '../i18n.js'
+import { fmtDate, fmtMonth, isAr, pick, t } from '../i18n.js'
 
 // marks a string for the Arabic catalogue where a table is defined; t() translates it when it is shown
 const N_ = (s) => s
@@ -21,8 +21,8 @@ const andList = (xs) => (xs.length < 2 ? xs.join('') : t('{list} and {last}', { 
 const BASIS_WORDS = { rss: N_('outlet feeds'), galerts: N_('Google Alerts'), gnews: N_('Google News'), gdelt: 'GDELT', youtube: N_('YouTube channels'),
   gnews_social: N_('social posts found through Google'), official: N_('official statements'), user: N_('links added by the team') }
 const basisWord = (k) => (BASIS_WORDS[k] ? t(BASIS_WORDS[k]) : sourceLabel(k))
-// "from A to B" for the article lists opened from a day
-const daySpan = (from, to) => t('{from} → {to}', { from, to })
+// "from A to B" for the article lists opened from a day (ISO days in, written dates out)
+const daySpan = (from, to) => t('{from} → {to}', { from: fmtDate(from), to: fmtDate(to) })
 
 export default function Trends() {
   const { meta, filters, setFilters, lang, openGap, openArticles } = useApp()
@@ -74,8 +74,8 @@ export default function Trends() {
   const pickMonth = (m) => {
     const first = new Date(m + '-01T00:00:00Z')
     const last = new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth() + 1, 0))
-    openArticles({ title: `${tname(theme)} · ${m}`, subtitle: t('All of Libya, by publication date'),
-      note: t('These are the articles counted in this bar. Use Fix on any row that does not belong; the chart updates after the next recalculation.'),
+    openArticles({ title: `${tname(theme)} · ${fmtMonth(m)}`, subtitle: t('All of Libya, by publication date'),
+      note: t('These are the articles counted in this bar. Use Correct on any row that does not belong; the chart updates after the next recalculation.'),
       query: { theme_id: themeId, start: iso(first), end: iso(last) } })
   }
   const pickDay = (day) => {
@@ -104,7 +104,7 @@ export default function Trends() {
           <h2>{t('Articles per week, theme by theme')}</h2>
           <p className="sub">{t('Bars count the articles each week from the outlets we followed all year.')} {pooled
             ? t('The grey line is the expected level for {what}, going by what other topics get.', { what: t(need.usual) })
-            : t('The grey line is the usual level for {what}.', { what: t(need.usual) })} {t('The strip under each chart turns red when the last 4 weeks fell clearly short. Google News finds more for recent weeks when we search back, so bars run higher on the right.')}{pooled ? '' : ` ${t('The usual level lags behind that rise, so recent weeks can look better covered than they were.')}`} {t('Click a bar to see its articles, or the strip under it for the full gap. A theme’s name picks it for the charts below.')}</p>
+            : t('The grey line is the expected level for {what}, going by this theme’s own record.', { what: t(need.usual) })} {t('The strip under each chart turns red when the last 4 weeks fell clearly short. Google News finds more for recent weeks when we search back, so bars run higher on the right.')}{pooled ? '' : ` ${t('The expected level lags behind that rise, so recent weeks can look better covered than they were.')}`} {t('Click a bar to see its articles, or the strip under it for the full gap. A theme’s name picks it for the charts below.')}</p>
           {!trend ? (trendQ.error && !trendQ.refreshing ? <ErrorBox error={trendQ.error} onRetry={trendQ.retry} /> : <Loading />) : (
             <>
               <TrendBars themes={meta.themes} data={trend} lens={filters.lens} reference={lensMeta?.reference}

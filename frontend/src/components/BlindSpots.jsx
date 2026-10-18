@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { api } from '../api'
 import { useApp } from '../App'
 import { fmt } from '../charts/scales'
-import { isAr, t } from '../i18n'
+import { fmtMonth, isAr, t } from '../i18n'
 
 const N_ = (s) => s // marks English for the catalogue; translated with t() when shown
 
@@ -29,8 +29,8 @@ export default function BlindSpots({ compact = false }) {
     <section className="card" style={{ marginTop: 16 }}>
       <div className="card-head">
         <div><h2>{t('Facebook blind spots ({n})', { n: rows.length })}</h2>
-          <p className="sub">{t('Facebook pages we only see in part. We collect the posts Google News indexes for them, which is a small sample of what they publish. Reach is from {source} ({from} to {to}).', { source: src.source ?? '', from: src.period?.from ?? '', to: src.period?.to ?? '' })}
-            {' '}{t('Labels are shown exactly as published in that dataset and are disputed; they are not used in any filter or flag.')}</p></div>
+          <p className="sub">{t('Facebook pages we only see in part. We collect the posts Google News indexes for them, which is a small sample of what they publish. Reach is from {source} ({from} to {to}).', { source: src.source ?? '', from: fmtMonth(src.period?.from ?? ''), to: fmtMonth(src.period?.to ?? '') })}
+            {' '}{t('Labels are shown exactly as published in that dataset and are disputed; they are not used in any filter or warning.')}</p></div>
         <span className="seg">{[['media', t('Media')], ['official', t('Official')], ['all', t('All')]].map(([k, l]) =>
           <button key={k} aria-pressed={kind === k} onClick={() => setKind(k)}>{l}</button>)}</span>
       </div>

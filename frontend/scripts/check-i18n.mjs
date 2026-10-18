@@ -1,9 +1,14 @@
 // Fails when the interface is not fully bilingual:
 //  1. visible English that is not wrapped in t()/tn()/N_() (JSX text, UI attributes, prose strings);
 //  2. a t()/tn()/N_() literal with no Arabic entry in src/locales/ar, or with different {placeholders};
-//  3. t()/tn() called at module level (it would freeze the language at import time; use N_ there).
-// A line that legitimately holds English prose that is never shown (a CSS font string, a log line)
-// carries a trailing `// i18n-ok` comment. Brand and code tokens are listed in ALLOW.
+//  3. t()/tn() called at module level (it would freeze the language at import time; use N_ there);
+//  4. a date, timestamp, month or language code shown as it came from the API: `.slice(0, 10)`,
+//     `.slice(0, 16)`, `.slice(0, 7)` or `.toUpperCase()` on a value whose name says it is one
+//     (published_at, created_at, at, day, week, month, date, lang, period.from ...). Use fmtDate,
+//     fmtDateTime, fmtMonth, weekRange or langName instead.
+// A line that legitimately holds English prose that is never shown (a CSS font string, a log line),
+// or slices a date only to compare or key it, carries a trailing `// i18n-ok` comment. Brand and code
+// tokens are listed in ALLOW.
 //   node scripts/check-i18n.mjs                 all files
 //   node scripts/check-i18n.mjs src/pages/X.jsx only these files (catalogue still checked in full)
 import { readFileSync, readdirSync, statSync } from 'node:fs'
@@ -34,6 +39,9 @@ const SILENT_CALLS = /^(track|api|useApi|qs|fetch|flush|dwell|console\.\w+|local
 // code-ish strings: CSS, colours, SVG paths, URLs, date patterns, identifiers, mime types
 const TECH = /^(\s*|[#.][\w-]+|var\(--[\w-]+\)|.*\bvar\(--.*|.*\d+px\b.*|[\d\s.,%-]+|https?:\/\/\S+|\/\S*|%[-\w%\s:/.,]+|[MLHVCSQTAZmlhvcsqtaz\d\s.,-]+|\w+\/[\w.+-]+|translate\(.*|rotate\(.*|scale\(.*|rgba?\(.*|hsla?\(.*|\S+\.(js|jsx|json|svg|png|csv)|[\w.-]+@[\w.-]+)$/
 const PROSE = /[A-Za-z]{2,}/
+// a raw date or language code on its way to the screen: a date-ish or lang-ish name, then one of the
+// slices that cut an ISO string to its day, minute or month, or the upper-casing of a language code
+const RAW_VALUE = /(?:\b(?:at|day|date|week|month|lang|from|to|start|end|iso|stamp)|\w*(?:_at|_on|date|day|week|month|lang|published|created|updated|measured|last_ok|period|since)\w*)\??\.(?:slice\(0, ?(?:7|10|16)\)|toUpperCase\(\))/
 
 const name = (callee) => {
   if (!callee) return ''
@@ -59,6 +67,11 @@ for (const file of targets) {
     continue
   }
   const okLine = (node) => /i18n-ok/.test(lines[(node.loc?.start.line ?? 1) - 1] || '')
+  lines.forEach((line, i) => {
+    if (RAW_VALUE.test(line) && !/i18n-ok/.test(line)) {
+      problems.push(`${relative(ROOT, file)}:${i + 1}  a date or language code shown raw: use fmtDate/fmtDateTime/fmtMonth/weekRange/langName, or mark the line // i18n-ok if it is only compared or keyed`)
+    }
+  })
   const inside = (path) => {
     // where this literal sits: a translation call, a silent call, a non-UI JSX attribute, a key...
     let p = path

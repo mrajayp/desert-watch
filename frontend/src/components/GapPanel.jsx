@@ -3,13 +3,13 @@ import { Link } from 'react-router-dom'
 import { api, dwell, qs } from '../api'
 import { useApp } from '../App'
 import { MixBar } from '../charts/Balance'
-import { INFO_FLAGS, DIMENSIONS, LENS_TEXT, flagText, fmt, gapLabel } from '../charts/scales'
-import { about } from '../charts/trendText'
+import { DIMENSIONS, LENS_TEXT, fmt, gapLabel } from '../charts/scales'
+import { about, weekEnd, weekRange } from '../charts/trendText'
 import { useApi } from '../hooks/useApi'
 import { useDraft } from '../hooks/useDraft'
 import { useMutation } from '../hooks/useMutation'
 import { usePageTitle } from '../hooks/usePageTitle'
-import { fmtDate, isAr, t } from '../i18n'
+import { fmtDate, t } from '../i18n'
 import { articlesPath, gapPath } from '../routes'
 import Comments from './Comments'
 import ArticleRow from './ArticleRow'
@@ -19,6 +19,7 @@ import Dialog from './Dialog'
 import { ErrorBox, Loading } from './Notices'
 import SourceFilter from './SourceFilter'
 import SearchTerms from './SearchTerms'
+import { WarningPills } from './Warnings'
 
 const N_ = (s) => s // marks English for the catalogue; translated with t() when shown
 
@@ -30,8 +31,6 @@ const VOTES = [
 // vote and claim codes from the API, shown as they read in English
 const VOTE_CODE = { real: N_('real'), covered: N_('covered'), not_newsworthy: N_('not newsworthy') }
 const CLAIM_STATUS = { working: N_('working'), published: N_('published'), dropped: N_('dropped') }
-// ISO dates stay as they are in English; Arabic gets Libyan month names
-const day = (s) => (isAr() && s ? fmtDate(s) : s)
 
 // One gap: /gaps/:themeId/:regionId?lens=&week=. A dialog over the page from 900px up, a page below.
 export default function GapPanel({ themeId, regionId, week: weekProp, lens: lensProp }) {
@@ -71,8 +70,9 @@ export default function GapPanel({ themeId, regionId, week: weekProp, lens: lens
   { onSuccess: reload })
 
   const here = gapPath(themeId, regionId, { lens: filters.lens, week: filters.week })
+  // the weeks judged end on the Sunday of the gap's week (d.week is its Monday; d.window's end is exclusive)
   const subtitle = d
-    ? t('{lens} lens · window {from} → {to}', { lens: lensInfo.label, from: day(d.window[0]), to: day(d.window[1]) })
+    ? t('{lens} lens · {n} weeks to {date}', { lens: lensInfo.label, n: meta.window_weeks, date: fmtDate(weekEnd(d.week)) })
     : lensInfo?.label
   const c = d?.cell
   const b = c?.breakdown || {}
@@ -95,14 +95,14 @@ export default function GapPanel({ themeId, regionId, week: weekProp, lens: lens
           <div className="row" style={{ gap: 24, margin: '14px 0' }}>
             <div className="stat"><span className="v num">{fmt(c?.articles_all ?? c?.coverage ?? d.articles.total)}</span><span className="l">{t('monitored articles')}</span></div>
             <div className="stat"><span className="v num">{fmt(c?.need ?? 0)}</span><span className="l">{lensInfo.unit}</span></div>
-            <div className="stat"><span className="v" style={{ fontSize: 16, maxWidth: 200 }}>{c ? gapLabel(c.insufficient ? null : c.gap, meta.red_from) : t('not scored')}</span>
-              <span className="l">{reference === 'own_history' ? t('vs this theme’s previous 12 weeks') : t('vs comparable cells')}</span></div>
+            <div className="stat"><span className="v" style={{ fontSize: 16, maxWidth: 200 }}>{gapLabel(c && !c.insufficient ? c.gap : null, meta.red_from)}</span>
+              <span className="l">{reference === 'own_history' ? t('compared with this theme’s usual level') : t('compared with other topics')}</span></div>
           </div>
           {b.articles_4w != null && b.expected_4w != null && (
             <p className="small muted" style={{ marginTop: 0 }}>{reference === 'pooled'
-              ? t('The score counts {count} of these, from the outlets we followed through the whole comparison, against {expected} expected.', { count: fmt(b.articles_4w), expected: about(b.expected_4w) })
-              : t('The score counts {count} of these, from the outlets we followed through the whole comparison, against {expected} usual.', { count: fmt(b.articles_4w), expected: about(b.expected_4w) })}</p>)}
-          {c?.flags?.length > 0 && <div className="row">{c.flags.map((f) => <span key={f} className={INFO_FLAGS.has(f) ? "pill" : "pill flag"}>{flagText(f)}</span>)}</div>}
+              ? t('The score counts {count} of these, from the outlets we followed all year, against {expected} expected from other topics.', { count: fmt(b.articles_4w), expected: about(b.expected_4w) })
+              : t('The score counts {count} of these, from the outlets we followed all year, against {expected} expected from this theme’s usual level.', { count: fmt(b.articles_4w), expected: about(b.expected_4w) })}</p>)}
+          {c?.flags?.length > 0 && <div className="row"><WarningPills codes={c.flags} /></div>}
           {filters.lens === 'search' && <SearchTerms search={d.search} missing={b.search_missing_weeks} />}
           {c && (
             <>
@@ -121,7 +121,7 @@ export default function GapPanel({ themeId, regionId, week: weekProp, lens: lens
             {can && <button className="btn small" onClick={() => openAdd({ theme_ids: [themeId], region_ids: d.region.level === 'national' ? [] : [regionId] })}>{t('+ Add missing article')}</button>}
           </div>
           <SourceFilter counts={d.articles.by_source} value={source} onChange={setSource} />
-          {d.articles.items.length === 0 && <p className="small muted">{t('No monitored article in this window.')}</p>}
+          {d.articles.items.length === 0 && <p className="small muted">{t('No monitored article in this period.')}</p>}
           <ul className="list">{d.articles.items.map((it) => <ArticleRow key={it.id} item={it} onChanged={q.retry} context={{ themeId, regionId, from: 'gap' }} />)}</ul>
           {shown < d.articles.total && (
             <p className="small"><Link to={seeAll}>{t('Showing {shown} of {total} · see all', { shown: fmt(shown), total: fmt(d.articles.total) })}</Link></p>)}
@@ -142,7 +142,7 @@ export default function GapPanel({ themeId, regionId, week: weekProp, lens: lens
               {vote.error && <ErrorBox error={vote.error} compact />}
             </>)}
           {d.votes.length > 0 && <ul className="list small">{d.votes.slice(0, 8).map((v, i) =>
-            <li key={i}><b dir="auto">{v.user}</b> · {VOTE_CODE[v.vote] ? t(VOTE_CODE[v.vote]) : v.vote.replace('_', ' ')} <span className="muted">({day(v.week)})</span>{v.note && <div dir="auto">{v.note}</div>}</li>)}</ul>}
+            <li key={i}><b dir="auto">{v.user}</b> · {VOTE_CODE[v.vote] ? t(VOTE_CODE[v.vote]) : v.vote.replace('_', ' ')} <span className="muted">({v.week ? weekRange(v.week) : ''})</span>{v.note && <div dir="auto">{v.note}</div>}</li>)}</ul>}
           {!can && d.votes.length === 0 && <p className="small muted">{t('No votes yet.')}</p>}
 
           <h3>{t('Working on it')}</h3>
@@ -164,16 +164,16 @@ export default function GapPanel({ themeId, regionId, week: weekProp, lens: lens
           {d.statements?.total > 0 && (
             <>
               <h3>{t('Official statements ({n})', { n: fmt(d.statements.total) })}</h3>
-              <p className="small muted">{t('UN, embassy and government statements on this theme in the window. Not counted as coverage.')}</p>
+              <p className="small muted">{t('UN, embassy and government statements on this theme in the same weeks. Not counted as coverage.')}</p>
               <ul className="list small">{d.statements.items.slice(0, 15).map((it) => (
-                <li key={it.id}>{day(it.published_at.slice(0, 10))} · <a href={it.url} target="_blank" rel="noreferrer noopener" dir="auto">{it.title}</a> <span className="muted">· <span dir="auto">{it.outlet?.name}</span></span></li>))}</ul>
+                <li key={it.id}>{fmtDate(it.published_at)} · <a href={it.url} target="_blank" rel="noreferrer noopener" dir="auto">{it.title}</a> <span className="muted">· <span dir="auto">{it.outlet?.name}</span></span></li>))}</ul>
             </>)}
           {d.need_items.total > 0 && (
             <>
               <h3>{t('Need signals ({n})', { n: fmt(d.need_items.total) })}</h3>
-              <ul className="list small">{d.need_items.items.slice(0, 20).map((it) => <li key={it.id}>{day(it.published_at.slice(0, 10))} · <span dir="auto">{it.title}</span> <span className="muted num">{fmt(it.value)}</span></li>)}</ul>
+              <ul className="list small">{d.need_items.items.slice(0, 20).map((it) => <li key={it.id}>{fmtDate(it.published_at)} · <span dir="auto">{it.title}</span> <span className="muted num">{fmt(it.value)}</span></li>)}</ul>
             </>)}
-          <p className="small muted" style={{ marginTop: 16 }}>{t('Gap = how much less coverage there is than expected given the need signal. Small cells are pulled towards the expected number. A cell is not scored when there is too little need data or we would expect fewer than {n} articles.', { n: lensMeta?.min_expected ?? 3 })}</p>
+          <p className="small muted" style={{ marginTop: 16 }}>{t('Gap = how much less coverage there is than expected, given the need signal. A gap is not judged when there is too little need data, or when we would expect fewer than {n} articles.', { n: lensMeta?.min_expected ?? 3 })}</p>
         </>)}
     </Dialog>
   )

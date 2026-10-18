@@ -1,19 +1,12 @@
 import { useEffect, useState } from 'react'
 import { api, track } from '../api'
 import { useApp } from '../App'
-import { DIMENSIONS, sourceLabel } from '../charts/scales'
+import { DIMENSIONS, langName, sourceLabel } from '../charts/scales'
 import { useMutation } from '../hooks/useMutation'
 import EngagementChip from './EngagementChip'
 import { ErrorBox } from './Notices'
 import { LabelForm, ThemePills } from './ThemeLabels'
-import { N_, fmtDate, isAr, pick, t } from '../i18n'
-
-// a publication day (YYYY-MM-DD): as is in English, with Libyan month names in Arabic
-const day = (d) => (isAr() ? fmtDate(d) : d)
-
-// article language: the code in English (AR, EN), the name in Arabic
-const LANG = { ar: N_('Arabic'), en: N_('English'), und: N_('Language not detected') }
-const langName = (l) => (isAr() ? t(LANG[l] || l || '') : (l || '').toUpperCase())
+import { fmtDate, pick, t } from '../i18n'
 
 // a list with one row swapped for the row the server sent back after a correction
 export const replaceItem = (items, r) => (items || []).map((x) => (x.id === r.id ? { ...x, ...r } : x))
@@ -67,7 +60,7 @@ export default function ArticleRow({ item: given, onChanged, context = {} }) {
         <div style={{ flex: 1, minWidth: 0 }}>
           <a href={item.url} target="_blank" rel="noreferrer noopener" dir="auto" onClick={() => track('click', 'item', item.id, { ...context, out: true })}>{item.title}</a>
           <div className="small muted">
-            {day(item.published_at.slice(0, 10))} · <button className="btn small ghost" style={{ padding: 0 }} onClick={() => item.outlet && openOutlet(item.outlet.id)}>{item.outlet?.name || '—'}</button>
+            {fmtDate(item.published_at)} · <button type="button" className="textbtn" dir="auto" onClick={() => item.outlet && openOutlet(item.outlet.id)}>{item.outlet?.name || '—'}</button>
             {scope && ` · ${t(DIMENSIONS.scope.values[scope] || scope)}`} · {langName(item.lang)} · {t('via {source}', { source: t(sourceLabel(item.source)) })}{item.user_added && ` · ${t('added by team')}`}
             <EngagementChip e={item.engagement} />
           </div>
@@ -75,15 +68,15 @@ export default function ArticleRow({ item: given, onChanged, context = {} }) {
             <ThemePills item={item} />
             {item.region_ids.map((r) => <span key={r} className="pill">📍 {pick(regions.get(r), 'name')}</span>)}
             {can && <button className="btn small ghost" style={{ padding: '0 4px' }} aria-expanded={open === 'label'}
-              onClick={() => setOpen(open === 'label' ? null : 'label')}>{t('Label this')}</button>}
+              onClick={() => setOpen(open === 'label' ? null : 'label')}>{t('Label topics')}</button>}
             {note && <span className="muted">{note === 'off' ? t('Saved: not about {country}', { country }) : t('Saved')}</span>}
           </div>
         </div>
         <div className="row" style={{ flexWrap: 'nowrap' }}>
           {can ? (
             <>
-              <button className="btn small" onClick={() => openItem(item.id, context)}>{t('Assess')}</button>
-              <button className="btn small ghost" aria-expanded={open === 'fix'} onClick={() => setOpen(open === 'fix' ? null : 'fix')} title={t('Correct topic or place')}>{t('Fix')}</button>
+              <button className="btn small" onClick={() => openItem(item.id, context)}>{t('Rate')}</button>
+              <button className="btn small ghost" aria-expanded={open === 'fix'} onClick={() => setOpen(open === 'fix' ? null : 'fix')} title={t('Correct topic or place')}>{t('Correct')}</button>
             </>
           ) : <button className="btn small ghost" onClick={() => openItem(item.id, context)}>{t('Details')}</button>}
         </div>

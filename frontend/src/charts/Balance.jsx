@@ -4,7 +4,7 @@ import * as d3 from 'd3'
 import { useRef } from 'react'
 import { fmt, sourceLabel } from './scales'
 import { fitLabel, groupedRows, themeLabel, useSize, useTooltip } from './util'
-import { pick, t, utcFormat } from '../i18n.js'
+import { fmtDate, fmtMonth, pick, t, utcFormat } from '../i18n.js'
 
 export function LanguageBalance({ themes, cells, lang = 'en', svgRef }) {
   const wrap = useRef(null)
@@ -47,8 +47,8 @@ export function LanguageBalance({ themes, cells, lang = 'en', svgRef }) {
                 <title>{lang === 'ar' ? r.t.name_ar : r.t.name_en}</title>{fitLabel(themeLabel(r.t, lang), left - 14)}</text>
               <rect x={mid - x(r.ar) - 1} y={y} width={Math.max(0, x(r.ar))} height={bh} rx={3} fill="var(--scope-libyan)" />
               <rect x={mid + 1} y={y} width={Math.max(0, x(r.en))} height={bh} rx={3} fill="var(--scope-international)" />
-              <text x={mid - x(r.ar) - 6} y={y + bh - 4} textAnchor="end" className="num" style={{ fontSize: 10.5 }}>{fmt(r.ar)}</text>
-              <text x={mid + x(r.en) + 6} y={y + bh - 4} className="num" style={{ fontSize: 10.5 }}>{fmt(r.en)}</text>
+              <text x={mid - x(r.ar) - 6} y={y + bh - 4} textAnchor="end" className="num" style={{ fontSize: 11 }}>{fmt(r.ar)}</text>
+              <text x={mid + x(r.en) + 6} y={y + bh - 4} className="num" style={{ fontSize: 11 }}>{fmt(r.en)}</text>
             </g>)
         })}
       </svg>
@@ -111,7 +111,7 @@ export function HistoryLine({ data, svgRef, markers = [], onPick }) {
         onClick={(e) => { if (onPick) onPick(iso(near(e).date)) }}
         onMouseMove={(e) => {
           const d = near(e)
-          tip.show(e, <div><b>{iso(d.date)}</b><div>{d.n === 7 ? t('{v} articles a day (7-day average)', { v: fmt(d.v) })
+          tip.show(e, <div><b>{fmtDate(d.date)}</b><div>{d.n === 7 ? t('{v} articles a day (7-day average)', { v: fmt(d.v) })
             : t('{v} articles a day (average of the {days} days we have in the last 7)', { v: fmt(d.v), days: d.n })}</div>
             {onPick && <div className="small muted">{t('click for our articles that week')}</div>}</div>, wrap.current)
         }}>
@@ -157,7 +157,7 @@ export function MonthlyCoverage({ rows, markers = [], svgRef, onPick }) {
           let acc = 0
           return (
             <g key={d.month} style={{ cursor: onPick ? 'pointer' : undefined }} onClick={() => onPick?.(d.month)}
-              onMouseMove={(e) => tip.show(e, <div><b>{d.partial ? t('{month} (so far)', { month: d.month }) : d.month}</b>
+              onMouseMove={(e) => tip.show(e, <div><b>{d.partial ? t('{month} (so far)', { month: fmtMonth(d.month) }) : fmtMonth(d.month)}</b>
                 <div>{t('{total} articles: {ar} Arabic, {en} English, {other} in other languages', { total: fmt(d.total), ar: fmt(d.ar), en: fmt(d.en), other: fmt(d.other) })}</div>
                 <div>{present.filter((k) => d.sources[k] > 0).map((k) => `${monthSourceLabel(k)} ${fmt(d.sources[k])}`).join(' · ')}</div>
                 {d.partial && <div className="small muted">{t('This month is not over yet.')}</div>}
@@ -171,16 +171,16 @@ export function MonthlyCoverage({ rows, markers = [], svgRef, onPick }) {
                 return el
               })}
               {d.partial && d.total > 0 && <rect x={x(d.month)} y={y(d.total)} width={x.bandwidth()} height={Math.max(0, y(0) - y(d.total))} fill="url(#mc-partial)" />}
-              {i % step === 0 && <text x={x(d.month) + x.bandwidth() / 2} y={H - 8} textAnchor="middle">{d.month}</text>}
+              {i % step === 0 && <text x={x(d.month) + x.bandwidth() / 2} y={H - 8} textAnchor="middle">{utcFormat('%b %y')(new Date(`${d.month}-01T00:00:00Z`))}</text>}
             </g>)
         })}
         {markers.map((m) => {
-          const k = m.date.slice(0, 7)
+          const k = m.date.slice(0, 7) // i18n-ok: the month band of the marker, not shown
           if (x(k) == null) return null
           const mx = x(k) + x.bandwidth() / 2
           return <g key={m.date + m.label}><line x1={mx} x2={mx} y1={10} y2={H - 24} stroke="var(--ink)" strokeOpacity={0.5} />
             <circle cx={mx} cy={10} r={4} fill="var(--surface)" stroke="var(--ink)" strokeWidth={1.5}
-              onMouseMove={(e) => tip.show(e, <div><b>{m.date}</b><div>{pick(m, 'label')}</div></div>, wrap.current)} /></g>
+              onMouseMove={(e) => tip.show(e, <div><b>{fmtDate(m.date)}</b><div>{pick(m, 'label')}</div></div>, wrap.current)} /></g>
         })}
       </svg>
       {tip.node}

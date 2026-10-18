@@ -183,7 +183,7 @@ export default function RegionalNetwork({ geo, meta, network, cellsByRegion, mod
         <span><span className="sw" style={{ background: 'var(--scope-international)', borderRadius: '50%' }} />{t('Sources based outside Libya, grouped by country (at its media hub)')}</span>
         <span><span className="sw" style={{ background: 'var(--scope-libyan)', borderRadius: '50%' }} />{t('Libyan outlets')}</span>
         <span><span className="sw" style={{ background: 'var(--cat-unknown)', borderRadius: '50%' }} />{t('Origin not set')}</span>
-        <span className="muted">{t('Bubble = articles in the window · arc = articles naming the district · → country is beyond the frame')}</span>
+        <span className="muted">{t('Bubble = articles in the weeks shown · arc = articles naming the district · → country is beyond the frame')}</span>
       </div>
     </div>
   )

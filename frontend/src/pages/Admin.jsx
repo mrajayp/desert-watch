@@ -7,7 +7,7 @@ import { ErrorBox, Loading } from '../components/Notices'
 import { useApi } from '../hooks/useApi'
 import { useMutation } from '../hooks/useMutation'
 import { usePageTitle } from '../hooks/usePageTitle'
-import { fmtDate, fmtNum, isAr, pick, t, tn } from '../i18n'
+import { fmtDate, fmtDateTime, fmtNum, isAr, pick, t, tn } from '../i18n'
 import { Markdown } from './Digest'
 
 const N_ = (s) => s // marks English for the catalogue; translated with t() when read
@@ -29,8 +29,6 @@ const THRESHOLD_NAMES = { theme_classifier_new_labels: N_('theme classifier new 
 // list separators in the interface language
 const comma = () => (isAr() ? '، ' : ', ')
 const semi = () => (isAr() ? '؛ ' : '; ')
-// a day (YYYY-MM-DD): as is in English, with Libyan month names in Arabic
-const day = (d) => (isAr() ? fmtDate(d) : d)
 
 export default function Admin() {
   const { refresh, reloadMeta } = useApp()
@@ -235,7 +233,7 @@ function UsersCard() {
               <td><select value={u.role} disabled={u.id === me.id} aria-label={t('Role for {name}', { name: u.display_name })}
                 onChange={(e) => patch(u, { role: e.target.value })}>{['admin', 'journalist', 'viewer'].map((r) => <option key={r} value={r}>{code(r)}</option>)}</select></td>
               <td className="small">{code(u.status)}{u.approved_by && <span className="muted"> · {t('approved by {name}', { name: u.approved_by })}</span>}</td>
-              <td className="small mono">{u.created_at.slice(0, 10)}</td>
+              <td className="small">{fmtDate(u.created_at)}</td>
               <td>{u.id !== me.id && (u.status === 'active'
                 ? <button className="btn small ghost" onClick={() => patch(u, { status: 'disabled' })}>{t('Disable')}</button>
                 : <button className="btn small" onClick={() => patch(u, { status: 'active' })}>{t('Re-enable')}</button>)}</td>
@@ -251,7 +249,7 @@ function PendingRow({ u, onDecide }) {
   return (
     <li>
       <div className="row" style={{ justifyContent: 'space-between', alignItems: 'flex-start' }}>
-        <div><b dir="auto">{u.display_name}</b> <span className="small muted">{u.email} · <span dir="auto">{u.organisation || t('no organisation given')}</span> · {t('requested {date}', { date: day(u.created_at.slice(0, 10)) })}</span>
+        <div><b dir="auto">{u.display_name}</b> <span className="small muted">{u.email} · <span dir="auto">{u.organisation || t('no organisation given')}</span> · {t('requested {date}', { date: fmtDate(u.created_at) })}</span>
           {u.note && <div className="small" dir="auto" style={{ marginTop: 4 }}>“{u.note}”</div>}</div>
         <div className="row">
           <select value={role} onChange={(e) => setRole(e.target.value)} aria-label={t('Role to grant')}>
@@ -283,7 +281,7 @@ function FeedbackCard() {
       {q.data && rows.length === 0 ? <p className="small muted">{t('Nothing here.')}</p> : q.data && (
         <ul className="list">{rows.map((f) => (
           <li key={f.id}>
-            <div className="small muted"><span className="pill">{code(f.kind)}</span> <span dir="auto">{f.user || t('deleted user')}</span> · {t('page')} <span className="mono">{f.page}</span> · {f.at.slice(0, 16).replace('T', ' ')} · {code(f.status)}</div>
+            <div className="small muted"><span className="pill">{code(f.kind)}</span> <span dir="auto">{f.user || t('deleted user')}</span> · {t('page')} <span className="mono">{f.page}</span> · {fmtDateTime(f.at)} · {code(f.status)}</div>
             <div dir="auto" style={{ margin: '4px 0' }}>{f.body}</div>
             {f.reply && <div className="comment"><span className="meta">{t('Reply by {name}', { name: f.replied_by })}</span><div dir="auto">{f.reply}</div></div>}
             <div className="row">
@@ -328,7 +326,7 @@ function ModelsCard() {
   }
   const head = (
     <div><h2>{t('Theme classifier')}</h2>
-      <p className="sub">{t('A model that sorts articles into themes next to the word lists. It learns from the labels people give on Contribute and with Label this, and retrains each night.')}</p></div>)
+      <p className="sub">{t('A model that sorts articles into themes next to the word lists. It learns from the labels people give on Contribute and with Label topics, and retrains each night.')}</p></div>)
   if (!d) return <section className="card" style={{ marginTop: 16 }}>{head}{msg ? <p className="err">{msg}</p> : <div className="empty">{t('Loading…')}</div>}</section>
   const live = d.models.find((m) => m.active)
   const n = (origin) => d.labels.by_origin_and_type.filter((x) => x.origin === origin && THEME_LABEL_TYPES.has(x.label_type)).reduce((a, x) => a + x.n, 0)
@@ -344,7 +342,7 @@ function ModelsCard() {
       {!live ? <p>{t('No model is live. Until one is, the classifier changes no themes.')}</p> : (
         <p className="small">
           {t('Live:')} <b className="mono">{live.version}</b> · {t('trained {date} on {labels} labelled articles and {base} tagged by the word lists', {
-            date: live.trained_on?.date || live.created_at.slice(0, 10), labels: fmtN(live.trained_on?.labels?.items), base: fmtN(live.trained_on?.base?.items),
+            date: fmtDate(live.trained_on?.date || live.created_at), labels: fmtN(live.trained_on?.labels?.items), base: fmtN(live.trained_on?.base?.items),
           })} · {t('{n} theme links come from the model', { n: fmtN(d.links.model) })} · {t('{n} word-list links it switched off', { n: fmtN(d.links.vetoed) })}
         </p>)}
       {live && d.pinned && (
@@ -392,7 +390,7 @@ function ModelsCard() {
             <tbody>{d.models.map((m) => (
               <tr key={m.version}>
                 <td className="mono">{m.version}</td>
-                <td className="small mono">{m.created_at.slice(0, 16).replace('T', ' ')}</td>
+                <td className="small">{fmtDateTime(m.created_at)}</td>
                 <td className="num">{fmtN(m.trained_on?.labels?.items)}</td>
                 <td className="num">{f2(m.metrics?.macro?.non_gender?.model?.f1)} / {f2(m.metrics?.macro?.gender?.model?.f1)}</td>
                 <td className="small muted" dir="auto" style={{ maxWidth: 360 }}>{m.note}</td>
@@ -409,9 +407,9 @@ function ModelsCard() {
 // Service health for admins: the scheduler and its next runs, who holds the job lock, memory, disk,
 // the database and its write-ahead log, the last backup, digest and recompute, and stale sources.
 // The public /health check says only whether the process answers and the scheduler runs.
-const RUN_STATUS = { ok: N_('ok'), partial: N_('partial'), error: N_('error'), awaiting_key: N_('awaiting_key'), not_built: N_('not_built'), running: N_('running') }
+const RUN_STATUS = { ok: N_('ok'), partial: N_('partial'), error: N_('error'), awaiting_key: N_('awaiting a key'), not_built: N_('not built yet'), never_run: N_('never run'), running: N_('running') }
 const runStatus = (s) => (RUN_STATUS[s] ? t(RUN_STATUS[s]) : s)
-const stamp = (iso) => (iso ? iso.slice(0, 16).replace('T', ' ') : '–')
+const stamp = (iso) => (iso ? fmtDateTime(iso) : '–')
 
 function HealthCard() {
   const [d, setD] = useState(null)

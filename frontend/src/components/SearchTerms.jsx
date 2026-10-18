@@ -1,9 +1,10 @@
 // Search lens only: the words behind the number. The word list sets its size, so it is shown with every gap.
 import { isAr, t } from '../i18n.js'
+import { weekRange } from '../charts/trendText'
 
-// "the week of A" or "the weeks of A, B and C"
+// "the week of 5 to 11 Oct 2026" or "the weeks of A, B and C" (the API sends each week's Monday)
 function weeksOf(weeks) {
-  const w = [...weeks].sort()
+  const w = [...weeks].sort().map(weekRange)
   return w.length === 1 ? t('the week of {week}', { week: w[0] })
     : t('the weeks of {weeks} and {last}', { weeks: w.slice(0, -1).join(isAr() ? '، ' : ', '), last: w[w.length - 1] })
 }
@@ -29,7 +30,7 @@ export default function SearchTerms({ search, missing }) {
         </>)}
       {search.measured && missing?.length > 0 && (
         <p className="small muted">
-          {t('This window is not scored because there is no search data for {weeks}. Google holds back weeks with too few searches, and a week only gets data at the first import after it ends.', { weeks: weeksOf(missing) })}
+          {t('These 4 weeks are not judged because there is no search data for {weeks}. Google holds back weeks with too few searches, and a week only gets data at the first import after it ends.', { weeks: weeksOf(missing) })}
         </p>)}
     </>
   )

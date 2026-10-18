@@ -1,14 +1,22 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { useApp } from '../App'
 import { DIMENSIONS, LENS_TEXT } from '../charts/scales'
+import { weekRange } from '../charts/trendText'
 import { groupLabel, themeLabel } from '../charts/util'
+import { PHONE, useMedia } from '../hooks/useMedia'
 import { getLang, pick, t } from '../i18n'
 import { lensPatch } from '../lensWeek'
 
-export default function Filters({ showTheme = true, showColor = true, showWeek = true, children }) {
+// The page's filters. The lens is a row of chips with its description as visible text (a labelled
+// select on a phone); the week reads "Week of 5 to 11 Oct 2026" with previous and next buttons (the
+// slider and play stay on wider screens); the theme and the outlet colouring are selects. A page
+// leaves out the controls it does not use.
+export default function Filters({ showLens = true, showTheme = true, showColor = true, showWeek = true, children }) {
   const { meta, filters, setFilters } = useApp()
+  const phone = useMedia(PHONE)
   const [playing, setPlaying] = useState(false)
   const timer = useRef(null)
+  const lensLabelId = useId()
   const weeks = meta.weeks
   const wi = Math.max(0, weeks.indexOf(filters.week))
   useEffect(() => {
@@ -18,16 +26,35 @@ export default function Filters({ showTheme = true, showColor = true, showWeek =
     }, 1100)
     return () => clearInterval(timer.current)
   }, [playing, filters.week, weeks, setFilters])
-  useEffect(() => { if (playing && weeks.indexOf(filters.week) === weeks.length - 1) setPlaying(false) }, [filters.week, playing, weeks])
+  useEffect(() => { if (playing && (phone || weeks.indexOf(filters.week) === weeks.length - 1)) setPlaying(false) }, [filters.week, playing, weeks, phone])
+
+  const lensText = (l) => LENS_TEXT[l.key]
+  const lensName = (l) => lensText(l)?.label || l.key
+  // an unavailable lens says what it is waiting for, in the option and under the control
+  const lensNote = (l) => (l.available ? lensText(l)?.blurb : `${lensName(l)}: ${lensText(l)?.waiting || t('waiting for data source key')}`)
+  const current = meta.lenses.find((l) => l.key === filters.lens)
+  const pickLens = (key) => setFilters(lensPatch(meta, filters, key))
+  const goWeek = (i) => { setPlaying(false); setFilters({ week: weeks[Math.max(0, Math.min(weeks.length - 1, i))] }) }
 
   return (
-    <div className="filters" role="search">
-      <span className="seg" role="group" aria-label={t('Need lens')}>
-        {meta.lenses.map((l) => (
-          <button key={l.key} aria-pressed={filters.lens === l.key} disabled={!l.available}
-            title={l.available ? LENS_TEXT[l.key]?.blurb : `${LENS_TEXT[l.key]?.label}: ${LENS_TEXT[l.key]?.waiting || t('waiting for data source key')}`}
-            onClick={() => setFilters(lensPatch(meta, filters, l.key))}>{LENS_TEXT[l.key]?.label || l.key}</button>))}
-      </span>
+    <div className="filters" role="group" aria-label={t('Filters')}>
+      {showLens && (
+        <div className="lens">
+          <div className="row">
+            <span id={lensLabelId} className="lens-label">{t('Compare coverage with:')}</span>
+            {phone ? (
+              <select value={filters.lens} onChange={(e) => pickLens(e.target.value)} aria-labelledby={lensLabelId}>
+                {meta.lenses.map((l) => <option key={l.key} value={l.key} disabled={!l.available}>{l.available ? lensName(l) : lensNote(l)}</option>)}
+              </select>
+            ) : (
+              <div className="chips" role="group" aria-labelledby={lensLabelId}>
+                {meta.lenses.map((l) => (
+                  <button key={l.key} type="button" className="chip" aria-pressed={filters.lens === l.key} disabled={!l.available}
+                    onClick={() => pickLens(l.key)}>{lensName(l)}</button>))}
+              </div>)}
+          </div>
+          {current && <p className="lens-blurb small muted">{lensNote(current)}</p>}
+        </div>)}
       {showTheme && (
         <label>{t('Theme')}
           <select value={filters.themeId} onChange={(e) => setFilters({ themeId: e.target.value })}>
@@ -43,15 +70,20 @@ export default function Filters({ showTheme = true, showColor = true, showWeek =
           </select>
         </label>)}
       {showWeek && weeks.length > 0 && (
-        <label>{t('Week ending')}
-          <button className="btn small" onClick={() => {
-            if (!playing && wi === weeks.length - 1) setFilters({ week: weeks[0] })
-            setPlaying(!playing)
-          }} aria-label={playing ? t('Pause') : t('Play weeks')}>{playing ? '❚❚' : '▶'}</button>
-          <input type="range" min={0} max={weeks.length - 1} value={wi} aria-label={t('Week')}
-            onChange={(e) => { setPlaying(false); setFilters({ week: weeks[+e.target.value] }) }} />
-          <span className="mono">{filters.week}</span>
-        </label>)}
+        <div className="week" role="group" aria-label={t('Week')}>
+          <button type="button" className="btn small week-arrow" disabled={wi <= 0} aria-label={t('Previous week')} onClick={() => goWeek(wi - 1)}>‹</button>
+          <span className="week-label">{filters.week ? t('Week of {range}', { range: weekRange(filters.week) }) : ''}</span>
+          <button type="button" className="btn small week-arrow" disabled={wi >= weeks.length - 1} aria-label={t('Next week')} onClick={() => goWeek(wi + 1)}>›</button>
+          {!phone && (
+            <>
+              <input type="range" min={0} max={weeks.length - 1} value={wi} aria-label={t('Week')}
+                onChange={(e) => goWeek(+e.target.value)} />
+              <button type="button" className="btn small" onClick={() => {
+                if (!playing && wi === weeks.length - 1) setFilters({ week: weeks[0] })
+                setPlaying(!playing)
+              }} aria-label={playing ? t('Pause') : t('Play weeks')}>{playing ? '❚❚' : '▶'}</button>
+            </>)}
+        </div>)}
       {showColor && (
         <label>{t('Colour outlets by')}
           <select value={filters.colorBy} onChange={(e) => setFilters({ colorBy: e.target.value })}>

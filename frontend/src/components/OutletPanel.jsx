@@ -1,11 +1,11 @@
 import { useState } from 'react'
 import { api, qs } from '../api'
 import { useApp } from '../App'
-import { DIMENSIONS } from '../charts/scales'
+import { dimLabel, dimValue } from '../charts/scales'
 import { useApi } from '../hooks/useApi'
 import { useMutation } from '../hooks/useMutation'
 import { usePageTitle } from '../hooks/usePageTitle'
-import { fmtDate, fmtNum, isAr, t, tn } from '../i18n'
+import { fmtDate, fmtMonth, fmtNum, isAr, t, tn } from '../i18n'
 import { outletPath } from '../routes'
 
 const N_ = (s) => s // marks English for the catalogue; translated with t() when shown
@@ -17,20 +17,8 @@ import { ErrorBox, Loading } from './Notices'
 import OutletReach from './OutletReach'
 import { countryName } from '../charts/RegionalNetwork'
 
-// Codes from the API (config/outlet_taxonomy.yaml). English shows them as they are; Arabic translates them.
-const DIM_NAME = {
-  type: N_('Ownership type'), scope: N_('Scope'), alignment: N_('Political alignment'), medium: N_('Medium'),
-  reach: N_('Reach tier'), scrape_source_type: N_('Social-media scrape: source type (2023-24)'),
-  scrape_affiliation: N_('Social-media scrape: affiliation (2023-24)'),
-}
-// values DIMENSIONS has no label for. The scrape's own labels stay exactly as published.
-const RAW_VALUE = {
-  medium: {
-    website: N_('website'), tv: N_('tv'), radio: N_('radio'), facebook: N_('facebook'), instagram: N_('instagram'),
-    telegram: N_('telegram'), x: N_('x'), tiktok: N_('tiktok'), youtube: N_('youtube'), print: N_('print'),
-  },
-  reach: { national: N_('national'), regional: N_('regional'), local: N_('local'), niche: N_('niche'), unknown: N_('unknown') },
-}
+// Codes from the API (config/outlet_taxonomy.yaml) get their words from charts/scales.js (dimLabel,
+// dimValue), the same words the map tooltip uses. The scrape's own labels stay exactly as published.
 const CONFIDENCE = { reported: N_('reported'), likely: N_('likely'), disputed: N_('disputed'), unverified: N_('unverified') }
 const STATUS = { proposed: N_('proposed'), active: N_('active'), rejected: N_('rejected') }
 // keys of the 2023-24 scrape figures, shown as "fb posts 1,234"
@@ -39,9 +27,8 @@ const SCRAPE_KEY = {
   posts: N_('posts {value}'), interactions: N_('interactions {value}'), comments: N_('comments {value}'), shares: N_('shares {value}'),
 }
 const code = (table, k) => (table[k] ? t(table[k]) : k)
-const dimName = (d) => (isAr() ? d.name_ar || (DIM_NAME[d.key] ? t(DIM_NAME[d.key]) : d.name) : d.name)
-// ISO dates stay as they are in English; Arabic gets Libyan month names
-const day = (s) => (isAr() && s ? fmtDate(s) : s)
+// the taxonomy's own name for a dimension (name / name_ar), else the shared words
+const dimName = (d) => (isAr() ? d.name_ar || dimLabel(d.key) : d.name || dimLabel(d.key))
 // a decimal as the API sends it (4.2), with the interface language's decimal mark
 const num = (v) => fmtNum(v, { useGrouping: false })
 
@@ -73,8 +60,7 @@ export default function OutletPanel({ id }) {
   const loadError = all.error || tax.error
   const retry = () => { all.retry(); tax.retry() }
   const dim = tax.data?.dimensions.find((d) => d.key === form.dimension)
-  // DIMENSIONS labels are already in the interface language (charts/scales.js)
-  const label = (d, v) => DIMENSIONS[d]?.values?.[v] || code(RAW_VALUE[d] || {}, v)
+  const label = dimValue
   const histDim = (key) => {
     const d = tax.data.dimensions.find((x) => x.key === key)
     return d ? dimName(d) : undefined
@@ -101,7 +87,7 @@ export default function OutletPanel({ id }) {
             {o.monitored === false && <tr><th>{t('Collection')}</th><td><span className="pill">{t('partly seen')}</span> <span className="small muted">{t('Facebook page: we only see the posts Google News indexes')}</span></td></tr>}
             {o.external?.social_media_scrape && <tr><th>{t('Social-media scrape')}</th><td className="small">
               {Object.entries(o.external.social_media_scrape).filter(([k]) => !['source', 'period', 'link', 'kind'].includes(k)).map(([k, v]) => (SCRAPE_KEY[k] ? t(SCRAPE_KEY[k], { value: fmtNum(Number(v)) }) : `${k.replace('_', ' ')} ${fmtNum(Number(v))}`)).join(' · ')}
-              <div className="muted">{t('Social Media scraped data, {from} to {to}', { from: o.external.social_media_scrape.period?.from ?? '', to: o.external.social_media_scrape.period?.to ?? '' })}</div></td></tr>}
+              <div className="muted">{t('Social Media scraped data, {from} to {to}', { from: fmtMonth(o.external.social_media_scrape.period?.from ?? ''), to: fmtMonth(o.external.social_media_scrape.period?.to ?? '') })}</div></td></tr>}
             {o.quality && <tr><th>{t('Quality (team)')}</th><td>{t('accuracy {accuracy} · depth {depth} · local voices {local}', { accuracy: num(o.quality.accuracy), depth: num(o.quality.depth), local: num(o.quality.local_sourcing) })} <span className="muted">(n={o.quality.n})</span></td></tr>}
           </tbody></table>
           {typeof aiCited === 'number' && <p className="small" style={{ margin: '8px 0 0' }}>{tn(aiCited, 'Cited by AI assistants: {n} time in 4 weeks', 'Cited by AI assistants: {n} times in 4 weeks')}</p>}
@@ -140,7 +126,7 @@ export default function OutletPanel({ id }) {
           {hist.data && hist.data.length === 0 ? <p className="muted small">{t('No category records.')}</p> : hist.data && (
             <ul className="list small">{hist.data.map((h) => (
               <li key={h.id}><b>{histDim(h.dimension)}</b>: {label(h.dimension, h.value)} · {code(CONFIDENCE, h.confidence)} · {code(STATUS, h.status)}
-                · {h.valid_to ? t('{from} → {to}', { from: day(h.valid_from), to: day(h.valid_to) }) : t('{from} → now', { from: day(h.valid_from) })} {h.set_by && <>· {t('by {name}', { name: h.set_by })}</>} · <a href={h.evidence_url} target="_blank" rel="noreferrer noopener">{t('evidence')}</a>
+                · {h.valid_to ? t('{from} → {to}', { from: fmtDate(h.valid_from), to: fmtDate(h.valid_to) }) : t('{from} → now', { from: fmtDate(h.valid_from) })} {h.set_by &&<>· {t('by {name}', { name: h.set_by })}</>} · <a href={h.evidence_url} target="_blank" rel="noreferrer noopener">{t('evidence')}</a>
                 {h.note && <div className="muted" dir="auto">{h.note}</div>}
                 {h.status === 'proposed' && me.role === 'admin' && <div className="row"><button className="btn small" disabled={review.busy} onClick={() => review.run(h.id, true)}>{t('Approve')}</button><button className="btn small ghost" disabled={review.busy} onClick={() => review.run(h.id, false)}>{t('Reject')}</button></div>}
               </li>))}</ul>)}

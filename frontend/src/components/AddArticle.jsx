@@ -3,7 +3,8 @@ import { api } from '../api'
 import { useApp } from '../App'
 import { useMutation } from '../hooks/useMutation'
 import { usePageTitle } from '../hooks/usePageTitle'
-import { pick, t } from '../i18n'
+import { langName } from '../charts/scales'
+import { fmtDate, pick, t } from '../i18n'
 import Dialog from './Dialog'
 import { ErrorBox } from './Notices'
 
@@ -52,7 +53,7 @@ export default function AddArticle({ preset = {} }) {
           {meta2 && (
             <>
               <label>{t('Title')}<input type="text" dir="auto" value={title} onChange={(e) => setTitle(e.target.value)} /></label>
-              {meta2.site_name && <div className="small muted">{meta2.site_name} · {meta2.domain} · {meta2.lang || t('language?')} · {meta2.published?.slice(0, 10) || t('date unknown')}</div>}
+              {meta2.site_name && <div className="small muted">{meta2.site_name} · {meta2.domain} · {meta2.lang ? langName(meta2.lang) : t('language?')} · {meta2.published ? fmtDate(meta2.published) : t('date unknown')}</div>}
               <div><div className="small">{t('Topics')}</div><div className="chips">{meta.themes.map((th) =>
                 <button key={th.id} className="chip" aria-pressed={themes.includes(th.id)} onClick={() => toggle(themes, setThemes, th.id)}>{pick(th, 'name')}</button>)}</div></div>
               <div><div className="small">{t('Places (optional)')}</div><div className="chips">{meta.regions.filter((r) => r.level === 'district').map((r) =>

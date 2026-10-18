@@ -72,12 +72,25 @@ export function pick(o, base = 'name') {
 // يناير ... ديسمبر. (ar-LY would write 1.234,5: a dot for thousands, easily read as a decimal.)
 export const locale = () => (current === 'ar' ? 'ar-u-nu-latn' : 'en-GB')
 
+// an API date or timestamp as a Date: a day (YYYY-MM-DD) and a timestamp with no zone are UTC
+const asDate = (d) => {
+  if (d instanceof Date) return d
+  const s = String(d).trim().replace(' ', 'T')
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return new Date(`${s}T00:00:00Z`)
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?$/.test(s)) return new Date(`${s}Z`)
+  return new Date(s)
+}
+
 export function fmtDate(d, opts = { day: 'numeric', month: 'short', year: 'numeric' }) {
   if (d == null || d === '') return ''
-  const date = d instanceof Date ? d : new Date(String(d).length === 10 ? `${d}T00:00:00Z` : d)
+  const date = asDate(d)
   if (Number.isNaN(+date)) return String(d)
   return new Intl.DateTimeFormat(locale(), { timeZone: 'UTC', ...opts }).format(date)
 }
+// a timestamp as "17 Oct 2026, 14:05" (UTC, 24-hour clock)
+export const fmtDateTime = (d) => fmtDate(d, { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false })
+// a month ("2026-10", or any day in it) as "Oct 2026"
+export const fmtMonth = (d) => fmtDate(typeof d === 'string' && /^\d{4}-\d{2}$/.test(d.trim()) ? `${d.trim()}-01` : d, { month: 'short', year: 'numeric' })
 
 export function fmtNum(n, opts) {
   return n == null ? '' : new Intl.NumberFormat(locale(), opts).format(n)

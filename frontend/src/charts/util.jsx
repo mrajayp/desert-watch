@@ -23,12 +23,13 @@ export function useTooltip() {
     if (x > box.width - 290) x = Math.max(4, x - 300)
     setTip({ x, y, content })
   }
-  // left/top stay physical: x and y are measured from the pointer, in screen coordinates
-  const node = tip ? <div className="tooltip" style={{ left: tip.x, top: tip.y }} role="status">{tip.content}</div> : null
+  // left/top stay physical: x and y are measured from the pointer, in screen coordinates. The box is a
+  // pointer convenience (aria-hidden): a screen reader would otherwise hear every mouse move.
+  const node = tip ? <div className="tooltip" style={{ left: tip.x, top: tip.y }} role="tooltip" aria-hidden="true">{tip.content}</div> : null
   return { show, hide: () => setTip(null), node }
 }
 
-// Hatch pattern for "insufficient evidence" (texture = never colour-alone).
+// Hatch pattern for "Not judged" (texture = never colour-alone).
 export function HatchDefs({ id = 'hatch' }) {
   return (
     <defs>

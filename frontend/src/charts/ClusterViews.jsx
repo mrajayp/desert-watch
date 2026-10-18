@@ -11,9 +11,6 @@ import { CLUSTER_SLOTS, clusterColor, layoutClusters, tagText } from './ClusterM
 import { fmt } from './scales'
 import { useSize, useTooltip } from './util'
 
-// ISO dates stay as they are in English; Arabic gets Libyan month names (HTML tooltips only)
-const day = (s) => (isAr() && s ? fmtDate(s) : s)
-
 function rankMap(clusters) {
   const m = new Map()
   clusters.forEach((c) => c.members.forEach((id) => m.set(id, c.rank)))
@@ -158,14 +155,14 @@ export function ClusterMultiples({ network, clusters, periods, lang = 'en', svgR
           return (
             <g key={p.start} transform={`translate(${ox},${oy})`}>
               <rect width={pw} height={ph + 44} rx={6} fill="var(--surface)" stroke="var(--grid)" />
-              <text x={10} y={18} style={{ fontSize: 12, fontWeight: 600, fill: 'var(--ink)' }}>{p.start} → {p.end}</text>
+              <text x={10} y={18} style={{ fontSize: 12, fontWeight: 600, fill: 'var(--ink)' }}>{t('{from} → {to}', { from: fmtDate(p.start), to: fmtDate(p.end) })}</text>
               <text x={pw - 10} y={18} textAnchor="end" className="num" style={{ fontSize: 11 }}>{t('{n} articles', { n: fmt(sum) })}</text>
               <g transform="translate(0,22)">
                 {base.nodes.map((nd) => {
                   const v = periods.outlets[nd.id]?.[i] || 0
                   return v > 0 ? (
                     <circle key={nd.id} cx={nd.x * sx} cy={nd.y * sy} r={Math.max(2.4, r(v))} fill={clusterColor(nd.rank)} stroke="var(--surface)" strokeWidth={1}
-                      onMouseMove={(e) => tip.show(e, <div><b dir="auto">{nd.name}</b><div>{t('{n} articles, {from} → {to}', { n: fmt(v), from: day(p.start), to: day(p.end) })}</div></div>, wrap.current)} />
+                      onMouseMove={(e) => tip.show(e, <div><b dir="auto">{nd.name}</b><div>{t('{n} articles, {from} → {to}', { n: fmt(v), from: fmtDate(p.start), to: fmtDate(p.end) })}</div></div>, wrap.current)} />
                   ) : <circle key={nd.id} cx={nd.x * sx} cy={nd.y * sy} r={1.4} fill="none" stroke="var(--axis)" strokeWidth={0.8} />
                 })}
               </g>

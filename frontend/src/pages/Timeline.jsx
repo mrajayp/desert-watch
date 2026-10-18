@@ -11,12 +11,10 @@ import WikiReading from '../components/WikiReading'
 import { useApi } from '../hooks/useApi'
 import { useMutation } from '../hooks/useMutation'
 import { usePageTitle } from '../hooks/usePageTitle'
-import { N_, fmtDate, isAr, pick, t } from '../i18n'
+import { N_, fmtDate, fmtMonth, pick, t } from '../i18n'
 
 const RANGES = [['all', N_('All')], ['24', N_('24 months')], ['12', N_('12 months')]]
 const GROUPS = [['all', N_('All')], ['general', N_('General')], ['gender', N_('Gender')]]
-// an event day (YYYY-MM-DD): as is in English, with Libyan month names in Arabic
-const day = (d) => (isAr() ? fmtDate(d) : d)
 
 export default function Timeline() {
   const { meta, lang, me, can } = useApp()
@@ -55,7 +53,7 @@ export default function Timeline() {
       }
     }
     const first = months[0], last = months[months.length - 1]
-    const events = data.events.filter((e) => e.day.slice(0, 7) >= first && e.day.slice(0, 7) <= last
+    const events = data.events.filter((e) => e.day.slice(0, 7) >= first && e.day.slice(0, 7) <= last // i18n-ok: month keys compared, not shown
       && (group === 'all' || !e.theme_id || themes.some((t) => t.id === e.theme_id)))
     return { months, rows, events }
   }, [data, range, group, meta.themes])
@@ -67,7 +65,7 @@ export default function Timeline() {
   const right = 12
   const x = d3.scaleBand().domain(view.months).range([left, W - right]).paddingInner(0.12)
   const dayX = (day) => {
-    const m = day.slice(0, 7)
+    const m = day.slice(0, 7) // i18n-ok: the month key of the band, not shown
     const d = +day.slice(8, 10) || 15
     return x(m) == null ? null : x(m) + (x.bandwidth() * (d - 1)) / 30
   }
@@ -98,7 +96,7 @@ export default function Timeline() {
       const bh = v ? Math.max(2, ((h - 8) * v) / max) : 0
       return (
         <rect key={m} x={x(m)} y={y0 + h - 4 - bh} width={x.bandwidth()} height={bh} rx={1.5} fill={color}
-          onMouseMove={(e) => tip.show(e, <div><b>{label}</b><div>{m}: {fmt(v)}</div></div>, wrap.current)} />)
+          onMouseMove={(e) => tip.show(e, <div><b>{label}</b><div>{fmtMonth(m)}: {fmt(v)}</div></div>, wrap.current)} />)
     })
   }
   const caption = t('Source: Desert Watch monitored coverage (relevant articles per theme per month), official statements and ReliefWeb reports as separate streams.') + '\n' +
@@ -120,7 +118,7 @@ export default function Timeline() {
         <div ref={wrap} className="viz" onMouseLeave={() => { tip.hide(); setHoverEv(null) }}>
           <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} role="img" aria-label={t('Timeline of key events and monthly coverage per theme')}>
             {view.months.map((m, i) => i % tickEvery === 0 && (
-              <text key={m} x={x(m) + x.bandwidth() / 2} y={14} textAnchor="middle" style={{ fontSize: 10 }}>{m}</text>))}
+              <text key={m} x={x(m) + x.bandwidth() / 2} y={14} textAnchor="middle" style={{ fontSize: 11 }}>{fmtMonth(m)}</text>))}
             {/* event lines through all rows */}
             {placed.map((e) => (
               <line key={`l${e.id}`} x1={e.x} x2={e.x} y1={22} y2={H - 4} stroke="var(--ink)"
@@ -135,7 +133,7 @@ export default function Timeline() {
                   <text x={left - 10} y={y0 + 14} textAnchor="end" style={{ fontSize: 12, fontWeight: 600, fill: 'var(--ink)' }}>{t('Key events')}</text>
                   {placed.filter((e) => e.lane < laneCount).map((e) => (
                     <g key={e.id} transform={`translate(${e.x},${y0 + 6 + e.lane * 16})`} style={{ cursor: 'pointer' }}
-                      onMouseEnter={(ev) => { setHoverEv(e.id); tip.show(ev, <div><b>{day(e.day)}</b><div dir="auto">{pick(e, 'label')}</div>
+                      onMouseEnter={(ev) => { setHoverEv(e.id); tip.show(ev, <div><b>{fmtDate(e.day)}</b><div dir="auto">{pick(e, 'label')}</div>
                         {e.theme_id && <div className="small muted">{themeName(e.theme_id)}</div>}
                         <div className="small muted">{e.origin === 'user' ? t('added by the team') : t('reference event')} · {t('click for source')}</div></div>, wrap.current) }}
                       onClick={() => e.source_url && window.open(e.source_url, '_blank', 'noopener,noreferrer')}>
@@ -153,7 +151,7 @@ export default function Timeline() {
                     <title>{r.kind === 'theme' ? pick(r.theme, 'name') : r.label}</title>{fitLabel(label, left - 16)}</text>
                   <line x1={left} x2={W - right} y1={y0 + rowH[r.kind] - 4} y2={y0 + rowH[r.kind] - 4} stroke="var(--grid)" />
                   {bars(r.values, y0, rowH[r.kind], r.kind === 'stream' ? 'var(--ink-2)' : r.theme.group ? 'var(--al-3)' : 'var(--accent)', label)}
-                  <text x={W - right} y={y0 + 10} textAnchor="end" className="num" style={{ fontSize: 9, fill: 'var(--muted)' }}>{t('peak {n}', { n: fmt(d3.max(r.values) || 0) })}</text>
+                  <text x={W - right} y={y0 + 11} textAnchor="end" className="num" style={{ fontSize: 11, fill: 'var(--muted)' }}>{t('peak {n}', { n: fmt(d3.max(r.values) || 0) })}</text>
                 </g>)
             })}
           </svg>
@@ -188,7 +186,7 @@ export default function Timeline() {
           <h2>{t('Events ({n})', { n: data.events.length })}</h2>
           {removeEvent.error && <ErrorBox error={removeEvent.error} compact />}
           <ul className="list small scroll" style={{ maxHeight: 360 }}>{[...data.events].reverse().map((e) => (
-            <li key={e.id}><b>{day(e.day)}</b> · <span dir="auto">{pick(e, 'label')}</span>{e.theme_id && <span className="muted"> · {themeName(e.theme_id)}</span>}
+            <li key={e.id}><b>{fmtDate(e.day)}</b> · <span dir="auto">{pick(e, 'label')}</span>{e.theme_id && <span className="muted"> · {themeName(e.theme_id)}</span>}
               {' '}<a href={e.source_url} target="_blank" rel="noreferrer noopener">{t('source')}</a>
               {e.origin === 'user' && <span className="muted"> · {t('added by the team')}</span>}
               {can && e.origin === 'user' && (me.role === 'admin' || e.mine) &&

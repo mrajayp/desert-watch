@@ -5,13 +5,12 @@ import { ErrorBox, Loading } from '../components/Notices'
 import { useApi } from '../hooks/useApi'
 import { useMutation } from '../hooks/useMutation'
 import { usePageTitle } from '../hooks/usePageTitle'
-import { N_, fmtDate, getLang, isAr, t } from '../i18n'
+import { weekRange } from '../charts/trendText'
+import { N_, fmtDateTime, getLang, t } from '../i18n'
 
 // digest status codes from the API (shown for anything but 'ok')
 const STATUS = { error: N_('error'), refused: N_('refused') }
 const status = (s) => t(STATUS[s] || s)
-// a week start (YYYY-MM-DD): as is in English, with Libyan month names in Arabic
-const day = (d) => (isAr() ? fmtDate(d) : d)
 
 // Minimal, safe Markdown: headings, bullets, paragraphs, **bold**, *italic*. Text only, no HTML.
 function inline(text) {
@@ -86,8 +85,8 @@ export default function DigestPage() {
           {cur && (
             <>
               <div className="card-head">
-                <div><h2>{t('Weekly brief · week of {week}', { week: day(cur.week_start) })}</h2>
-                  <p className="sub">{t('Written by {model} from the facts below · {time} UTC', { model: cur.model, time: cur.created_at.slice(0, 16).replace('T', ' ') })}
+                <div><h2>{t('Weekly brief · week of {week}', { week: weekRange(cur.week_start) })}</h2>
+                  <p className="sub">{t('Written by {model} from the facts below · {time} UTC', { model: cur.model, time: fmtDateTime(cur.created_at) })}
                     {cur.usage?.input_tokens ? <> · {t('{n} tokens', { n: cur.usage.input_tokens + cur.usage.output_tokens })}</> : ''}</p></div>
                 {me.role === 'admin' && <button className="btn small" disabled={regenerate.busy} onClick={() => regenerate.run()}>{t('Regenerate')}</button>}
               </div>
@@ -105,7 +104,7 @@ export default function DigestPage() {
         <section className="card">
           <h2>{t('Archive')}</h2>
           <ul className="list">{(list || []).map((d) => (
-            <li key={d.id}><button className="btn ghost" aria-pressed={cur?.id === d.id} onClick={() => open(d.id)}>{t('Week of {week}', { week: day(d.week_start) })}</button>
+            <li key={d.id}><button className="btn ghost" aria-pressed={cur?.id === d.id} onClick={() => open(d.id)}>{t('Week of {week}', { week: weekRange(d.week_start) })}</button>
               <span className="small muted"> {d.status !== 'ok' && status(d.status)}</span></li>))}</ul>
           {list && !list.length && <p className="muted small">{t('No briefs yet.')}</p>}
         </section>

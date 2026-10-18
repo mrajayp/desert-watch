@@ -3,6 +3,8 @@
 import { useEffect, useState } from 'react'
 
 export const WIDE = '(min-width: 900px)'
+// a phone: the lens control becomes a select, the week slider and play are left out
+export const PHONE = '(max-width: 639px)'
 
 export function useMedia(query) {
   const get = () => (typeof window !== 'undefined' && window.matchMedia ? window.matchMedia(query).matches : true)

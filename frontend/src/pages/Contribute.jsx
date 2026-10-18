@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { api } from '../api'
 import { useApp } from '../App'
-import { LENS_TEXT, RED_FROM, fmt, gapLabel } from '../charts/scales'
+import { LENS_TEXT, RED_FROM, fmt, gapLabel, langName } from '../charts/scales'
+import { weekRange } from '../charts/trendText'
 import AiPanelTask from '../components/AiPanelTask'
 import ArticleRow, { replaceItem } from '../components/ArticleRow'
 import { ErrorBox, Loading } from '../components/Notices'
@@ -12,9 +13,6 @@ import { usePageTitle } from '../hooks/usePageTitle'
 import { fmtDate, isAr, pick, t, tn } from '../i18n'
 
 const N_ = (s) => s // marks English for the catalogue; translated with t() when read
-
-// a day (YYYY-MM-DD): as is in English, with Libyan month names in Arabic
-const day = (d) => (isAr() ? fmtDate(d) : d)
 
 // codes the API sends, shown in the interface language
 const MISSING = { scope: N_('scope'), alignment: N_('alignment') }
@@ -63,7 +61,7 @@ export default function Contribute() {
               <div>
                 <b>{nm(themes.get(g.theme_id))}</b> · {nm(regions.get(g.region_id))}
                 <div className="small muted">{gapLabel(g.gap, red)} · {t('{articles} articles vs {need} {unit} ({lens} lens, week of {week})', {
-                  articles: fmt(n), need: fmt(g.need), unit: LENS_TEXT[g.lens]?.unit ?? '', lens: LENS_TEXT[g.lens]?.label ?? '', week: day(g.week),
+                  articles: fmt(n), need: fmt(g.need), unit: LENS_TEXT[g.lens]?.unit ?? '', lens: LENS_TEXT[g.lens]?.label ?? '', week: weekRange(g.week),
                 })}{all != null && all !== n && <span> · {t('{n} from all sources', { n: fmt(all) })}</span>}</div>
               </div>
               <button className="btn small primary" onClick={() => showGap(g)}>{t('Judge')}</button>
@@ -78,7 +76,7 @@ export default function Contribute() {
           <p className="small muted">{t('Tip: from any gap, “Already covered” takes a link too.')}</p>
         </Task>
 
-        <Task n="3" title={t('What is this article about?')} why={t('The rules could not give these a topic ({n} in the last 2 weeks). Use Fix to pick topics, or mark junk.', { n: fmt(d.untagged.total) })}
+        <Task n="3" title={t('What is this article about?')} why={t('The rules could not give these a topic ({n} in the last 2 weeks). Use Correct to pick topics, or mark junk.', { n: fmt(d.untagged.total) })}
           empty={t('Every recent article has a topic.')}>
           {d.untagged.items.length > 0 && <ul className="list">{d.untagged.items.map((it) => <ArticleRow key={it.id} item={it} onChanged={patchList('untagged')} context={{ from: 'contribute' }} />)}</ul>}
         </Task>
@@ -113,7 +111,7 @@ export default function Contribute() {
           <>
             <h3>{t('Your suggestions')}</h3>
             <ul className="list small">{d.my_suggestions.map((x) => (
-              <li key={x.id}>{day(x.at.slice(0, 10))} · <b>{SUGGEST_KINDS[x.kind] ? t(SUGGEST_KINDS[x.kind].label) : x.kind}</b>: <span dir="auto">{summary(x, themes, regions, nm)}</span> <span className="pill">{code(SUGGESTION_STATUS, x.status)}</span></li>))}</ul>
+              <li key={x.id}>{fmtDate(x.at)} · <b>{SUGGEST_KINDS[x.kind] ? t(SUGGEST_KINDS[x.kind].label) : x.kind}</b>:<span dir="auto">{summary(x, themes, regions, nm)}</span> <span className="pill">{code(SUGGESTION_STATUS, x.status)}</span></li>))}</ul>
           </>)}
       </section>
       {me.role === 'admin' && <p className="small muted" style={{ marginTop: 8 }}>{t('Admins: suggestions arrive in Admin → Suggestions.')}</p>}
@@ -197,7 +195,7 @@ function LearnQueue() {
                   <div className="small muted">{t('Article {i} of {total}', { i: i + 1, total: q.items.length })} · {QUEUE_REASON[it.reason]?.(it, themeName) || it.reason}</div>
                   <h3 style={{ margin: '6px 0 2px', fontSize: 15, color: 'var(--ink)' }}>
                     <a href={it.url} target="_blank" rel="noreferrer noopener" dir="auto">{it.title}</a></h3>
-                  <div className="small muted">{it.outlet?.name || '—'} · {day(it.published_at.slice(0, 10))} · {it.lang?.toUpperCase()}</div>
+                  <div className="small muted">{it.outlet?.name || '—'} · {fmtDate(it.published_at)} · {langName(it.lang)}</div>
                   {it.snippet && <p dir="auto" style={{ margin: '8px 0', maxWidth: 820 }}>{it.snippet.length > 400 ? `${it.snippet.slice(0, 400)}…` : it.snippet}</p>}
                   <div className="row small" style={{ margin: '6px 0' }}>
                     <span className="muted">{t('Counted now:')}</span>

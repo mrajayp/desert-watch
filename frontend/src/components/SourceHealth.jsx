@@ -1,12 +1,12 @@
 import { Link } from 'react-router-dom'
 import { useApp } from '../App'
 import { useApi } from '../hooks/useApi'
-import { t, tn } from '../i18n'
+import { fmtDateTime, t, tn } from '../i18n'
 import { ErrorBox } from './Notices'
 
 const N_ = (s) => s // marks English for the catalogue; translated with t() when shown
-// run statuses from the API are codes; English shows the code itself
-const STATUS_TEXT = { ok: N_('ok'), partial: N_('partial'), error: N_('error'), awaiting_key: N_('awaiting_key'), not_built: N_('not_built'), never_run: N_('never_run'), running: N_('running') }
+// run statuses from the API are codes, shown as words
+const STATUS_TEXT = { ok: N_('ok'), partial: N_('partial'), error: N_('error'), awaiting_key: N_('awaiting a key'), not_built: N_('not built yet'), never_run: N_('never run'), running: N_('running') }
 const statusText = (s) => (STATUS_TEXT[s] ? t(STATUS_TEXT[s]) : s)
 // not faults: a source waiting for its key, or one whose key is set but whose collector is not written yet
 const WAITING = new Set(['awaiting_key', 'not_built'])
@@ -35,7 +35,7 @@ export default function SourceHealth({ compact = false }) {
       <thead><tr><th>{t('Source')}</th><th>{t('Status')}</th><th>{t('Last success')}</th><th className="num">{t('Rows (last run)')}</th><th>{t('Note')}</th></tr></thead>
       <tbody>{rows.map((r) => (
         <tr key={r.key}><td>{r.label}</td><td>{statusText(r.status)}{r.stale && !WAITING.has(r.status) ? ` · ${t('stale')}` : ''}</td>
-          <td className="mono">{r.last_ok?.slice(0, 16) || '–'}</td><td className="num">{r.rows}</td>
+          <td className="small">{r.last_ok ? fmtDateTime(r.last_ok) : '–'}</td><td className="num">{r.rows}</td>
           <td className="small muted" style={{ maxWidth: 360, whiteSpace: 'pre-wrap' }}>{r.error?.split('\n')[0]}</td></tr>))}
       </tbody>
     </table>

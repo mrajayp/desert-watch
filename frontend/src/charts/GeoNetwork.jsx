@@ -4,9 +4,10 @@
 // Libyan outlets with no known base sit in a strip at the bottom.
 import * as d3 from 'd3'
 import { useMemo, useRef, useState } from 'react'
-import { GAP_STEPS, INFO_FLAGS, DIMENSIONS, categoryColor, categoryOf, covFill, flagText, fmt, gapFill, gapLabel } from './scales'
+import { GAP_STEPS, DIMENSIONS, categoryColor, categoryOf, covFill, dimLabel, dimValue, fmt, gapFill, gapLabel } from './scales'
 import { HatchDefs, useSize, useTooltip } from './util'
 import { countryName } from './RegionalNetwork'
+import { WarningPills } from '../components/Warnings'
 import { isAr, pick, t, tn } from '../i18n'
 
 const MARGIN_COL = 0.24
@@ -108,15 +109,16 @@ export default function GeoNetwork({ geo, macroGeo, meta, network, cellsByRegion
         <div style={{ marginTop: 4 }}>{t('{count} articles name this district (4 weeks)', { count: fmt(cell?.coverage || 0) })}</div>
         {mode === 'gap' && <div>{cell ? gapLabel(cell.insufficient ? null : cell.gap, red) : t('no need data')}</div>}
         <div>{inc ? tn(inc.n, '{n} outlet shown covering it', '{n} outlets shown covering it') : (cell?.coverage ? t('Links below the minimum are hidden') : t('No monitored outlet covers this district'))}</div>
-        {(cell?.flags || []).map((f) => <div key={f} className={INFO_FLAGS.has(f) ? "pill" : "pill flag"} style={{ marginTop: 3 }}>{flagText(f)}</div>)}
+        <WarningPills codes={cell?.flags} block />
       </div>), wrap.current)
   }
+  // the 2023-24 scrape's disputed labels stay on the outlet page, where their caveat is; a tooltip has no room for it
   const outletTip = (evt, o) => tip.show(evt, (
     <div>
       <b dir="auto">{pick(o)}</b> <span className="muted">{o.domain}</span>
       <div className="small">{pick(o, 'base_city') || countryName(pick(o, 'base_country')) || t('Base not set')}</div>
-      {Object.entries(o.categories || {}).map(([k, v]) => (
-        <div key={k} className="small">{t(DIMENSIONS[k]?.label || k)}: {t(DIMENSIONS[k]?.values?.[v] || v)}
+      {Object.entries(o.categories || {}).filter(([k]) => !k.startsWith('scrape_')).map(([k, v]) => (
+        <div key={k} className="small">{dimLabel(k)}: {dimValue(k, v)}
           {o.confidence?.[k] && <span className="muted"> ({confText(o.confidence[k])})</span>}</div>))}
       <div style={{ marginTop: 4 }}>{t('{count} articles on this selection', { count: fmt(o.articles) })}</div>
     </div>), wrap.current)
@@ -207,7 +209,7 @@ export function GeoLegend({ mode, colorBy, present }) {
       ) : (
         <span>{t('District: articles naming it')} <span className="ramp">{[1, 2, 3, 4, 5].map((i) => <span key={i} style={{ background: `var(--cov-${i})` }} />)}</span></span>
       )}
-      {mode === 'gap' && <span><svg width="14" height="12" style={{ verticalAlign: -2, marginInlineEnd: 5 }}><HatchDefs id="lh" /><rect width="14" height="12" fill="url(#lh)" rx="2" /></svg>{t('insufficient evidence')}</span>}
+      {mode === 'gap' && <span><svg width="14" height="12" style={{ verticalAlign: -2, marginInlineEnd: 5 }}><HatchDefs id="lh" /><rect width="14" height="12" fill="url(#lh)" rx="2" /></svg>{t('Not judged')}</span>}
       <span><svg width="10" height="10" style={{ verticalAlign: -1, marginInlineEnd: 5 }}><circle cx="5" cy="5" r="3.5" fill="none" stroke="var(--gap-5)" strokeWidth="1.5" /></svg>{t('no outlet covers it')}</span>
       <span className="muted">{t('· Outlets by {dimension}:', { dimension: t(dim.label).toLowerCase() })}</span>
       {values.map((v) => <span key={v}><span className="sw" style={{ background: categoryColor(colorBy, v), borderRadius: '50%' }} />{t(dim.values[v])}</span>)}

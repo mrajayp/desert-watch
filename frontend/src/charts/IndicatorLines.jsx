@@ -6,9 +6,11 @@ import * as d3 from 'd3'
 import { useRef } from 'react'
 import { fmt } from './scales'
 import { useSize, useTooltip } from './util'
-import { pick, t, utcFormat } from '../i18n.js'
+import { fmtDate, fmtNum, pick, t, utcFormat } from '../i18n.js'
 
 const iso = (d) => d.toISOString().slice(0, 10)
+// a money figure with two decimals, in the interface language's decimal mark
+const money2 = (v, d = 2) => fmtNum(v, { minimumFractionDigits: d, maximumFractionDigits: d, useGrouping: false })
 const STYLE = {
   main: { stroke: 'var(--accent)', dash: null, width: 1.8 },
   alt: { stroke: 'var(--accent)', dash: '4 3', width: 1.2 },
@@ -51,7 +53,7 @@ function Chart({ group, width, onPickDay }) {
   const valueOn = (s, day) => s.rows.find((r) => iso(r.date) === day)?.v
   const say = (s, day) => {
     const v = valueOn(s, day)
-    if (v != null) return `${money ? v.toFixed(2) : fmt(v)} ${s.ind.unit}`
+    if (v != null) return `${money ? money2(v) : fmt(v)} ${s.ind.unit}`
     return s.ind.source === 'wikimedia_dp' ? t('fewer than about 90 views') : t('no figure that day')
   }
   return (
@@ -59,14 +61,14 @@ function Chart({ group, width, onPickDay }) {
       <svg viewBox={`0 0 ${width} ${H}`} role="img" aria-label={t('{title}, daily', { title: group.title })} style={{ cursor: onPickDay ? 'pointer' : undefined }}
         onMouseMove={(e) => {
           const day = near(e)
-          tip.show(e, <div><b>{day}</b>{series.map((s) => <div key={s.ind.key}>{group.lines.length > 1 ? `${pick(s.ind, 'label')}: ` : ''}{say(s, day)}</div>)}
+          tip.show(e, <div><b>{fmtDate(day)}</b>{series.map((s) => <div key={s.ind.key}>{group.lines.length > 1 ? `${pick(s.ind, 'label')}: ` : ''}{say(s, day)}</div>)}
             {onPickDay && <div className="small muted">{t('click for the economy articles that week')}</div>}</div>, wrap.current)
         }}
         onClick={(e) => onPickDay?.(near(e))}>
         {y.ticks(3).map((v) => <g key={v}><line x1={L} x2={width - R} y1={y(v)} y2={y(v)} stroke="var(--grid)" />
-          <text x={L - 4} y={y(v) + 3} textAnchor="end" style={{ fontSize: 9 }}>{money ? v.toFixed(1) : fmt(v)}</text></g>)}
-        {x.ticks(width < 420 ? 3 : 6).map((d) => <text key={+d} x={x(d)} y={H - 5} textAnchor="middle" style={{ fontSize: 9 }}>{utcFormat('%b %y')(d)}</text>)}
-        <text x={L} y={T - 2} style={{ fontSize: 9, fill: 'var(--muted)' }}>{group.unit}</text>
+          <text x={L - 4} y={y(v) + 3} textAnchor="end" style={{ fontSize: 11 }}>{money ? money2(v, 1) : fmt(v)}</text></g>)}
+        {x.ticks(width < 420 ? 3 : 6).map((d) => <text key={+d} x={x(d)} y={H - 5} textAnchor="middle" style={{ fontSize: 11 }}>{utcFormat('%b %y')(d)}</text>)}
+        <text x={L} y={T - 2} style={{ fontSize: 11, fill: 'var(--muted)' }}>{group.unit}</text>
         {series.map((s) => {
           const st = styleOf(s.ind)
           const last = s.rows.filter((r) => r.v != null).at(-1)

@@ -93,13 +93,16 @@ export default {
   'Reply': 'الرد',
 
   // components/Filters.jsx and SourceFilter.jsx
-  'Need lens': 'عدسة الحاجة',
+  'Filters': 'عوامل التصفية',
+  'Compare coverage with:': 'مقارنة التغطية بـ:',
   'waiting for data source key': 'بانتظار مفتاح مصدر البيانات',
   'Theme': 'الموضوع',
   'All themes': 'جميع المواضيع',
   'All {group} themes': 'جميع مواضيع {group}',
   'General': 'مواضيع عامة',
-  'Week ending': 'الأسبوع المنتهي في',
+  'Week of {range}': 'أسبوع {range}',
+  'Previous week': 'الأسبوع السابق',
+  'Next week': 'الأسبوع التالي',
   'Pause': 'إيقاف مؤقت',
   'Play weeks': 'تشغيل الأسابيع',
   'Week': 'الأسبوع',
@@ -107,13 +110,13 @@ export default {
   'Filter by source': 'التصفية حسب المصدر',
   'All {n}': 'الكل {n}',
 
-  // components/SourceHealth.jsx: run statuses are API codes, shown as they are in English
+  // components/SourceHealth.jsx and the Admin health card: run statuses are API codes, shown as words
   'ok': 'ناجح',
   'partial': 'جزئي',
   'error': 'خطأ',
-  'awaiting_key': 'بانتظار المفتاح',
-  'not_built': 'لم يُكتب بعد',
-  'never_run': 'لم يعمل بعد',
+  'awaiting a key': 'بانتظار المفتاح',
+  'not built yet': 'لم يُكتب بعد',
+  'never run': 'لم يعمل بعد',
   'running': 'قيد التشغيل',
   'stale': 'غير محدَّث',
   '{n} sources stale': { zero: 'لا مصادر متأخرة التحديث', one: 'مصدر واحد متأخر التحديث', two: 'مصدران متأخرا التحديث', few: '{n} مصادر متأخرة التحديث', many: '{n} مصدرًا متأخر التحديث', other: '{n} مصدر متأخر التحديث' },
@@ -132,10 +135,11 @@ export default {
   'Download PNG with source and method note': 'تنزيل PNG مع المصدر وملاحظة المنهجية',
   'Gender': 'النوع الاجتماعي',
 
-  // charts/scales.js: gap wording
-  'insufficient evidence': 'بيانات غير كافية',
-  'about as expected': 'في حدود المتوقع',
-  'about {x}× less coverage than expected': 'تغطية أقل من المتوقع بنحو {x} مرة',
+  // charts/scales.js: gap wording ("Not judged", "About as expected", "About {x} times fewer articles
+  // than expected") shares its keys with charts/trendText.js in trends.js
+
+  // components/Warnings.jsx: read out before a warning pill's words
+  'Warning:': 'تحذير:',
 
   // charts/scales.js: outlet dimensions (adjectives agree with وسيلة إعلامية)
   'Scope': 'النطاق',
@@ -182,7 +186,7 @@ export default {
   'reports': 'تقارير',
   'ReliefWeb reports vs coverage': 'تقارير ReliefWeb مقابل التغطية',
   'Journalists': 'الصحفيون',
-  'flags': 'إشارات',
+  'team flags': 'إشارات الفريق',
   'Gaps flagged by your team vs coverage': 'الفجوات التي أشار إليها الفريق مقابل التغطية',
   'Libyan searches (Google)': 'عمليات البحث في ليبيا (غوغل)',
   'search index': 'مؤشر البحث',

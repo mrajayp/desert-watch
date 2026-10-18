@@ -9,14 +9,12 @@ import SourceFilter from '../components/SourceFilter'
 import { useApi } from '../hooks/useApi'
 import { useMutation } from '../hooks/useMutation'
 import { usePageTitle } from '../hooks/usePageTitle'
-import { N_, fmtDate, isAr, pick, t } from '../i18n'
+import { N_, fmtDate, pick, t } from '../i18n'
 import { articlesQuery } from '../routes'
 
 const PAGE = 50
 const PERIODS = [[1, N_('Last 24 hours')], [7, N_('Last 7 days')], [28, N_('Last 4 weeks')], [90, N_('Last 3 months')]]
 const LANGS = [['', N_('Any')], ['ar', N_('Arabic')], ['en', N_('English')]]
-// a day (YYYY-MM-DD): as is in English, with Libyan month names in Arabic
-const day = (d) => (isAr() ? fmtDate(d) : d)
 
 // Every monitored article, newest first. The filters are the URL:
 // /articles?theme=&region=&days=&start=&end=&lang=&source=&q=&basis= (chart click-throughs link here,
@@ -53,12 +51,12 @@ export default function Articles() {
       <section className="card">
         <div className="card-head">
           <div><h2>{ctx.title ? <span dir="auto">{ctx.title}</span> : t('Articles')} {data && `(${fmt(data.total)})`}</h2>
-            <p className="sub">{ctx.subtitle || t('Everything Desert Watch has collected that passed the {country} relevance check, newest first. Use Fix on a row to correct its topic or place.', { country: pick(meta.country, 'name') })}</p>
+            <p className="sub">{ctx.subtitle || t('Everything Desert Watch has collected that passed the {country} relevance check, newest first. Use Correct on a row to fix its topic or place.', { country: pick(meta.country, 'name') })}</p>
             {ctx.note && <p className="small muted">{ctx.note}</p>}</div>
         </div>
         <div className="row" style={{ gap: 10, flexWrap: 'wrap' }}>
           <select value={custom ? 'custom' : f.days} onChange={(e) => e.target.value !== 'custom' && set({ days: +e.target.value, start: '', end: '' })} aria-label={t('Period')}>
-            {custom && <option value="custom">{t('{from} → {to}', { from: day(f.start) || '…', to: day(f.end) || '…' })}</option>}
+            {custom && <option value="custom">{t('{from} → {to}', { from: fmtDate(f.start) || '…', to: fmtDate(f.end) || '…' })}</option>}
             {PERIODS.map(([d, l]) => <option key={d} value={d}>{t(l)}</option>)}</select>
           <select value={f.theme_id} onChange={(e) => set({ theme: e.target.value })} aria-label={t('Theme')}>
             <option value="">{t('All themes')}</option>

@@ -46,8 +46,8 @@ export function Login({ onDone, lang, setLang }) {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><Brand /><LangSwitch lang={lang} setLang={setLang} /></div>
         <p className="sub">{t('Find the stories nobody is covering in Libya: where need is high and monitored coverage is thin.')}</p>
         <div className="seg" role="tablist" style={{ marginBottom: 12 }}>
-          <button role="tab" aria-pressed={mode === 'login'} aria-selected={mode === 'login'} onClick={() => { setMode('login'); setDone(null); setErr(null) }}>{t('Sign in')}</button>
-          <button role="tab" aria-pressed={mode === 'signup'} aria-selected={mode === 'signup'} onClick={() => { setMode('signup'); setErr(null) }}>{t('Request access')}</button>
+          <button type="button" role="tab" aria-selected={mode === 'login'} onClick={() => { setMode('login'); setDone(null); setErr(null) }}>{t('Sign in')}</button>
+          <button type="button" role="tab" aria-selected={mode === 'signup'} onClick={() => { setMode('signup'); setErr(null) }}>{t('Request access')}</button>
         </div>
         {done ? (
           <div><p>{done}</p><p className="small muted">{t('You’ll be able to sign in once an admin approves your request.')}</p>

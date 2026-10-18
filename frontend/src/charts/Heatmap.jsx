@@ -1,9 +1,10 @@
-// Theme × region grid. Fill = gap (red ramp from meta.red_from); hatched = insufficient evidence;
+// Theme × region grid. Fill = gap (red ramp from meta.red_from); striped = not judged;
 // each cell also prints the count the score used (articles, from the outlets followed all year) so the
 // score is never a black box; the tooltip adds the all-source count when it differs.
 import { useRef } from 'react'
-import { GAP_STEPS, INFO_FLAGS, fmt, gapFill, gapLabel, flagText } from './scales'
+import { GAP_STEPS, fmt, gapFill, gapLabel } from './scales'
 import { HatchDefs, fitLabel, groupedRows, themeLabel, useSize, useTooltip } from './util'
+import { WarningPills } from '../components/Warnings'
 import { pick, t } from '../i18n'
 
 // vote codes from the API (real / covered / not_newsworthy)
@@ -59,9 +60,9 @@ export default function Heatmap({ themes, regions, cells, onSelect, svgRef, unit
                       <div>{t('{articles} articles · {need} {unit}', { articles: fmt(n), need: fmt(c.need), unit: t(unit) })}</div>
                       {all != null && all !== n && <div className="muted">{t('{n} from all sources', { n: fmt(all) })}</div>}
                       <div>{gapLabel(c.insufficient ? null : c.gap, red)}</div>
-                      {(c.flags || []).map((f) => <div key={f} className={INFO_FLAGS.has(f) ? "pill" : "pill flag"} style={{ marginTop: 3 }}>{flagText(f)}</div>)}
+                      <WarningPills codes={c.flags} block />
                       {fb && <div className="small muted" style={{ marginTop: 4 }}>{t('Team: {votes}', { votes: Object.entries(fb).map(([k, v]) => voteText(k, v)).join(t(', ')) })}</div>}
-                    </div>) : <div>{t('No data for this cell')}</div>, wrap.current)}>
+                    </div>) : <div>{t('No data for this theme and region')}</div>, wrap.current)}>
                   <rect x={1} y={1} width={cw - 2} height={ch - 2} rx={4} fill={fill} />
                   {c && <text x={cw / 2} y={ch / 2 + 4} textAnchor="middle" className="num"
                     style={{ fontSize: 11, fill: dark ? '#fff' : 'var(--ink-2)' }}>{fmt(n)}</text>}
@@ -73,7 +74,7 @@ export default function Heatmap({ themes, regions, cells, onSelect, svgRef, unit
       {tip.node}
       <div className="legend" style={{ marginTop: 8 }}>
         <span>{t('Under-coverage')} <span className="ramp">{GAP_STEPS.map((i) => <span key={i} style={{ background: `var(--gap-${i})` }} />)}</span></span>
-        <span><svg width="14" height="12" style={{ verticalAlign: -2, marginInlineEnd: 5 }}><rect width="14" height="12" fill="url(#hm-hatch)" rx="2" /></svg>{t('insufficient evidence')}</span>
+        <span><svg width="14" height="12" style={{ verticalAlign: -2, marginInlineEnd: 5 }}><rect width="14" height="12" fill="url(#hm-hatch)" rx="2" /></svg>{t('Not judged')}</span>
         <span>{t('Number = articles from outlets we followed all year (4 weeks)')}</span>
         <span><svg width="10" height="10" style={{ verticalAlign: -1, marginInlineEnd: 4 }}><circle cx="5" cy="5" r="3" fill="var(--ink)" /></svg>{t('a journalist marked it a real gap')}</span>
       </div>

@@ -9,10 +9,11 @@ import ClusterMap, { ClusterDistrictTable, ClusterLegendTable } from '../charts/
 import { ClusterMultiples, ClusterSummary } from '../charts/ClusterViews'
 import { MixBar } from '../charts/Balance'
 import { DIMENSIONS, categoryColor, fmt } from '../charts/scales'
+import { weekEnd } from '../charts/trendText'
 import { ExportMenu } from '../charts/util'
 import { useApi } from '../hooks/useApi'
 import { usePageTitle } from '../hooks/usePageTitle'
-import { fmtNum, pick, t } from '../i18n'
+import { fmtDate, fmtNum, pick, t } from '../i18n'
 import { countryName } from '../charts/RegionalNetwork'
 
 const N_ = (s) => s // marks English for the catalogue; translated with t() when shown
@@ -52,13 +53,14 @@ export default function Outlets() {
     return m
   }, [rows, dim])
   const country = pick(meta.country, 'name')
-  const caption = t('Source: Desert Watch, {n} monitored outlets, 12 weeks to {week}. Not a census of {country} media.', { n: rows.length, week: filters.week ?? '', country }) + '\n' +
+  const caption = t('Source: Desert Watch, {n} monitored outlets, 12 weeks to {week}. Not a census of {country} media.', { n: rows.length, week: filters.week ? fmtDate(weekEnd(filters.week)) : '', country }) + '\n' +
     t('Position = similarity of theme specialisation (assessed); clusters = Louvain communities (assessed); reprint arrows = headline overlap >= 75% within 48h, 2+ times (observed).')
   const shown = rows.filter((r) => (!q || r.name.toLowerCase().includes(q.toLowerCase()) || r.domain.includes(q.toLowerCase()))
     && (!onlyUnclassified || !r.categories.scope))
   return (
     <>
-      <Filters showWeek />
+      {/* this page reads the week and the outlet colouring only; the lens and theme would be ignored */}
+      <Filters showLens={false} showTheme={false} />
       <main className="page">
         {loadError && <ErrorBox error={loadError} onRetry={retryLoads} />}
         <div className="grid two">
