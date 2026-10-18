@@ -318,4 +318,5 @@ def start_scheduler():
     # after the nightly full recompute (03:30) and before the Monday digest (06:00)
     sched.add_job(ai_audit, "cron", day_of_week="mon", hour=4, minute=20)
     sched.start()
+    STATE["scheduler"] = sched
     return sched

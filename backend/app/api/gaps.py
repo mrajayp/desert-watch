@@ -127,6 +127,8 @@ def sources_health(s: Session = Depends(get_db), _: User = Depends(auth.current_
             keys = ", ".join(k for k in re.findall(r"\b[A-Z][A-Z0-9_]{3,}\b", error) if "_" in k)
             error = (tr("Starts when an admin sets its access key ({keys}).", keys=keys) if keys
                      else tr("Starts when an admin sets its access key."))
+        elif last and last.status == "not_built":   # the key is there, the collector is not (collectors/keyed.py)
+            error = tr("Key set; collector not written yet.")
         out.append({"key": key, "label": tr(label), "status": last.status if last else "never_run",
                     "last_run": last.started_at.isoformat() if last else None,
                     "last_ok": (last_ok.finished_at or last_ok.started_at).isoformat() if last_ok else None,

@@ -4,12 +4,10 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy import func, select
 
 from . import i18n, settings
 from .api import account, admin, ai_audit, ai_panel, contribute, gaps, items, labelling, outlets, signals, social
 from .db import SessionLocal, init_db
-from .models import SourceRun
 from .seed import seed_all
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -53,12 +51,11 @@ for r in (account.router, gaps.router, items.router, social.router, outlets.rout
 
 @app.get("/health")
 def health():
+    """Fly's check. Only whether the process answers and the scheduler runs: it touches no table and
+    never fails on a stale collector (on one machine a failing check stops routing and restarts
+    nothing). The schedule, the lock holder, memory, disk and the backups are on /api/admin/health."""
     sched = _state["scheduler"]
-    with SessionLocal() as s:
-        last = s.scalar(select(func.max(SourceRun.started_at)).where(SourceRun.source_key.not_like("theme_model%")))
-    return {"ok": True, "scheduler": bool(sched and sched.running),
-            "next_runs": [str(j.next_run_time) for j in sched.get_jobs()] if sched else [],
-            "last_collector_run": last.isoformat() if last else None}
+    return {"ok": True, "scheduler": bool(sched and sched.running)}
 
 
 app.mount("/geo", StaticFiles(directory=settings.CONFIG_DIR / "geo"), name="geo")

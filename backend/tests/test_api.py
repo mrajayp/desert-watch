@@ -10,6 +10,38 @@ def test_requires_login(client):
     assert client.get("/api/meta").status_code == 401
 
 
+def test_public_health_says_only_ok_and_scheduler(client, db):
+    from app.models import SourceRun
+    db.add(SourceRun(source_key="rss", started_at=datetime(2020, 1, 1), status="error", error="old"))
+    db.commit()
+    assert client.get("/health").json() == {"ok": True, "scheduler": False}   # never the schedule, never a stale source
+
+
+def test_admin_health_reports_the_machine_and_is_admin_only(client, users, db):
+    from app.models import SourceRun
+    login(client, "j@example.org", "journo-password-1")
+    assert client.get("/api/admin/health").status_code == 403
+    client.post("/api/auth/logout")
+    login(client, "admin@example.org", "admin-password-1")
+    db.add(SourceRun(source_key="rss", started_at=datetime(2020, 1, 1), finished_at=datetime(2020, 1, 1), status="ok"))
+    db.add(SourceRun(source_key="backup", started_at=datetime(2026, 10, 18, 1, 15), finished_at=datetime(2026, 10, 18, 1, 16),
+                     status="ok", error="backups/desert_watch_2026-10-18.db.gz (41.2 MB uploaded), 1 older copies pruned"))
+    db.commit()
+    h = client.get("/api/admin/health").json()
+    assert h["scheduler"] == {"running": False, "jobs": []}
+    assert h["lock"] == {"held": False, "holder": None}
+    assert set(h["memory"]) == {"rss_mb", "mem_available_mb", "swap_free_mb"}
+    assert h["disk"]["free_mb"] > 0 and h["db"]["size_mb"] > 0 and h["db"]["path"].endswith(".db")
+    assert h["last_backup"]["status"] == "ok" and h["last_backup"]["at"] == "2026-10-18T01:16" and "41.2 MB" in h["last_backup"]["note"]
+    assert h["last_digest"] is None and h["last_recompute"] is None
+    assert any(x["key"] == "rss" for x in h["stale_sources"])
+    assert not any(x["key"] in ("acled", "ucdp", "reliefweb") for x in h["stale_sources"])   # waiting for keys, not stale
+    from app import joblock
+    with joblock.held(job="recompute_child"):
+        h = client.get("/api/admin/health").json()
+    assert h["lock"]["held"] is True and h["lock"]["holder"]["job"] == "recompute_child" and h["lock"]["holder"]["pid"]
+
+
 def test_invite_flow(client, users):
     login(client, "admin@example.org", "admin-password-1")
     r = client.post("/api/admin/invites", json={"email": "new@example.org"})

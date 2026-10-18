@@ -138,9 +138,10 @@ export default function Admin() {
       <FeedbackCard />
       <AlertsCard />
       <AiAuditAdmin />
+      <HealthCard />
       <section className="card" style={{ marginTop: 16 }}>
         <div className="card-head"><h2>{t('Data sources')}</h2>
-          <div className="row">{['rss', 'youtube', 'galerts', 'gnews', 'gnews_social', 'digest', 'gdelt', 'gdelt_timeline', 'wikipedia', 'recompute'].map((j) => <button key={j} className="btn small" onClick={() => run(j)}>{t('Run {job}', { job: j })}</button>)}</div></div>
+          <div className="row">{['rss', 'youtube', 'galerts', 'gnews', 'gnews_social', 'digest', 'gdelt', 'gdelt_timeline', 'wikipedia', 'recompute', 'backup'].map((j) => <button key={j} className="btn small" onClick={() => run(j)}>{t('Run {job}', { job: j })}</button>)}</div></div>
         <SourceHealth />
       </section>
     </main>
@@ -393,6 +394,47 @@ function ModelsCard() {
               </tr>))}</tbody>
           </table>
         </div>)}
+    </section>
+  )
+}
+
+// Service health for admins: the scheduler and its next runs, who holds the job lock, memory, disk,
+// the database and its write-ahead log, the last backup, digest and recompute, and stale sources.
+// The public /health check says only whether the process answers and the scheduler runs.
+const RUN_STATUS = { ok: N_('ok'), partial: N_('partial'), error: N_('error'), awaiting_key: N_('awaiting_key'), not_built: N_('not_built'), running: N_('running') }
+const runStatus = (s) => (RUN_STATUS[s] ? t(RUN_STATUS[s]) : s)
+const stamp = (iso) => (iso ? iso.slice(0, 16).replace('T', ' ') : '–')
+
+function HealthCard() {
+  const [d, setD] = useState(null)
+  const [err, setErr] = useState(null)
+  const load = () => api('/api/admin/health').then((r) => { setD(r); setErr(null) }).catch((e) => setErr(e.message))
+  useEffect(() => { load() }, [])
+  const last = (x) => (x ? `${stamp(x.at)} (${runStatus(x.status)})${x.note ? ` · ${x.note}` : ''}` : t('never'))
+  const mb = (x) => (x == null ? '–' : fmtNum(x))
+  const rows = d ? [
+    [t('Scheduler'), `${d.scheduler.running ? t('on') : t('off')}${d.scheduler.jobs.length ? ` · ${t('Next runs')}: ${d.scheduler.jobs.slice(0, 5).map((j) => `${j.job} ${stamp(j.next)}`).join(comma())}` : ''}`],
+    [t('Job lock'), d.lock.holder ? t('held by {job} (pid {pid}) since {since}', { job: d.lock.holder.job || '?', pid: d.lock.holder.pid || '?', since: stamp(d.lock.holder.since) }) : t('free')],
+    [t('Memory'), d.memory.rss_mb == null ? t('not available on this host') : t('{rss} MB used by the web process · {avail} MB available · {swap} MB swap free', { rss: mb(d.memory.rss_mb), avail: mb(d.memory.mem_available_mb), swap: mb(d.memory.swap_free_mb) })],
+    [t('Disk'), t('{free} MB free of {total} MB', { free: mb(d.disk.free_mb), total: mb(d.disk.total_mb) })],
+    [t('Database'), t('{db} MB + {wal} MB write-ahead log', { db: mb(d.db.size_mb), wal: mb(d.db.wal_mb ?? 0) })],
+    [t('Last backup'), last(d.last_backup)],
+    [t('Last digest'), last(d.last_digest)],
+    [t('Last recompute'), last(d.last_recompute)],
+    [t('Stale sources'), d.stale_sources.length ? d.stale_sources.map((x) => `${x.label} (${runStatus(x.status)})`).join(comma()) : t('none')],
+  ] : []
+  return (
+    <section className="card" style={{ marginTop: 16 }}>
+      <div className="card-head">
+        <div><h2>{t('Service health')}</h2>
+          <p className="sub">{t('The scheduler, the job lock, memory, disk, the database and the last backup. The public health check only says whether the process answers.')}</p></div>
+        <button className="btn small" onClick={load}>{t('Refresh')}</button>
+      </div>
+      {err && <p className="err">{err}</p>}
+      {!d && !err && <div className="empty">{t('Loading…')}</div>}
+      {d && (
+        <table className="data"><tbody>{rows.map(([k, v]) => (
+          <tr key={k}><th style={{ textAlign: 'start', whiteSpace: 'nowrap', verticalAlign: 'top' }}>{k}</th><td className="small" dir="auto">{v}</td></tr>))}</tbody></table>)}
     </section>
   )
 }

@@ -20,6 +20,11 @@ class AwaitingKey(Exception):
     """Raised when a collector's credential is not configured yet."""
 
 
+class NotBuilt(Exception):
+    """Raised when a collector's credential is configured but the collector itself is not written yet
+    (ACLED, UCDP, ReliefWeb). The run is recorded as not_built, not as an error with a traceback."""
+
+
 @dataclass
 class RunResult:
     rows: int = 0
@@ -82,6 +87,9 @@ def run_collector(s: Session, source_key: str, fn: Callable[[Session], RunResult
     except AwaitingKey as e:
         s.rollback()
         run.status, run.error = "awaiting_key", str(e)
+    except NotBuilt as e:
+        s.rollback()
+        run.status, run.error = "not_built", str(e)
     except Exception as e:  # noqa: BLE001 - record and carry on
         s.rollback()
         log.exception("collector %s failed", source_key)

@@ -336,6 +336,75 @@ def answer_feedback(fid: int, body: FeedbackReply, s: Session = Depends(get_db),
     return {"ok": True}
 
 
+# ---------------------------------------------------------------- service health (the public /health says only ok + scheduler)
+def _proc_memory() -> dict:
+    """RSS of this process and the machine's MemAvailable and SwapFree, in MB, from /proc (Linux); the
+    keys are None elsewhere."""
+    import re
+    out = {"rss_mb": None, "mem_available_mb": None, "swap_free_mb": None}
+
+    def kb(path, key):
+        try:
+            m = re.search(rf"^{key}:\s+(\d+)\s*kB", open(path, encoding="utf-8").read(), re.M)
+            return round(int(m.group(1)) / 1024) if m else None
+        except OSError:
+            return None
+    out["rss_mb"] = kb("/proc/self/status", "VmRSS")
+    out["mem_available_mb"] = kb("/proc/meminfo", "MemAvailable")
+    out["swap_free_mb"] = kb("/proc/meminfo", "SwapFree")
+    return out
+
+
+def _file_mb(p) -> float | None:
+    try:
+        return round(p.stat().st_size / 1e6, 1)
+    except OSError:
+        return None
+
+
+@router.get("/admin/health")
+def service_health(s: Session = Depends(get_db), _: User = Depends(auth.require_admin)):
+    """What an admin needs when something looks wrong: the scheduler and its next runs, who holds the
+    job lock and since when, which sources are stale, memory and swap, disk, the database and its WAL,
+    the last backup and the last digest."""
+    import shutil
+    from pathlib import Path
+    from .. import joblock, settings
+    from ..jobs import STATE
+    from ..models import SourceRun
+    from .gaps import sources_health
+    sched = STATE["scheduler"]
+    jobs = [{"job": j.name, "next": j.next_run_time.isoformat(timespec="minutes") if j.next_run_time else None}
+            for j in (sched.get_jobs() if sched else [])]
+    db_path = Path(settings.DATABASE_URL.removeprefix("sqlite:///")) if settings.DATABASE_URL.startswith("sqlite:///") else None
+    try:
+        du = shutil.disk_usage(settings.DATA_DIR)
+        disk = {"free_mb": round(du.free / 1e6), "total_mb": round(du.total / 1e6)}
+    except OSError:
+        disk = {"free_mb": None, "total_mb": None}
+
+    def last(key, ok_only=False):
+        q = select(SourceRun).where(SourceRun.source_key == key)
+        if ok_only:
+            q = q.where(SourceRun.status.in_(("ok", "partial")))
+        r = s.scalar(q.order_by(SourceRun.id.desc()).limit(1))
+        return None if r is None else {"status": r.status, "at": (r.finished_at or r.started_at).isoformat(timespec="minutes"),
+                                       "note": (r.error or "")[:200] or None}
+    stale = [{"key": h["key"], "label": h["label"], "status": h["status"], "last_ok": h["last_ok"]}
+             for h in sources_health(s, None)
+             if h["stale"] and h["status"] not in ("awaiting_key", "never_run", "not_built")]
+    return {"scheduler": {"running": bool(sched and sched.running), "jobs": jobs},
+            "lock": {"held": joblock.holder() is not None, "holder": joblock.holder()},
+            "stale_sources": stale,
+            "memory": _proc_memory(),
+            "disk": disk,
+            "db": {"path": str(db_path) if db_path else None, "size_mb": _file_mb(db_path) if db_path else None,
+                   "wal_mb": _file_mb(Path(str(db_path) + "-wal")) if db_path else None},
+            "last_backup": last("backup"), "last_backup_ok": last("backup", ok_only=True),
+            "last_digest": last("digest", ok_only=True),
+            "last_recompute": last("recompute")}
+
+
 @router.get("/admin/methods")
 def methods(_: User = Depends(auth.require_admin)):
     """'How the numbers work': plain-language description of every calculation, for admins."""

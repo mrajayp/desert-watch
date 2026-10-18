@@ -112,6 +112,8 @@ export default {
   'partial': 'جزئي',
   'error': 'خطأ',
   'awaiting_key': 'بانتظار المفتاح',
+  'not_built': 'لم يُكتب بعد',
+  'not built yet': 'لم يُكتب بعد',
   'never_run': 'لم يعمل بعد',
   'running': 'قيد التشغيل',
   'Sources': 'المصادر',
