@@ -172,6 +172,7 @@ def flag_missing_weeks(s: Session, country_id: int | None = None) -> int:
     scoring; returns how many cells it marked."""
     from . import settings
     from .models import CellWeek, Item, ItemTheme
+    from .scoring import EVIDENCE_KEYS
     have = set()
     q = (select(ItemTheme.theme_id, Item.published_at, Item.extra)
          .join(ItemTheme, ItemTheme.item_id == Item.id)
@@ -196,7 +197,10 @@ def flag_missing_weeks(s: Session, country_id: int | None = None) -> int:
         b["search_missing_weeks"] = missing
         if c.theme_id in measured and not b.get("in_progress"):
             b["reason"] = "no_search_data"
+        for k in EVIDENCE_KEYS:   # nothing to judge: no verdict and no evidence either
+            b.pop(k, None)
         c.breakdown = b
+        c.verdict = None
         if not c.insufficient or c.gap is not None:
             c.insufficient, c.gap = True, None
             n += 1

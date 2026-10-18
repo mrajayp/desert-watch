@@ -96,10 +96,26 @@ def test_compute_end_to_end_audience_and_partisan(db):
     assert mid.breakdown["scored_lang"] == {"en": 20} and mid.breakdown["lang"] == {"en": 20}
     assert last.breakdown["articles_4w"] == 0 and last.breakdown["prev_scored_coverage"] == 20
     assert last.breakdown["scored_lang"] == {}
+    # the calibrated verdict: none against 20 expected is short beyond chance; the steady weeks are usual.
+    # alpha rests on this run's 12 complete weeks (the 13th is in progress; a fresh database has no
+    # stored history before the run)
+    assert last.verdict == "short" and last.breakdown["p_low"] < 0.001 and last.breakdown["chance"] == 1000
+    assert last.breakdown["ratio_lo"] > 1.5 and last.breakdown["ratio_hi"] > last.breakdown["ratio_lo"]
+    assert mid.verdict == "usual" and mid.breakdown["chance"] is None and 0.1 < mid.breakdown["p_low"]
+    assert mid.breakdown["alpha_weeks"] == 12 and 0.02 <= mid.breakdown["alpha"] <= 2
+    health = sorted(db.scalars(select(CellWeek).where(CellWeek.theme_id == themes["health"], CellWeek.region_id == nat,
+                                                      CellWeek.lens == "audience")), key=lambda c: c.week_start)
+    assert health[-1].breakdown["in_progress"] and health[-1].verdict is None    # the week still coming in
+    complete = health[:-1]
+    firsts = [c for c in complete if c.breakdown.get("new_short")]
+    assert len(firsts) == 1 and firsts[0].verdict == "short"      # one run of short weeks: new once
+    assert all(c.verdict == "short" for c in complete if c.week_start >= firsts[0].week_start)
+    assert all(c.verdict == "usual" and c.breakdown["new_short"] is False for c in complete if c.week_start < firsts[0].week_start)
     # 'Sabha' in titles puts coverage on the district, but no lens has regional need data yet,
     # and the audience lens is national-only: so regional cells exist but are all insufficient.
     sabha_cells = db.scalars(select(CellWeek).where(CellWeek.region_id == regions["sabha"])).all()
     assert sabha_cells and all(c.insufficient and c.lens != "audience" for c in sabha_cells)
+    assert all(c.verdict is None for c in sabha_cells)             # nothing to judge: no need data
     assert any(f.startswith("partisan_only") for f in mid.flags)
 
 

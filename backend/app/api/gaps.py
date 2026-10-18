@@ -54,6 +54,8 @@ def meta(country: str = "LY", s: Session = Depends(get_db), _: User = Depends(au
                     "latest_scored_week": latest_scored[k].isoformat() if k in latest_scored else None}
                    for k, v in LENSES.items()],
         "red_from": settings.GAP_RED_FROM,
+        # the calibrated verdict: the false-discovery rate per lens-week and the practical floor on exp(gap)
+        "fdr_q": settings.FDR_Q, "min_shortfall": settings.MIN_SHORTFALL,
         "weeks": [w.isoformat() for w in weeks],
         # the default week is the latest one that has ended (the current week is never judged)
         "latest_week": (latest_complete_week(s, c.id) or latest).isoformat() if latest else None,
@@ -145,7 +147,10 @@ def _cell_json(c: CellWeek) -> dict:
             "need": c.need, "articles": scored_articles(c), "articles_all": int(c.coverage), "coverage": c.coverage,
             "ratio": c.ratio, "ref_ratio": c.ref_ratio, "gap": c.gap,
             "insufficient": c.insufficient, "flags": c.flags, "breakdown": c.breakdown,
-            "reason": b.get("reason"), "in_progress": bool(b.get("in_progress"))}
+            "reason": b.get("reason"), "in_progress": bool(b.get("in_progress")),
+            # the calibrated verdict (scoring.judge) with its evidence; null when there is nothing to judge
+            "verdict": c.verdict, "p_low": b.get("p_low"), "p_high": b.get("p_high"),
+            "ratio_lo": b.get("ratio_lo"), "ratio_hi": b.get("ratio_hi"), "chance": b.get("chance")}
 
 
 def _feedback_summary(s: Session, theme_ids=None):
@@ -255,6 +260,9 @@ def all_series(country: str = "LY", lens: str = "audience", region_id: int | Non
                          "articles_4w": b.get("articles_4w"),
                          "expected_4w": None if no_window else b.get("expected_4w"),
                          "gap": cw.gap if cw else None, "insufficient": cw.insufficient if cw else True,
+                         # the calibrated verdict and its evidence (scoring.judge); null when not judged
+                         "verdict": cw.verdict if cw else None, "p_low": b.get("p_low"), "p_high": b.get("p_high"),
+                         "ratio_lo": b.get("ratio_lo"), "ratio_hi": b.get("ratio_hi"), "chance": b.get("chance"),
                          "reason": b.get("reason") if cw else "not_scored",
                          "in_progress": bool(b.get("in_progress")) if cw else w >= current,
                          "flags": cw.flags if cw else []})

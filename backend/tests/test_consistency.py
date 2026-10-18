@@ -53,6 +53,15 @@ def test_every_page_shows_the_same_scored_count_for_a_cell(client, users, db):
     assert stored.breakdown["articles_4w"] == 8 and stored.breakdown["prev_scored_coverage"] == 8
     assert stored.breakdown["scored_lang"] == {"en": 8}
     # one red threshold everywhere
-    assert client.get("/api/meta").json()["red_from"] == settings.GAP_RED_FROM == 0.4
+    meta = client.get("/api/meta").json()
+    assert meta["red_from"] == settings.GAP_RED_FROM == 0.4
     from app.api.contribute import GAP_MIN
     assert GAP_MIN == settings.GAP_RED_FROM
+    # the calibrated verdict and its evidence travel with every view of the cell (A-R2.1)
+    assert meta["fdr_q"] == settings.FDR_Q == 0.1 and meta["min_shortfall"] == settings.MIN_SHORTFALL == 1.5
+    keys = ("verdict", "p_low", "p_high", "ratio_lo", "ratio_hi", "chance")
+    assert cell["verdict"] == stored.verdict in ("usual", "possibly_short", "short", "over", "unclear")
+    assert all(cell[k] == rows[i][k] == g["cell"][k] for k in keys)
+    assert cell["p_low"] == stored.breakdown["p_low"] and cell["ratio_lo"] == stored.breakdown["ratio_lo"]
+    unjudged = next(c for c in cells if c["insufficient"] and c["reason"] in ("no_need_data", "in_progress"))
+    assert all(unjudged[k] is None for k in keys)

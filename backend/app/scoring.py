@@ -20,7 +20,24 @@ The reference depends on the lens:
                    were chosen (and search lists on which words) and are not comparable across themes.
 Every cell without a gap says why in breakdown.reason: in_progress (the week, or its need data,
 has not ended), building_baseline, no_need_data, too_little_need or too_few_expected. The search
-lens adds no_search_data (gtrends.flag_missing_weeks)."""
+lens adds no_search_data (gtrends.flag_missing_weeks).
+
+The calibrated verdict (CellWeek.verdict; stats.py, dispersions, cell_evidence, judge) asks whether the
+shortfall is larger than chance would explain. Weekly counts are overdispersed, Var = mu + alpha mu^2,
+with alpha per theme and lens. breakdown keys:
+  alpha, alpha_weeks   the theme's dispersion on this lens and the complete national weeks it rests on
+                       (the last 52: this run's cells plus the stored ones before it); on every cell
+  variance             V, the window count's variance if nothing had changed
+  p_low, p_high        P(X <= C) and P(X >= C) under V (negative binomial; Poisson at the floor)
+  se_g                 the standard error of gap; ratio_lo, ratio_hi: the 90% interval on exp(gap)
+  chance               "1 in N" for the side the cell leans to (p_low when C <= E); null past p = 0.2
+  new_short            short this week and not the week before (the digest's new gaps)
+verdict: short | over | usual | possibly_short for a judged cell, decided per lens-week family
+(national cells together, each district level its own family) by Benjamini-Hochberg at settings.FDR_Q
+with the practical floor settings.MIN_SHORTFALL; unclear when E < MIN_EXPECTED_ARTICLES (reason
+too_few_expected), alpha rests on fewer than ALPHA_UNCLEAR_WEEKS weeks, or the interval is wider than
+MAX_INTERVAL_RATIO; null when there is nothing to judge (in_progress, no_need_data, ...). gap and
+insufficient do not depend on the verdict."""
 import math
 import statistics
 from bisect import bisect_left
@@ -34,6 +51,7 @@ from sqlalchemy.orm import Session
 from . import settings
 from .models import (CellWeek, Country, Item, ItemRegion, ItemTheme, OutletCategory, Region, Theme,
                      utcnow)
+from .stats import benjamini_hochberg, interval, nb_tail, one_in
 
 # daily: need arrives as one reading per day, so a week counts as complete only once its need
 # data reaches the week's last day.
@@ -103,6 +121,111 @@ def score_cell(coverage: float, need: float, ref_ratio: float | None, *, prior: 
     if expected < min_expected:
         return Score(ratio, ref_ratio, None, True, expected, "too_few_expected")
     return Score(ratio, ref_ratio, math.log((expected + prior) / (coverage + prior)), False, expected)
+
+
+# ---------------------------------------------------------------- calibrated verdict
+VERDICTS = ("short", "over", "usual", "possibly_short", "unclear")
+EVIDENCE_KEYS = ("variance", "p_low", "p_high", "se_g", "ratio_lo", "ratio_hi", "chance", "new_short")
+
+
+def alpha_pair(b: dict | None) -> tuple[float, float] | None:
+    """(stories counted, expectation) of one complete national week, for the dispersion estimate: the
+    week's articles_week against the expected_week its own baseline gave it. None when the week is
+    still coming in, predates collection, was cut at its last need day, or expects fewer than one
+    article (a moment estimate on a mean below 1 is noise)."""
+    if not b or b.get("in_progress") or b.get("building_baseline") or b.get("need_through"):
+        return None
+    mu = b.get("expected_week")
+    if mu is None or mu < 1:
+        return None
+    return float(b.get("articles_week") or 0), float(mu)
+
+
+def dispersion_hat(weeks) -> tuple[float | None, int]:
+    """(alpha_hat, m): the moment estimate of a theme's dispersion from its (count, expectation) weeks,
+    the mean of ((c - mu)^2 - mu) / mu^2 over the m weeks with mu >= 1, clipped to [ALPHA_MIN, ALPHA_MAX]."""
+    used = [(c, mu) for c, mu in weeks if mu >= 1]
+    if not used:
+        return None, 0
+    a = sum(((c - mu) ** 2 - mu) / (mu * mu) for c, mu in used) / len(used)
+    return min(max(a, settings.ALPHA_MIN), settings.ALPHA_MAX), len(used)
+
+
+def dispersions(by_theme: dict) -> tuple[dict, float]:
+    """One lens: theme key -> (alpha, weeks used) from each theme's weeks, and the lens-wide alpha.
+    The lens-wide alpha is the median of the estimates resting on ALPHA_MIN_WEEKS weeks or more
+    (ALPHA_SEED until one does). A theme with enough weeks is shrunk to it with weight ALPHA_SHRINK_WEEKS,
+    alpha = (m alpha_hat + 12 alpha_lens) / (m + 12); with fewer weeks it takes the lens-wide alpha."""
+    hats = {k: dispersion_hat(w) for k, w in by_theme.items()}
+    good = [a for a, m in hats.values() if a is not None and m >= settings.ALPHA_MIN_WEEKS]
+    lens_alpha = statistics.median(good) if good else settings.ALPHA_SEED
+    w = settings.ALPHA_SHRINK_WEEKS
+    out = {}
+    for k, (a, m) in hats.items():
+        enough = a is not None and m >= settings.ALPHA_MIN_WEEKS
+        out[k] = ((m * a + w * lens_alpha) / (m + w) if enough else lens_alpha, m)
+    return out, lens_alpha
+
+
+def cell_evidence(expected: float, stories: float, alpha: float, mu_weeks, baseline_counts, *,
+                  prior: float | None = None, z: float | None = None) -> dict:
+    """The tail probabilities and the interval of one judged cell, C stories against E expected:
+      V      = E + alpha * sum_W mu_w^2 + E^2 * s_E^2    the window count's variance if nothing changed
+      s_E^2  = (H + alpha * sum_B c_b^2) / H^2            the baseline ratio's relative variance, H = sum_B c_b
+      p_low  = P(X <= C), p_high = P(X >= C)              stats.nb_tail under V
+      SE_g^2 = 1 / (C + A) + alpha * sum_W mu_w^2 / E^2 + s_E^2 (E / (E + A))^2
+                                                          delta method on g = ln((E + A) / (C + A)) under the
+                                                          same variance model as V, so the interval and the
+                                                          tail agree (the proposal wrote the middle term as
+                                                          alpha, the weekly dispersion put on the 4-week sum)
+      ratio_lo, ratio_hi = exp(g -/+ z SE_g)              the 90% interval on exp(g), "N times fewer"
+      chance = "1 in N" on the side the cell leans to (p_low when C <= E, else p_high); None past 0.2
+    mu_weeks: the expectation of each window week (they sum to E). baseline_counts: the weekly stories
+    the reference rests on (the cell's own 12 weeks; on a pooled lens the pool's window nationally, the
+    theme's national window for a district)."""
+    A = settings.PRIOR_ARTICLES if prior is None else prior
+    z = settings.INTERVAL_Z if z is None else z
+    E, C = float(expected), float(stories)
+    H = float(sum(baseline_counts))
+    s_e2 = (H + alpha * sum(c * c for c in baseline_counts)) / (H * H) if H > 0 else 0.0
+    shape = sum(mu * mu for mu in mu_weeks)        # sum_W mu_w^2: E^2 / 4 when the window's weeks are alike
+    V = E + alpha * shape + E * E * s_e2
+    p_low, p_high = nb_tail(E, V, C)
+    g = math.log((E + A) / (C + A))
+    se = math.sqrt(1.0 / (C + A) + alpha * shape / (E * E) + s_e2 * (E / (E + A)) ** 2)
+    lo, hi = interval(g, se, z)
+    return {"variance": round(V, 2), "p_low": round(p_low, 6), "p_high": round(p_high, 6), "se_g": round(se, 4),
+            "ratio_lo": round(lo, 3), "ratio_hi": round(hi, 3), "chance": one_in(p_low if g >= 0 else p_high)}
+
+
+def judge(cells, *, q: float | None = None, min_shortfall: float | None = None) -> list[str]:
+    """Verdicts for one family: the judged cells of one lens, week and region level (national cells
+    together; each district level its own family). Each cell maps gap, p_low, p_high, se_g, alpha_weeks.
+      unclear         alpha rests on fewer than ALPHA_UNCLEAR_WEEKS weeks, or exp(z SE_g) > MAX_INTERVAL_RATIO
+      short           p_low rejected by Benjamini-Hochberg at q across the clear cells, and exp(gap) >= MIN_SHORTFALL
+      over            p_high rejected and exp(gap) <= 1 / MIN_SHORTFALL
+      possibly_short  p_low < q but not rejected (a rejected cell below the floor reads usual)
+      usual           everything else"""
+    q = settings.FDR_Q if q is None else q
+    floor = settings.MIN_SHORTFALL if min_shortfall is None else min_shortfall
+    clear = [i for i, c in enumerate(cells)
+             if (c.get("alpha_weeks") or 0) >= settings.ALPHA_UNCLEAR_WEEKS
+             and math.exp(settings.INTERVAL_Z * c["se_g"]) <= settings.MAX_INTERVAL_RATIO]
+    low = benjamini_hochberg([cells[i]["p_low"] for i in clear], q)
+    high = benjamini_hochberg([cells[i]["p_high"] for i in clear], q)
+    out = ["unclear"] * len(cells)
+    for j, i in enumerate(clear):
+        c = cells[i]
+        ratio = math.exp(c["gap"])
+        if low[j] and ratio >= floor:
+            out[i] = "short"
+        elif high[j] and ratio <= 1.0 / floor:
+            out[i] = "over"
+        elif c["p_low"] < q and not low[j]:
+            out[i] = "possibly_short"
+        else:
+            out[i] = "usual"
+    return out
 
 
 @dataclass
@@ -499,8 +622,20 @@ def compute(s: Session, country_id: int, *, weeks: int = 12, today: date | None 
     lenses = lenses or tuple(LENSES)
     s.execute(delete(CellWeek).where(CellWeek.country_id == country_id, CellWeek.week_start >= first,
                                      CellWeek.week_start <= last, CellWeek.lens.in_(lenses)))
-    n = 0
     region_ids = [r.id for r in by_id.values()]
+
+    def weekly_counts(wk_end: date, theme_id, region_id, weeks: int, keep) -> list[int]:
+        """Stories on the comparable pairs per week, over `weeks` weeks ending at wk_end, newest first."""
+        out = []
+        for i in range(weeks):
+            c = weekly_cov.get((wk_end - timedelta(weeks=i), theme_id, region_id))
+            out.append(counted(c.pairs, keep) if c else 0)
+        return out
+
+    # one record per cell: the CellWeek fields, plus the evidence inputs under keys starting with "_".
+    # The rows are written after the verdicts, which need every cell of a lens-week and the dispersion
+    # of every theme over the run (the session held the same objects before the commit as it does now).
+    pending: list[dict] = []
     wk = first
     while wk <= last:
         keep = keep_for(wk)
@@ -516,13 +651,17 @@ def compute(s: Session, country_id: int, *, weeks: int = 12, today: date | None 
             # (each theme's articles against its own need, so the gaps balance out across them). A
             # theme with no need adds no articles: 13 themes' coverage over one theme's report would
             # make that theme look many times short.
-            pool = [cur[(t.id, national.id)][:2] for t in themes if cur[(t.id, national.id)][1][lens] > 0]
+            pool_ids = [t.id for t in themes if cur[(t.id, national.id)][1][lens] > 0]
+            pool = [cur[(tid, national.id)][:2] for tid in pool_ids]
             nat_cov = sum(counted(p_agg.pairs, keep) for p_agg, _ in pool)
             nat_need = sum(p_need[lens] for _, p_need in pool)
             pooled_nat = nat_cov / nat_need if nat_need else None
+            # the pool's weekly stories: the baseline every national cell of a pooled lens rests on
+            pool_weekly = [c for tid in pool_ids for c in weekly_counts(wk, tid, national.id, settings.WINDOW_WEEKS, keep)]
             for t in themes:
                 theme_nat_agg, theme_nat_need, _ = cur[(t.id, national.id)]
                 theme_ref = (counted(theme_nat_agg.pairs, keep) / theme_nat_need[lens]) if theme_nat_need[lens] else None
+                theme_nat_weekly = None   # the theme's national window by week: a district cell's baseline
                 for rid in region_ids:
                     reg = by_id[rid]
                     if reg.level not in cfg["levels"]:
@@ -535,6 +674,7 @@ def compute(s: Session, country_id: int, *, weeks: int = 12, today: date | None 
                     baseline_windows = 0
                     if cfg["reference"] == "own_history":
                         hc = hn = 0.0
+                        baseline_counts: list[int] = []
                         for i in range(1, 4):
                             w_end = wk - timedelta(weeks=settings.WINDOW_WEEKS * i)
                             if w_end - timedelta(weeks=settings.WINDOW_WEEKS - 1) < collection_start:
@@ -543,9 +683,14 @@ def compute(s: Session, country_id: int, *, weeks: int = 12, today: date | None 
                             hc += counted(a2.pairs, keep)
                             hn += n2[lens]
                             baseline_windows += 1
+                            baseline_counts += weekly_counts(w_end, t.id, rid, settings.WINDOW_WEEKS, keep)
                         ref = hc / hn if hn else None
+                    elif reg.level == "national":
+                        ref, baseline_counts = pooled_nat, pool_weekly
                     else:
-                        ref = pooled_nat if reg.level == "national" else theme_ref
+                        if theme_nat_weekly is None:
+                            theme_nat_weekly = weekly_counts(wk, t.id, national.id, settings.WINDOW_WEEKS, keep)
+                        ref, baseline_counts = theme_ref, theme_nat_weekly
                     partial = wk - timedelta(weeks=settings.WINDOW_WEEKS - 1) < collection_start
                     building = partial or (cfg["reference"] == "own_history" and baseline_windows == 0)
                     sc = score_cell(scored_cov, need[lens], ref, min_need=floor)
@@ -573,10 +718,14 @@ def compute(s: Session, country_id: int, *, weeks: int = 12, today: date | None 
                     need_week = weekly_need.get(k, {}).get(lens, 0.0)
                     wcov = weekly_cov.get(k)
                     used = {p for (ps, _) in agg.pairs for p in ps if keep is None or p in keep}
-                    s.add(CellWeek(
+                    # the expectation of each window week: the variance of the window count needs them
+                    mu_weeks = [ref * weekly_need.get((wk - timedelta(weeks=i), t.id, rid), {}).get(lens, 0.0)
+                                for i in range(settings.WINDOW_WEEKS)] if ref is not None else None
+                    pending.append(dict(
                         country_id=country_id, theme_id=t.id, region_id=rid, week_start=wk, lens=lens,
                         need=need[lens], coverage=agg.total, ratio=sc.ratio, ref_ratio=sc.ref_ratio, gap=sc.gap,
-                        insufficient=sc.insufficient, flags=flags,
+                        insufficient=sc.insufficient, verdict=None, flags=flags,
+                        _mu_weeks=mu_weeks, _baseline=baseline_counts, _level=reg.level,
                         breakdown={"lang": dict(agg.lang), "scope": dict(agg.scope),
                                    "alignment": dict(agg.alignment), "source": dict(agg.source),
                                    "unplaced": agg.unplaced, "prev_coverage": pagg.total,
@@ -600,12 +749,56 @@ def compute(s: Session, country_id: int, *, weeks: int = 12, today: date | None 
                                    "need_week_raw": weekly_raw.get(k, {}).get(lens, 0.0),
                                    "need_raw": raw[lens],
                                    "need_lang_week": dict(weekly_lang.get(k, {}).get(lens, {})),
-                                   "expected_week": need_week * ref if ref is not None and need[lens] else None},
-                        computed_at=utcnow()))
-                    n += 1
+                                   "expected_week": need_week * ref if ref is not None and need[lens] else None}))
         wk += timedelta(weeks=1)
+
+    # ---- calibrate: each theme's dispersion on each lens from its last 52 complete national weeks (this
+    # run's cells and the stored ones before `first`, which the run keeps), then the evidence of every
+    # judged cell and the verdicts per lens-week family
+    alpha_from = last - timedelta(weeks=settings.ALPHA_HISTORY_WEEKS - 1)
+    pairs_by: dict[tuple, list] = defaultdict(list)
+    for tid, lens, b in s.execute(select(CellWeek.theme_id, CellWeek.lens, CellWeek.breakdown).where(
+            CellWeek.country_id == country_id, CellWeek.region_id == national.id, CellWeek.lens.in_(lenses),
+            CellWeek.week_start >= alpha_from, CellWeek.week_start < first)):
+        pr = alpha_pair(b)
+        if pr:
+            pairs_by[(tid, lens)].append(pr)
+    for rec in pending:
+        if rec["region_id"] == national.id and rec["week_start"] >= alpha_from:
+            pr = alpha_pair(rec["breakdown"])
+            if pr:
+                pairs_by[(rec["theme_id"], rec["lens"])].append(pr)
+    alphas: dict[tuple, tuple[float, int]] = {}
+    for lens in lenses:
+        alphas.update(dispersions({(t.id, lens): pairs_by.get((t.id, lens), []) for t in themes})[0])
+    families: dict[tuple, list[dict]] = defaultdict(list)   # (week, lens, level) -> the judged cells
+    for rec in pending:
+        b = rec["breakdown"]
+        alpha, m = alphas[(rec["theme_id"], rec["lens"])]
+        b["alpha"], b["alpha_weeks"] = round(alpha, 4), m
+        if rec["gap"] is not None:
+            b.update(cell_evidence(b["expected_4w"], b["articles_4w"], alpha, rec["_mu_weeks"], rec["_baseline"]))
+            families[(rec["week_start"], rec["lens"], rec["_level"])].append(rec)
+        elif b["reason"] == "too_few_expected":
+            rec["verdict"] = "unclear"
+    for recs in families.values():
+        for rec, v in zip(recs, judge([{**rec["breakdown"], "gap": rec["gap"]} for rec in recs])):
+            rec["verdict"] = v
+    # new_short: short this week and not the week before. The records run week by week, so each week
+    # reads the one before it; the first reads the stored week before the run.
+    prev_verdict = {(tid, rid, lens): v for tid, rid, lens, v in s.execute(
+        select(CellWeek.theme_id, CellWeek.region_id, CellWeek.lens, CellWeek.verdict).where(
+            CellWeek.country_id == country_id, CellWeek.week_start == first - timedelta(weeks=1),
+            CellWeek.lens.in_(lenses)))}
+    for rec in pending:
+        k = (rec["theme_id"], rec["region_id"], rec["lens"])
+        if rec["gap"] is not None:
+            rec["breakdown"]["new_short"] = rec["verdict"] == "short" and prev_verdict.get(k) != "short"
+        prev_verdict[k] = rec["verdict"]
+    for rec in pending:
+        s.add(CellWeek(**{k: v for k, v in rec.items() if not k.startswith("_")}, computed_at=utcnow()))
     s.commit()
-    return n
+    return len(pending)
 
 
 CHUNK_WEEKS = 26  # long recomputes run in chunks so memory stays bounded (512 MB machine)

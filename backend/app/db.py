@@ -65,6 +65,7 @@ ADDED_COLUMNS = {
     "user": {"status": "VARCHAR(10) DEFAULT 'active'", "organisation": "VARCHAR(200)", "signup_note": "TEXT",
              "approved_by": "INTEGER"},
     "key_event": {"label_ar": "VARCHAR(300)"},
+    "cell_week": {"verdict": "VARCHAR(16)"},
     "digest": {"content_md_ar": "TEXT"},
     # the AI answers audit's three origins (api | panel | browser); existing rows are developer-API runs
     "ai_run": {"origin": "VARCHAR(10) DEFAULT 'api'"},

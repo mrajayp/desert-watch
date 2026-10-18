@@ -225,6 +225,8 @@ class CellWeek(Base):
     ref_ratio: Mapped[float | None] = mapped_column(Float)
     gap: Mapped[float | None] = mapped_column(Float)
     insufficient: Mapped[bool] = mapped_column(Boolean, default=True)
+    # short | over | usual | possibly_short | unclear (scoring.judge); None when there is nothing to judge
+    verdict: Mapped[str | None] = mapped_column(String(16))
     flags: Mapped[list] = mapped_column(JSON, default=list)
     breakdown: Mapped[dict] = mapped_column(JSON, default=dict)
     computed_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)

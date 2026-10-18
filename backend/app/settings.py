@@ -58,3 +58,15 @@ PRIOR_ARTICLES = 5          # A: the prior, in articles, for every lens (replace
 MIN_EXPECTED_ARTICLES = 3   # a cell is judged only when E reaches this
 GAP_RED_FROM = 0.4          # about 1.5 times fewer articles than expected
 PAGEVIEW_SPIKE_CAP = 5      # a title's day counts at most this many times its trailing 28-day median
+# Calibrated verdict (stats.py; scoring.dispersions, cell_evidence and judge). Weekly counts are
+# overdispersed: Var = mu + alpha * mu^2 per week, alpha estimated per theme and lens.
+FDR_Q = 0.10                # Benjamini-Hochberg false-discovery rate per lens-week family
+MIN_SHORTFALL = 1.5         # exp(gap) must reach this for `short` (1/this for `over`): a practical floor
+ALPHA_SEED = 0.3            # the lens-wide dispersion before any theme has ALPHA_MIN_WEEKS weeks
+ALPHA_MIN, ALPHA_MAX = 0.02, 2.0
+ALPHA_SHRINK_WEEKS = 12     # weight of the lens-wide alpha when a theme's estimate is shrunk to it
+ALPHA_MIN_WEEKS = 12        # with fewer weeks a theme takes the lens-wide alpha
+ALPHA_UNCLEAR_WEEKS = 8     # with fewer weeks a cell's verdict is unclear
+ALPHA_HISTORY_WEEKS = 52    # complete weeks the dispersion is estimated over
+INTERVAL_Z = 1.645          # the interval on the shortfall is 90%
+MAX_INTERVAL_RATIO = 4      # exp(INTERVAL_Z * SE_g) above this: too wide to say anything (unclear)

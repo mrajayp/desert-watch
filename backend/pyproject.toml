@@ -24,3 +24,4 @@ python-preference = "only-managed"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = ["simulation: a statistical simulation of the verdict (runs in under a minute)"]
