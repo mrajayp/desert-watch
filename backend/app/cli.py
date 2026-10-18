@@ -7,6 +7,9 @@
   backfill [WEEKS]          gnews + wikipedia + gdelt history + rss
   recompute                 duplicates + scores + network + labels
   dedupe                    mark every duplicate copy of a story (full pass)
+  mark-recurring [--days 30] [--min 3] [--since YYYY-MM-DD]  flag recurring posts (daily rates, weather...) so no count
+                            treats them as stories: the same headline minus digits and weekdays, 3+ times within 30 days at
+                            one outlet family. Judges the last 30 days; --since judges everything from that day (the rebuild)
   apply-theme-terms SLUG... copy only the term fields (terms, exclude, cooc, veto, mask) of these themes
                             from themes.yaml. Admin edits to names and other fields stay (sync-themes overwrites them)
   retag-all [--dry-run]     re-run the theme + place rules over every article, then the relevance guard
@@ -275,6 +278,15 @@ def main(argv: list[str]):
         from .dedupe import mark_duplicates
         with SessionLocal() as s:
             print(mark_duplicates(s), "articles marked as duplicates")
+    elif cmd == "mark-recurring":
+        import json
+        from datetime import datetime as _datetime
+        from .recurring import RECUR_DAYS, RECUR_MIN, mark_recurring
+        opt = lambda k, d=None: args[args.index(k) + 1] if k in args else d  # noqa: E731
+        since = _datetime.fromisoformat(opt("--since")) if opt("--since") else None
+        with SessionLocal() as s:
+            print(json.dumps(mark_recurring(s, days=int(opt("--days", RECUR_DAYS)), min_repeats=int(opt("--min", RECUR_MIN)),
+                                            since=since)))
     elif cmd == "resolve-links":
         import json
         from .resolve import run as run_resolve
