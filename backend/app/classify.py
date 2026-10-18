@@ -151,14 +151,58 @@ class ThemeRule:
         return m[1] if m else []
 
 
+def _definite_only(norm_alias: str, variants: list[str]) -> list[str]:
+    """For an ambiguous Arabic alias written with the article (الخمس), keep the definite forms only
+    (الخمس, بالخمس, والخمس, للخمس ...): the bare word that term_variants also makes (خمس, "five") is the
+    common word the alias is confused with. Aliases without the article are left as they are."""
+    first, _, rest = norm_alias.partition(" ")
+    if not (first.startswith("ال") and len(first) > 3):
+        return variants
+    base, tail = first[2:], (" " + rest if rest else "")
+    indefinite = {p + base + tail for p in ("", "و", "ب", "ل", "ف")}
+    return [v for v in variants if v not in indefinite]
+
+
 @dataclass
 class PlaceRule:
+    """One region's aliases as normalised variants. An ambiguous alias is also a common word once
+    the Arabic article is stripped (الخمس -> خمس "five", الجميل -> جميل) or a place elsewhere
+    (Tripoli in Lebanon, البيضاء in Yemen): it tags only when the text also names the country or an
+    unambiguous alias of some region (tag_places). negatives: a variant does not count at all when
+    one of its context words is in the text (Tripoli next to Lebanon)."""
     region_id: int
-    variants: list[str]
+    variants: list[str]                                      # unambiguous aliases
+    ambiguous: list[str] = field(default_factory=list)       # aliases that need the country or another place beside them
+    negatives: dict[str, tuple] = field(default_factory=dict)  # variant -> compiled words that veto it
 
     @classmethod
-    def build(cls, region_id, aliases):
-        return cls(region_id, sorted({v for a in aliases for v in term_variants(a)}))
+    def build(cls, region_id, aliases, ambiguous=(), negatives: dict | None = None):
+        """aliases as written; `ambiguous` the subset (as written) that are homonyms; `negatives`
+        alias (as written) -> words that veto it. Aliases are compared after normalisation."""
+        amb = {normalise(a).strip() for a in ambiguous}
+        neg = {normalise(k).strip(): _compile(v) for k, v in (negatives or {}).items() if v}
+        plain, weak, vetoes = set(), set(), {}
+        for a in aliases:
+            key = normalise(a).strip()
+            vs = term_variants(a)
+            if key in amb:
+                vs = _definite_only(key, vs)
+            (weak if key in amb else plain).update(vs)
+            if key in neg:
+                for v in vs:
+                    vetoes[v] = neg[key]
+        return cls(region_id, sorted(plain - weak), sorted(weak), vetoes)
+
+    def _present(self, variants: list[str], n: str, toks: set) -> bool:
+        return any(f" {v} " in n and not (v in self.negatives and _found(self.negatives[v], n, toks)) for v in variants)
+
+    def plain_hit(self, n: str, toks: set) -> bool:
+        """An unambiguous alias is in the normalised text (and not vetoed)."""
+        return self._present(self.variants, n, toks)
+
+    def weak_hit(self, n: str, toks: set) -> bool:
+        """An ambiguous alias is in the normalised text (and not vetoed): counts only when anchored."""
+        return self._present(self.ambiguous, n, toks)
 
 
 # ---------------------------------------------------------------- snippets
@@ -240,6 +284,13 @@ def classify_themes(text: str, rules: list[ThemeRule]) -> dict[int, list[str]]:
     return out
 
 
-def tag_places(text: str, rules: list[PlaceRule]) -> list[int]:
+def tag_places(text: str, rules: list[PlaceRule], country_terms: list[str] | tuple = ()) -> list[int]:
+    """Region ids whose aliases appear in the text. An ambiguous alias (PlaceRule) counts only when
+    the text is anchored: it also names the country (`country_terms`, normalised variants of the
+    name and demonyms) or an unambiguous alias of any region. A negated alias never counts."""
     n = normalise(text)
-    return [r.region_id for r in rules if any(f" {v} " in n for v in r.variants)]
+    toks = set(n.split())
+    plain = {r.region_id for r in rules if r.plain_hit(n, toks)}
+    anchored = bool(plain) or any(f" {t} " in n for t in country_terms)
+    weak = {r.region_id for r in rules if r.region_id not in plain and r.weak_hit(n, toks)} if anchored else set()
+    return [r.region_id for r in rules if r.region_id in plain or r.region_id in weak]

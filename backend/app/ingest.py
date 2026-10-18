@@ -120,8 +120,14 @@ class Rules:
     labelled_outlets: set = field(default_factory=set)       # outlet ids with any type/scope label
 
     def mentions_country(self, text: str) -> bool:
+        """The relevance guard: the country name or demonym, or an unambiguous place alias. An
+        ambiguous alias on its own (خمس, Tripoli with Lebanon) never passes (tag_places)."""
         n = normalise(text)
-        return any(f" {t} " in n for t in self.country_terms) or bool(tag_places(text, self.places))
+        return any(f" {t} " in n for t in self.country_terms) or bool(self.places_in(text))
+
+    def places_in(self, text: str) -> list[int]:
+        """Region ids the place rules give this text, with the country anchor for ambiguous aliases."""
+        return tag_places(text, self.places, self.country_terms)
 
 
 def rule_for(t: Theme) -> ThemeRule:
@@ -132,11 +138,16 @@ def rule_for(t: Theme) -> ThemeRule:
 def load_rules(s: Session, country_id: int) -> Rules:
     themes = [rule_for(t) for t in s.scalars(select(Theme).where(Theme.active.is_(True)))]
     regions = s.scalars(select(Region).where(Region.country_id == country_id)).all()
+    c = s.get(Country, country_id)
     aliases: dict[int, list[str]] = {}
+    ambiguous: dict[int, list[str]] = {}
     for a in s.scalars(select(PlaceAlias).where(PlaceAlias.approved.is_(True))):
         aliases.setdefault(a.region_id, []).append(a.alias)
-    places = [PlaceRule.build(r.id, aliases.get(r.id, [])) for r in regions if r.level != "national"]
-    c = s.get(Country, country_id)
+        if a.ambiguous:
+            ambiguous.setdefault(a.region_id, []).append(a.alias)
+    negatives = c.config.get("place_negatives") or {}   # alias as written -> words that veto it (Tripoli: Lebanon)
+    places = [PlaceRule.build(r.id, aliases.get(r.id, []), ambiguous.get(r.id, []), negatives)
+              for r in regions if r.level != "national"]
     names = [c.name_en, c.name_ar, *c.config.get("demonyms", [])]
     country_terms = sorted({v for t in names for v in term_variants(t)})
     local = set(s.scalars(select(OutletCategory.outlet_id).where(
@@ -282,7 +293,7 @@ def tag_item(s: Session, item: Item, rules: Rules, forced_theme_ids: tuple[int, 
     for tid in set(forced_theme_ids) - set(hits) - existing:
         s.add(ItemTheme(item_id=item.id, theme_id=tid, method="query", active=False, theme_version=versions.get(tid, 1),
                         evidence=evidence("query", [], query)))
-    region_ids = set(tag_places(text, rules.places))
+    region_ids = set(rules.places_in(text))
     existing_r = {ir.region_id for ir in s.scalars(select(ItemRegion).where(ItemRegion.item_id == item.id))}
     for rid in region_ids - existing_r:
         s.add(ItemRegion(item_id=item.id, region_id=rid))

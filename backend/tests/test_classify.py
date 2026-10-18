@@ -50,6 +50,37 @@ def test_places_spelling_variants():
     assert tag_places("وصل الوفد إلى أجدابيا", p) == [10]
 
 
+def test_place_homonyms_need_an_anchor_and_negatives_veto():
+    libya = [v for t in ("ليبيا", "Libya", "Libyan", "الليبية") for v in term_variants(t)]
+    khoms = PlaceRule.build(20, ["Khoms", "الخمس", "زليتن"], ambiguous=["الخمس"])
+    tripoli = PlaceRule.build(21, ["Tripoli", "طرابلس"],
+                              negatives={"Tripoli": ["Lebanon", "Lebanese"], "طرابلس": ["لبنان", "شمال لبنان"]})
+    barqa = PlaceRule.build(22, ["Cyrenaica", "برقة"], ambiguous=["برقة"])
+    p = [khoms, tripoli, barqa]
+    # الخمس -> خمس "five": the bare word is never the city, with or without the country beside it
+    assert "خمس" not in khoms.ambiguous and "الخمس" in khoms.ambiguous and "بالخمس" in khoms.ambiguous
+    assert tag_places("خمس نصائح لتوفير الكهرباء", p, libya) == []
+    assert tag_places("خمس سنوات على الحرب في ليبيا", p, libya) == []
+    # the definite form is the city, but only beside the country or an unambiguous place
+    assert tag_places("اشتباكات في الخمس", p, libya) == []
+    assert tag_places("اشتباكات في الخمس غرب ليبيا", p, libya) == [20]
+    assert tag_places("الطريق بين الخمس وزليتن مغلق", p, libya) == [20]
+    assert tag_places("حريق بمصنع بالخمس والشركة الليبية تحقق", p, libya) == [20]   # a demonym anchors too
+    # Tripoli, Lebanon: a negative vetoes the alias wherever it appears
+    assert tag_places("Clashes in Tripoli", p, libya) == [21]
+    assert tag_places("Clashes in Tripoli, Lebanon, leave two dead", p, libya) == []
+    assert tag_places("Libya and Lebanon: clashes in Tripoli", p, libya) == []
+    assert tag_places("اشتباكات في طرابلس شمال لبنان", p, libya) == []
+    assert tag_places("اشتباكات في طرابلس الليبية", p, libya) == [21]
+    # برقة is also "gently" (بِرِقّة)
+    assert tag_places("تحدث برقة عن الوضع", p, libya) == []
+    assert tag_places("قبائل برقة تطالب الحكومة الليبية", p, libya) == [22]
+    assert tag_places("Cyrenaica tribes meet", p, libya) == [22]
+    # without a country list an ambiguous alias still anchors on another region's plain alias
+    assert tag_places("طرابلس وبرقة", p) == [21, 22]
+    assert tag_places("برقة", p) == []
+
+
 def test_detect_lang():
     assert detect_lang("انقطاع الكهرباء في طرابلس") == "ar"
     assert detect_lang("Power cuts in Tripoli") == "en"

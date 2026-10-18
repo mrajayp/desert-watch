@@ -95,21 +95,28 @@ def seed_country(s: Session, file: str) -> Country:
     macros = {m["slug"]: region(m["slug"], "macro", m["name_en"], m["name_ar"], national,
                                 *macro_c.get(macro_geo.get(m["slug"], ""), (None, None)))
               for m in cfg["macro_regions"]}
+    # aliases that are also common words or places elsewhere (config `ambiguous_aliases`); the flag
+    # follows the config on every seed, so a list change reaches existing rows
+    ambiguous = {normalise(a).strip() for a in cfg.get("ambiguous_aliases") or []}
+
+    def alias(r, a):
+        norm = normalise(a).strip()
+        row = s.scalar(select(PlaceAlias).where(PlaceAlias.region_id == r.id, PlaceAlias.norm == norm))
+        if not row:
+            s.add(PlaceAlias(region_id=r.id, alias=a, norm=norm, ambiguous=norm in ambiguous))
+        elif bool(row.ambiguous) != (norm in ambiguous):
+            row.ambiguous = norm in ambiguous
+
     for d in cfg["districts"]:
         r = region(d["slug"], "district", d["name_en"], d["name_ar"], macros[d["macro"]],
                    *dist_c.get(d.get("geo", ""), (None, None)))
         if r.lat is None and d.get("geo") in dist_c:
             r.lat, r.lon = dist_c[d["geo"]]
         for a in {d["name_en"], d["name_ar"], *d.get("aliases", [])}:
-            norm = normalise(a).strip()
-            if not s.scalar(select(PlaceAlias).where(PlaceAlias.region_id == r.id, PlaceAlias.norm == norm)):
-                s.add(PlaceAlias(region_id=r.id, alias=a, norm=norm))
+            alias(r, a)
     for m in cfg["macro_regions"]:
-        r = macros[m["slug"]]
         for a in {m["name_en"], m["name_ar"]}:
-            norm = normalise(a).strip()
-            if not s.scalar(select(PlaceAlias).where(PlaceAlias.region_id == r.id, PlaceAlias.norm == norm)):
-                s.add(PlaceAlias(region_id=r.id, alias=a, norm=norm))
+            alias(macros[m["slug"]], a)
 
     cities = cfg.get("cities", {})
     for o in cfg.get("outlets", []):

@@ -57,7 +57,8 @@ SessionLocal = sessionmaker(bind=engine, expire_on_commit=False)
 # Additive columns added after first release: create_all() does not alter existing tables.
 ADDED_COLUMNS = {
     "theme": {"group": "VARCHAR(40)", "cooc": "JSON", "strict": "BOOLEAN DEFAULT 0", "require_country": "BOOLEAN DEFAULT 0",
-              "veto": "JSON", "mask": "JSON"},
+              "veto": "JSON", "mask": "JSON", "cooc_veto_context": "JSON"},
+    "place_alias": {"ambiguous": "BOOLEAN DEFAULT 0"},
     "outlet": {"monitored": "BOOLEAN DEFAULT 1", "external": "JSON"},
     "item": {"duplicate_of": "INTEGER"},
     "item_theme": {"evidence": "JSON", "score": "FLOAT", "model_version": "VARCHAR(40)"},

@@ -147,6 +147,53 @@ def test_dateline_does_not_place_the_story(db):
     assert tripoli and not db.get(ItemRegion, (it.id, tripoli))
 
 
+def test_place_homonyms_do_not_pass_the_guard_or_tag_districts(db):
+    """A-R1.4: الخمس / Tripoli (Lebanon) / برقة / البيضاء (Yemen) on their own are not Libya."""
+    cid = db.scalar(select(Country.id))
+    rules = load_rules(db, cid)
+    reg = {r.slug: r.id for r in db.scalars(select(Region))}
+    assert not passes_guard(rules, None, "خمس نصائح لتوفير الكهرباء في الصيف", None)
+    assert not passes_guard(rules, None, "Clashes in Tripoli, Lebanon, leave two dead", None)
+    assert not passes_guard(rules, None, "اشتباكات في طرابلس شمال لبنان", None)
+    assert not passes_guard(rules, None, "تحدث الوزير برقة عن الأزمة", None)
+    assert not passes_guard(rules, None, "Flooding hits Bayda, Yemen", None)
+    assert passes_guard(rules, None, "Clashes in Tripoli leave two dead", None)
+    assert passes_guard(rules, None, "اشتباكات في الخمس غرب ليبيا", None)
+    assert rules.places_in("اشتباكات في طرابلس شمال لبنان") == []
+    assert rules.places_in("السنوات الخمس الماضية") == []
+    assert reg["murqub"] in rules.places_in("حريق في مصنع بالخمس غرب ليبيا")
+    assert reg["murqub"] in rules.places_in("الطريق الساحلي بين الخمس وزليتن")
+    assert reg["cyrenaica"] in rules.places_in("قبائل برقة تطالب الحكومة الليبية")
+    assert reg["jabal_al_akhdar"] not in rules.places_in("Flooding hits Bayda, Yemen")
+    assert reg["jabal_al_akhdar"] in rules.places_in("Flooding hits Bayda in eastern Libya")
+    assert reg["jabal_al_akhdar"] not in rules.places_in("ضبط أسلحة بيضاء في طرابلس")      # "bladed weapons"
+    # a stored search result: filtered out, and no district tag
+    it, _ = store_article(db, cid, rules, url="https://ex.example/five", title="خمس نصائح لتوفير الكهرباء في الصيف",
+                          published_at=DAY, source_key="gnews")
+    db.commit()
+    assert not it.relevant and it.extra["filtered"] == "no_country_mention"
+    assert db.get(ItemRegion, (it.id, reg["murqub"])) is None
+
+
+def test_alert_region_tag_follows_the_text_after_retag(db):
+    """A district alert's tag (method 'query') is a prior: active only while the text places the story there."""
+    from app.retag import retag_all
+    reg = {r.slug: r.id for r in db.scalars(select(Region))}
+    five = _article(db, "five", "خمس نصائح لتوفير الكهرباء في ليبيا", source="galerts", extra={"alert": "district:murqub:ar"})
+    real = _article(db, "real", "اشتباكات في الخمس غرب ليبيا", source="galerts", extra={"alert": "district:murqub:ar"})
+    db.add_all([ItemRegion(item_id=five.id, region_id=reg["murqub"], method="query", active=True),
+                ItemRegion(item_id=real.id, region_id=reg["murqub"], method="query", active=False)])
+    db.commit()
+    dry = retag_all(db, dry_run=True, out=lambda *_: None)
+    real_run = retag_all(db, out=lambda *_: None)
+    assert {**dry, "dry_run": False} == real_run
+    db.expire_all()
+    off, on = db.get(ItemRegion, (five.id, reg["murqub"])), db.get(ItemRegion, (real.id, reg["murqub"]))
+    assert (off.method, off.active) == ("query", False)      # "five tips": the alert was a hint
+    assert (on.method, on.active) == ("query", True)         # the text itself names the district
+    assert retag_all(db, dry_run=True, out=lambda *_: None)["links_changed"] == 0
+
+
 def test_guard_uses_the_cleaned_snippet_and_possessives(db):
     cid = db.scalar(select(Country.id))
     rules = load_rules(db, cid)
@@ -373,11 +420,13 @@ def test_retag_dry_run_reports_what_the_real_run_does(db):
     assert real["items"]["after"]["relevant"] == real["items"]["before"]["relevant"]   # one on, one off
     db.expire_all()
     assert db.get(Item, a.id).relevant and not db.get(Item, c.id).relevant and not db.get(Item, d.id).relevant
-    # place tags: the stale rule tag goes, user and alert tags stay, new rule tags are added
+    # place tags: the stale rule tag goes, user tags stay, an alert's tag follows the text (the story
+    # never named Benghazi: the alert was a hint), new rule tags are added
     assert db.get(ItemRegion, (c.id, reg["tripoli"])).active is False
     user_tag = db.get(ItemRegion, (d.id, reg["tripoli"]))
     assert (user_tag.method, user_tag.active) == ("user", True)
-    assert db.get(ItemRegion, (d.id, reg["benghazi"])).active is True
+    alert_tag = db.get(ItemRegion, (d.id, reg["benghazi"]))
+    assert (alert_tag.method, alert_tag.active) == ("query", False)
     assert db.get(ItemRegion, (a.id, reg["zawiya"])).active and db.get(ItemRegion, (d.id, reg["misrata"])).active
     assert retag_all(db, dry_run=True, out=lambda *_: None)["links_changed"] == 0
 

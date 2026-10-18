@@ -58,6 +58,33 @@ districts:
   - {slug: derna, macro: cyrenaica, geo: "Derna", name_en: Derna, name_ar: درنة, aliases: [Derna, Darnah, درنة]}
   - {slug: butnan, macro: cyrenaica, geo: "Tobruk", name_en: Butnan, name_ar: البطنان, aliases: [Tobruk, Tubruq, Bardia, Jaghbub, طبرق, البردية, الجغبوب, البطنان]}
 
+# Place-name homonyms (drafted 2026-10-18 from the alias lists above; a native speaker should
+# check both lists). An alias listed here is also a common word once the Arabic article is
+# stripped for matching (الخمس -> خمس "five", الجميل -> جميل "beautiful", الكفرة -> كفرة
+# "infidels", البريقة -> بريقه "its shine"), or names a place elsewhere (Tripoli in Lebanon,
+# البيضاء / Bayda in Yemen, الجبل الأخضر in Oman, Hun Sen, the Ghats). Such an alias tags its region
+# only when the text also names the country (ليبيا, Libya, Libyan ...) or an unambiguous alias of any
+# region, and never passes the relevance guard on its own. An Arabic alias written with the article
+# keeps only its definite forms (الخمس, بالخمس, والخمس ...): the bare word is the common one.
+ambiguous_aliases: [الخمس, الجميل, البيضاء, Bayda, Al-Bayda, الزاوية, سرت, برقة, العزيزية, وازن, "Western Mountains",
+  الجبل الغربي, المرقب, Hun, هون, ودان, جرمة, Ghat, الكفرة, البريقة, المرج, "Green Mountain", الجبل الأخضر, البردية]
+# Words that veto an alias wherever it appears (it then counts for nothing, not even the guard).
+# Keyed by the alias as written above.
+place_negatives:
+  Tripoli: [Lebanon, Lebanese, "northern Lebanon", "north Lebanon", "Bab al-Tabbaneh", "Jabal Mohsen", Akkar]
+  طرابلس: [لبنان, لبنانية, اللبنانية, اللبناني, لبنانيين, "طرابلس الشام", "شمال لبنان", الفيحاء, "باب التبانة", "جبل محسن",
+    عكار, "الجيش اللبناني"]
+  Bayda: [Yemen, Yemeni]
+  Al-Bayda: [Yemen, Yemeni]
+  البيضاء: [اليمن, اليمنية, اليمني, الحوثيين, الحوثي, "الدار البيضاء", "الأسلحة البيضاء", "أسلحة بيضاء", "الراية البيضاء",
+    "الرايات البيضاء", "الصفحة البيضاء"]
+  الجبل الأخضر: [عمان, "سلطنة عمان", العمانية, العماني]
+  "Green Mountain": [Oman, Omani]
+  الزاوية: ["حجر الزاوية"]
+  Hun: ["Hun Sen", "Hun Manet", Cambodia, Cambodian]
+  Ghat: [India, Indian]
+  جرمة: [جريمة, الجريمة, المتهم, اعترف]
+
 # Approximate city coordinates, used to place outlets and region nodes.
 cities:
   Tripoli: [32.887, 13.191]

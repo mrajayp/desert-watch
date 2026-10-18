@@ -2,7 +2,9 @@
 
 Only rule and query links change: a rule link is active when the rules match, a query link
 (a search or alert result) is active only when the rules confirm it. A rule link the rules no
-longer confirm becomes a query link when the item's own search or alert asked for that theme. User corrections and
+longer confirm becomes a query link when the item's own search or alert asked for that theme. Place
+tags follow the same rule: a rule tag follows the place rules, a district alert's tag (method
+'query') is active only while the text itself places the story there. User corrections and
 learned-model links are never touched. Articles are read in id order, BATCH at a time, and
 each batch is committed and dropped from the session so memory stays flat.
 
@@ -22,7 +24,7 @@ from dataclasses import dataclass, field
 from sqlalchemy import and_, bindparam, case, func, insert, or_, select
 from sqlalchemy.orm import Session
 
-from .classify import clean_snippet, tag_places
+from .classify import clean_snippet
 from .ingest import (Rules, apply_relevance_guard, evidence, guard_verdict, load_rules, not_counted_outlets, query_key,
                      rule_for, theme_hits)
 from .models import AlertFeed, Country, Item, ItemRegion, ItemTheme, Region, Theme
@@ -90,11 +92,13 @@ def plan_item(item: Item, rules: Rules, links: dict, regions: dict | None = None
         if (lk.method, lk.active, lk.theme_version, lk.evidence) != new:
             p.links[r.theme_id] = (*new, False)
     if regions is not None:
-        placed = set(tag_places(" ".join(x for x in (item.title, snippet) if x), rules.places))
+        placed = set(rules.places_in(" ".join(x for x in (item.title, snippet) if x)))
         for rid in placed - regions.keys():
             p.regions[rid] = (True, True)
         for rid, ir in regions.items():
-            if ir.method == "rule" and ir.active != (rid in placed):
+            # a rule tag follows the rules; a district alert's tag (method 'query') is a prior like a
+            # query theme link: it counts only while the text itself places the story there
+            if ir.method in OURS and ir.active != (rid in placed):
                 p.regions[rid] = (rid in placed, False)
     return p
 
@@ -108,7 +112,8 @@ _UPD_LINK = (_T.update()
                      theme_version=bindparam("v_version", type_=_T.c.theme_version.type),
                      evidence=bindparam("v_evidence", type_=_T.c.evidence.type)))
 _UPD_REGION = (_R.update()
-               .where(_R.c.item_id == bindparam("k_item"), _R.c.region_id == bindparam("k_region"), _R.c.method == "rule")
+               .where(_R.c.item_id == bindparam("k_item"), _R.c.region_id == bindparam("k_region"),
+                      or_(_R.c.method == "rule", _R.c.method == "query"))
                .values(active=bindparam("v_active", type_=_R.c.active.type)))
 
 

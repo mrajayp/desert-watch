@@ -44,6 +44,9 @@ class PlaceAlias(Base):
     norm: Mapped[str] = mapped_column(String(120), index=True)
     approved: Mapped[bool] = mapped_column(Boolean, default=True)
     proposed_by: Mapped[int | None] = mapped_column(ForeignKey("user.id"))
+    # also a common word once the article is stripped (الخمس -> خمس) or a place elsewhere (Tripoli, Lebanon):
+    # tags only beside the country name or an unambiguous alias (config `ambiguous_aliases`, classify.PlaceRule)
+    ambiguous: Mapped[bool | None] = mapped_column(Boolean, default=False)
 
 
 class Theme(Base):

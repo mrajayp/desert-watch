@@ -64,7 +64,9 @@ def collect(s: Session) -> RunResult:
                     lang=f.lang, extra={"alert": f.key, **({"query_themes": [theme.slug]} if theme else {})},
                     forced_theme_ids=(f.theme_id,) if f.theme_id else (), query=f.key)
                 if item is not None and f.region_id and not s.get(ItemRegion, (item.id, f.region_id)):
-                    s.add(ItemRegion(item_id=item.id, region_id=f.region_id, method="query"))
+                    # the alert is a hint, not a label: the rules did not place the story here (or there
+                    # would be a rule tag), so the tag is kept inactive until the text supports it (retag.py)
+                    s.add(ItemRegion(item_id=item.id, region_id=f.region_id, method="query", active=False))
                 n += created
             f.last_ok_at, f.last_items, f.last_error = utcnow(), len(parsed.entries), None
             res.rows += n
