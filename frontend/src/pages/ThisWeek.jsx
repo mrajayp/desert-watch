@@ -31,7 +31,7 @@ function excerptOf(md) {
 // The landing page: what to cover this week, and what has been written already. The week and the lens
 // are the page's URL filters (?week=&lens=), as on the Map and Trends pages.
 export default function ThisWeek() {
-  const { meta, filters, setFilters, openGap, version } = useApp()
+  const { meta, filters, setFilters, openGap, version, can } = useApp()
   usePageTitle(t('This week'))
   const desk = useMedia(DESK)
   const [sheet, setSheet] = useState(false)
@@ -96,7 +96,7 @@ export default function ThisWeek() {
             </section>)}
           <section className="card">
             <h2>{t('Stories nobody is covering')}</h2>
-            <p className="sub">{fallback ? t('Least covered, {n} weeks to {date}', { n: meta.window_weeks, date: week }) : t('Biggest gaps, {n} weeks to {date}', { n: meta.window_weeks, date: week })} · {t('{blurb}. Click to review, vote and comment.', { blurb: t(lensInfo.blurb) })}</p>
+            <p className="sub">{fallback ? t('Least covered, {n} weeks to {date}', { n: meta.window_weeks, date: week }) : t('Biggest gaps, {n} weeks to {date}', { n: meta.window_weeks, date: week })} · {can ? t('{blurb}. Click to review, vote and comment.', { blurb: t(lensInfo.blurb) }) : t('{blurb}. Click to review.', { blurb: t(lensInfo.blurb) })}</p>
             {fallback && <p className="small muted">{t('No theme is clearly falling behind its need signal in these weeks; these are the least covered relative to it.')}</p>}
             {cellsQ.error && <ErrorBox error={cellsQ.error} onRetry={cellsQ.retry} />}
             {!cellsQ.data && !cellsQ.error && <Loading />}

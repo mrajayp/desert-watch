@@ -64,6 +64,7 @@ export default {
     other: "أكبر الفجوات، {n} أسبوع حتى {date}",
   },
   "{blurb}. Click to review, vote and comment.": "{blurb}. يمكن النقر للمراجعة والتصويت والتعليق.",
+  "{blurb}. Click to review.": "{blurb}. يمكن النقر للمراجعة.",
   "No theme is clearly falling behind its need signal in these weeks; these are the least covered relative to it.":
     "لا يتأخر أي موضوع بوضوح عن مؤشر الحاجة في هذه الأسابيع؛ هذه هي المواضيع الأقل تغطية قياسًا به.",
   "Nothing has been judged for this lens and week.": "لم يُحكم على أي شيء لهذه العدسة وهذا الأسبوع.",

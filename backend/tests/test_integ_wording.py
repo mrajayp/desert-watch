@@ -66,7 +66,10 @@ def test_admin_and_contribute_wording():
 
 def test_gap_panel_expected_and_rounding():
     s = _src("components/GapPanel.jsx")
-    assert "import { about } from '../charts/trendText'" in s
+    assert "import { about, weekEnd, weekRange } from '../charts/trendText'" in s
     assert "meta.lenses.find((l) => l.key === filters.lens)" in s
-    assert "against {expected} expected." in s and "against {expected} usual." in s and "expected: about(b.expected_4w)" in s
-    assert "fmt(b.expected_4w)" not in s and "minimum need" not in s
+    # one word "expected" on every lens; the comparison names what it is against (B-R1.5 glossary)
+    assert "against {expected} expected from other topics." in s
+    assert "against {expected} expected from this theme’s usual level." in s
+    assert "expected: about(b.expected_4w)" in s
+    assert "fmt(b.expected_4w)" not in s and "minimum need" not in s and "{expected} usual." not in s
