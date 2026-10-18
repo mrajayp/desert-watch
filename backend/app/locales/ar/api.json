@@ -118,5 +118,7 @@
   "Unknown language": "لغة غير معروفة",
   "Unknown run": "تشغيل غير معروف",
   "The AI answers audit is already running.": "تدقيق إجابات الذكاء الاصطناعي قيد التشغيل بالفعل.",
-  "Nightly database backup (off-site)": "النسخة الاحتياطية الليلية لقاعدة البيانات (خارج الخادم)"
+  "Nightly database backup (off-site)": "النسخة الاحتياطية الليلية لقاعدة البيانات (خارج الخادم)",
+  "Too many failed sign-in attempts. Try again in {n} min.": "محاولات تسجيل دخول فاشلة كثيرة. يمكن المحاولة مجددًا بعد {n} دقيقة.",
+  "The current password is wrong.": "كلمة المرور الحالية غير صحيحة."
 }

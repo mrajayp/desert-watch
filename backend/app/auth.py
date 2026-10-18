@@ -15,12 +15,30 @@ from .i18n import tr
 
 COOKIE = "dw_session"
 SESSION_DAYS = 14
+MIN_PASSWORD = 10
 
 
 def hash_password(pw: str) -> str:
     salt = secrets.token_bytes(16)
     dk = hashlib.scrypt(pw.encode(), salt=salt, n=2**14, r=8, p=1, dklen=32)
     return f"scrypt$16384$8$1${salt.hex()}${dk.hex()}"
+
+
+_DUMMY: list[str] = []
+
+
+def dummy_check(pw: str) -> None:
+    """Spend the time a real password check takes when the email is unknown, so a sign-in attempt
+    cannot tell a known email from an unknown one by how long the answer takes."""
+    if not _DUMMY:
+        _DUMMY.append(hash_password(secrets.token_urlsafe(16)))
+    verify_password(pw, _DUMMY[0])
+
+
+def client_ip(request) -> str:
+    """The caller's address. Fly puts it in Fly-Client-IP (set by the proxy, not by the caller); without
+    a proxy the socket's own address. Only used hashed (throttle.ip_key)."""
+    return request.headers.get("fly-client-ip") or (request.client.host if request.client else "?")
 
 
 def verify_password(pw: str, stored: str) -> bool:
@@ -37,7 +55,7 @@ def sha(token: str) -> str:
 
 
 def create_user(s: Session, email: str, password: str, display_name: str, role: str = "journalist") -> User:
-    if len(password) < 10:
+    if len(password) < MIN_PASSWORD:
         raise ValueError(tr("Password must be at least 10 characters."))
     u = User(email=email.strip().lower(), display_name=display_name.strip()[:100] or email.split("@")[0],
              pw_hash=hash_password(password), role=role, pseudo_id=secrets.token_hex(8))
@@ -69,6 +87,16 @@ def end_session(s: Session, token: str | None, response: Response) -> None:
             s.delete(sess)
             s.commit()
     response.delete_cookie(COOKIE, path="/")
+
+
+def end_sessions(s: Session, user_id: int, keep_token: str | None = None) -> int:
+    """End every session of the account, except the one `keep_token` names (the browser making the
+    change). Returns how many ended. Commits nothing."""
+    from sqlalchemy import delete
+    q = delete(AuthSession).where(AuthSession.user_id == user_id)
+    if keep_token:
+        q = q.where(AuthSession.token_hash != sha(keep_token))
+    return s.execute(q).rowcount
 
 
 def current_user(dw_session: str | None = Cookie(default=None), s: Session = Depends(get_db)) -> User:

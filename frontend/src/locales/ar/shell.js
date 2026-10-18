@@ -49,6 +49,15 @@ export default {
   'delete': 'حذف',
   'Type "delete" to confirm': 'يُرجى كتابة «حذف» للتأكيد',
   'Delete my account': 'حذف حسابي',
+  // pages/Me.jsx: security (password change, sign out everywhere)
+  'Security': 'الأمان',
+  'Changing the password signs out every other device.': 'تغيير كلمة المرور يُنهي الجلسات على الأجهزة الأخرى.',
+  'Current password': 'كلمة المرور الحالية',
+  'New password (10+ characters)': 'كلمة المرور الجديدة (10 أحرف على الأقل)',
+  'Change password': 'تغيير كلمة المرور',
+  'Password changed. Other devices were signed out.': 'تم تغيير كلمة المرور. أُنهيت الجلسات على الأجهزة الأخرى.',
+  'Ends every session of this account, on every device and browser, including this one.': 'يُنهي كل جلسات هذا الحساب على جميع الأجهزة والمتصفحات، بما فيها هذا الجهاز.',
+  'Sign out everywhere': 'تسجيل الخروج من كل الأجهزة',
 
   // components/TrackingNotice.jsx: shown once on first sign-in
   'How this tool learns from the team': 'كيف تتعلم هذه الأداة من الفريق',

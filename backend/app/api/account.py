@@ -5,7 +5,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .. import auth
+from .. import auth, throttle
 from . import ai_panel
 from ..db import get_db
 from ..learning import record_events
@@ -61,11 +61,27 @@ def me_json(u: User) -> dict:
             "tracking_notice_ack": u.tracking_notice_ack_at is not None}
 
 
+def _throttled(email: str, ip: str) -> None:
+    wait = throttle.LOGIN.check(email, ip)
+    if wait:
+        raise HTTPException(429, tr("Too many failed sign-in attempts. Try again in {n} min.", n=max(1, -(-wait // 60))),
+                            headers={"Retry-After": str(wait)})
+
+
 @router.post("/auth/login")
-def login(body: LoginIn, response: Response, s: Session = Depends(get_db)):
-    u = s.scalar(select(User).where(User.email == body.email.strip().lower()))
+def login(body: LoginIn, request: Request, response: Response, s: Session = Depends(get_db)):
+    """The throttle (throttle.py) comes first: a held-back email or address gets 429 before any
+    password work. An unknown email costs the same scrypt time as a wrong password, so neither the
+    answer nor its timing says whether the email has an account."""
+    email, ip = body.email.strip().lower(), auth.client_ip(request)
+    _throttled(email, ip)
+    u = s.scalar(select(User).where(User.email == email))
+    if not u:
+        auth.dummy_check(body.password)
     if not u or not auth.verify_password(body.password, u.pw_hash):
+        throttle.LOGIN.failed(email, ip)
         raise HTTPException(401, tr("Email or password is wrong."))
+    throttle.LOGIN.succeeded(email)
     status = u.status or "active"
     if status == "pending":
         raise HTTPException(403, tr("Your access request is waiting for an admin to approve it."))
@@ -75,12 +91,46 @@ def login(body: LoginIn, response: Response, s: Session = Depends(get_db)):
     return me_json(u)
 
 
+@router.post("/auth/logout-all")
+def logout_all(response: Response, u: User = Depends(auth.current_user), s: Session = Depends(get_db)):
+    """Sign out everywhere: every session of the account ends, this one included."""
+    n = auth.end_sessions(s, u.id)
+    s.commit()
+    response.delete_cookie(auth.COOKIE, path="/")
+    return {"ok": True, "ended": n}
+
+
+class PasswordIn(BaseModel):
+    current: str
+    new: str
+
+
+@router.post("/me/password")
+def change_password(body: PasswordIn, request: Request, u: User = Depends(auth.current_user), s: Session = Depends(get_db),
+                    dw_session: str | None = Cookie(default=None)):
+    """A new password ends every other session of the account (a stolen cookie elsewhere stops
+    working). A wrong current password counts towards the sign-in throttle for this email."""
+    u = s.merge(u)
+    ip = auth.client_ip(request)
+    _throttled(u.email, ip)
+    if not auth.verify_password(body.current, u.pw_hash):
+        throttle.LOGIN.failed(u.email, ip)
+        raise HTTPException(400, tr("The current password is wrong."))
+    if len(body.new) < auth.MIN_PASSWORD:
+        raise HTTPException(400, tr("Password must be at least 10 characters."))
+    throttle.LOGIN.succeeded(u.email)
+    u.pw_hash = auth.hash_password(body.new)
+    ended = auth.end_sessions(s, u.id, keep_token=dw_session)
+    s.commit()
+    return {"ok": True, "other_sessions_ended": ended}
+
+
 @router.post("/auth/signup")
 def signup(body: SignupIn, request: Request, s: Session = Depends(get_db)):
     """Self-service access request. Creates a pending account; an admin approves it and picks
-    the role. No session is started until approval."""
-    ip = request.client.host if request.client else "?"
-    if _rate_limited(ip):
+    the role. No session is started until approval. The limiter is keyed on a daily-salted hash of
+    the real client address (Fly-Client-IP), not on the proxy's."""
+    if _rate_limited(throttle.ip_key(auth.client_ip(request))):
         raise HTTPException(429, tr("Too many requests from this address. Try again later."))
     email = body.email.strip().lower()
     if "@" not in email or "." not in email.split("@")[-1] or len(email) > 200:
