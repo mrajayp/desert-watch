@@ -121,6 +121,27 @@ def test_nightly_purges_expired_sessions_and_old_rejected_applications(db):
     assert db.get(AuthSession, "live") and not db.get(AuthSession, "old")
 
 
+def test_config_event_reworded_without_a_name_renames_the_old_row(db):
+    """C-R1.6: the 2025-11-21 event names no one; the row production seeded with the old wording is
+    renamed on the next seed (matched on day + source) rather than duplicated."""
+    from app.models import Country
+    from app.seed import seed_country
+    cid = db.scalar(select(Country.id).where(Country.iso2 == "LY"))
+    src, day = "https://aawsat.com/node/5211624", date(2025, 11, 21)
+    row = db.scalar(select(KeyEvent).where(KeyEvent.country_id == cid, KeyEvent.day == day, KeyEvent.source_url == src))
+    assert (row.label, row.label_ar, row.origin) == ("Blogger killed (Janzour)", "مقتل مدوّنة (جنزور)", "config")
+    row.label, row.label_ar = "Blogger [name] killed (Janzour)", "مقتل المدوّنة [الاسم] (جنزور)"   # production's old wording
+    db.add(KeyEvent(country_id=cid, day=day, label="my own note", source_url=src, origin="user"))
+    db.commit()
+    seed_country(db, "libya.yaml")
+    db.commit()
+    db.expire_all()
+    rows = db.scalars(select(KeyEvent).where(KeyEvent.country_id == cid, KeyEvent.day == day).order_by(KeyEvent.id)).all()
+    assert [(r.label, r.label_ar, r.origin) for r in rows] == [("Blogger killed (Janzour)", "مقتل مدوّنة (جنزور)", "config"),
+                                                               ("my own note", None, "user")]
+    assert seed_country(db, "libya.yaml") and len(db.scalars(select(KeyEvent).where(KeyEvent.day == day)).all()) == 2
+
+
 def test_deleted_rows_are_overwritten_and_the_digest_sees_no_headlines(db):
     assert db.execute(text("PRAGMA secure_delete")).scalar() == 1
     from app import digest

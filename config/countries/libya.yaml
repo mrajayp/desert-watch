@@ -241,7 +241,8 @@ events:
   - {date: 2024-04-15, theme: gender_violence, label: "Amnesty report: VAW law, Article 424", label_ar: "تقرير منظمة العفو الدولية: قانون العنف ضد المرأة، المادة 424", source: "https://www.amnesty.org/en/wp-content/uploads/2024/04/MDE1978582024ENGLISH.pdf"}
   - {date: 2024-11-06, theme: gender_mobility_morality, label: "Interior Minister: hijab, guardian consent, morality police", label_ar: "وزير الداخلية: الحجاب وموافقة ولي الأمر وشرطة الآداب", source: "https://www.hrw.org/news/2024/11/13/libyan-ministers-morality-measures-would-violate-womens-rights"}
   - {date: 2024-11-16, theme: gender_political_participation, label: "Municipal elections phase 1 (29% women voters)", label_ar: "المرحلة الأولى من الانتخابات البلدية (29% من الناخبين نساء)", source: "https://www.idea.int/democracytracker/report/libya/november-2024"}
-  - {date: 2025-11-21, theme: gender_violence, label: "Blogger Khansa Mujahid killed (Janzour)", label_ar: "مقتل المدوّنة خنساء مجاهد (جنزور)", source: "https://aawsat.com/node/5211624"}
+  # no names of private individuals in labels (docs/research/female_journalists_tools.md); the source names her
+  - {date: 2025-11-21, theme: gender_violence, label: "Blogger killed (Janzour)", label_ar: "مقتل مدوّنة (جنزور)", source: "https://aawsat.com/node/5211624"}
 
 # Scope for outlets auto-discovered via search (uncontested: where the outlet is based/focused).
 # Applied with confidence "likely" and the homepage as evidence; never overrides an existing

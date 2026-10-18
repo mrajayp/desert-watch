@@ -147,6 +147,12 @@ def seed_country(s: Session, file: str) -> Country:
     for e in cfg.get("events", []) or []:
         day = e["date"] if isinstance(e["date"], date) else date.fromisoformat(str(e["date"]))
         row = s.scalar(select(KeyEvent).where(KeyEvent.country_id == c.id, KeyEvent.day == day, KeyEvent.label == e["label"]))
+        if not row and e.get("source"):
+            # a config event reworded later (the day and the source stayed): rename the row, never add a twin
+            row = s.scalar(select(KeyEvent).where(KeyEvent.country_id == c.id, KeyEvent.day == day,
+                                                  KeyEvent.source_url == e["source"], KeyEvent.origin == "config"))
+            if row:
+                row.label = e["label"]
         if not row:
             s.add(KeyEvent(country_id=c.id, day=day, label=e["label"], label_ar=e.get("label_ar"),
                            theme_id=slug_ids.get(e.get("theme")), source_url=e.get("source", ""), origin="config"))
