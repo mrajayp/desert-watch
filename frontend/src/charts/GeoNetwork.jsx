@@ -4,7 +4,8 @@
 // Libyan outlets with no known base sit in a strip at the bottom.
 import * as d3 from 'd3'
 import { useMemo, useRef, useState } from 'react'
-import { GAP_STEPS, DIMENSIONS, categoryColor, categoryOf, covFill, dimLabel, dimValue, fmt, gapFill, gapLabel } from './scales'
+import { GAP_STEPS, DIMENSIONS, categoryColor, categoryOf, covFill, dimLabel, dimValue, fmt, gapFill } from './scales'
+import { gapLabel } from './trendText'
 import { HatchDefs, useSize, useTooltip } from './util'
 import { countryName } from './RegionalNetwork'
 import { WarningPills } from '../components/Warnings'
@@ -107,7 +108,7 @@ export default function GeoNetwork({ geo, macroGeo, meta, network, cellsByRegion
           : <><b>{d.name_en}</b> <span className="ar" dir="rtl">{d.name_ar}</span></>}
         <div className="muted small">{pick(layout.regionById.get(d.parent_id))}</div>
         <div style={{ marginTop: 4 }}>{t('{count} articles name this district (4 weeks)', { count: fmt(cell?.coverage || 0) })}</div>
-        {mode === 'gap' && <div>{cell ? gapLabel(cell.insufficient ? null : cell.gap, red) : t('no need data')}</div>}
+        {mode === 'gap' && <div>{cell ? gapLabel(cell, red) : t('no need data')}</div>}
         <div>{inc ? tn(inc.n, '{n} outlet shown covering it', '{n} outlets shown covering it') : (cell?.coverage ? t('Links below the minimum are hidden') : t('No monitored outlet covers this district'))}</div>
         <WarningPills codes={cell?.flags} block />
       </div>), wrap.current)

@@ -6,7 +6,7 @@ Desert Watch finds the stories about Libya that nobody is covering. Week by week
 
 ### Gap {#gap}
 
-How much less coverage a topic got than expected, given the need signal, over four weeks. "About 3 times fewer articles than expected" means the outlets we count wrote a third of what the need suggested. Only a shortfall is shown; more coverage than expected stays neutral.
+How much less coverage a topic got than expected, given the need signal, over four weeks. "About 3 times fewer articles than expected" means the outlets we count wrote a third of what the need suggested. A gap is red only when the shortfall is larger than chance would explain (see Short below). More coverage than expected is said too, in blue, never red.
 
 ### Need signal {#need-signal}
 
@@ -24,9 +24,21 @@ The articles Desert Watch collects: Google News, outlet feeds, Google Alerts, Yo
 
 The number of articles a topic would have if coverage kept pace with the need signal. On every lens the gap is the actual count against this one number.
 
+### Short {#short}
+
+The verdict behind a red cell: fewer articles than chance would explain, by at least 1.5 times. Every week we test each topic's shortfall against how much its count usually swings, and across a page we allow about 1 red in 10 to be chance. A red cell says the counts, the likely range ("likely 1.8 to 3.6 times fewer") and the chance ("happens by chance about once in 50 such weeks").
+
+### Possibly fewer {#possibly-fewer}
+
+Fewer articles than expected, but not enough to be sure: a shortfall this size would turn up by chance more often than the red rule allows. Drawn in a pale tint, never red. Worth a look, not a finding.
+
+### Chance {#chance}
+
+How often a shortfall this size would turn up if nothing had changed, as "about once in N such weeks" (N rounded to 10, 20, 50, 100, 200, 500 or 1000, and 1000 means once in 1000 or rarer). Past 1 in 5 the page says the difference could easily be chance.
+
 ### Not judged {#not-judged}
 
-A gap or a week the tool could not score, always with the reason: "Not judged · too few events". It is drawn striped. The five reasons are listed under the gap score below. Not judged never means there is no story.
+A gap or a week the tool could not score, always with the reason: "Not judged · too few events". It is drawn striped. The reasons are listed under the gap score below. Not judged never means there is no story.
 
 ### Week, and "4 weeks to …" {#week}
 
@@ -66,15 +78,18 @@ A theme is a list of words in Arabic and English. A headline with one of the wor
 
 ## The gap score {#gap-score}
 
-Each score is one theme, one place and one lens, over the four weeks ending on a Sunday. We work out how many articles the theme would get if coverage kept pace with the need signal. That is the expected number. Then we compare it with the articles counted from the outlets we followed all year. On the Wikipedia and searches lenses the expected number comes from the same theme's own record over the 12 weeks before, so the gap finds changes: a topic that has always been thinly covered looks normal there. On the other lenses it comes from what other topics get for the same need. Before comparing we add 5 articles to both sides, so one missing article in a small topic does not look like a collapse. The gap is shown as how many times fewer articles there are than expected. From about 1.5 times fewer it turns red.
+Each score is one theme, one place and one lens, over the four weeks ending on a Sunday. We work out how many articles the theme would get if coverage kept pace with the need signal. That is the expected number. Then we compare it with the articles counted from the outlets we followed all year. On the Wikipedia and searches lenses the expected number comes from the same theme's own record over the 12 weeks before, so the gap finds changes: a topic that has always been thinly covered looks normal there. On the other lenses it comes from what other topics get for the same need. Before comparing we add 5 articles to both sides, so one missing article in a small topic does not look like a collapse. The gap is shown as how many times fewer articles there are than expected.
 
-A gap is not judged in five cases:
+Red is decided by a test, not by the size of the gap alone. For each topic we measure how much its weekly count usually swings, work out how likely a count this low would be if nothing had changed, and across the topics of one lens and week we allow a false-discovery rate of 10%: among the red cells on a page, about 1 in 10 will still be chance. A shortfall under 1.5 times is never red. Every judged cell says its counts, its likely range and its chance, and the same words appear on every page. Where the expected level rests on weeks we searched back for, which find fewer articles, the margin is widened and the gap says so.
+
+A gap is not judged in six cases:
 
 - The week is still coming in. That is always true of the current week, and on the Wikipedia lens a week waits until most of its page views are in.
 - We are still building the theme's baseline, because the weeks compared reach back to before collection started.
 - There is no need data: no Wikipedia page views for the theme, or no Google search data for one of the four weeks.
 - There is too little need to compare with other topics: fewer than 2 ReliefWeb reports, or fewer than 3 events, in the four weeks.
 - Fewer than 3 articles are expected, so even none at all could be chance.
+- There is too little history of the topic's week-to-week swing (fewer than 8 weeks), or the margin on the shortfall is too wide to say anything. The gap is shown, but it has no verdict.
 
 ## Warnings on a gap {#warnings}
 

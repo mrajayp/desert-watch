@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { api } from '../api'
 import { useApp } from '../App'
-import { LENS_TEXT, RED_FROM, fmt, gapLabel, langName } from '../charts/scales'
-import { weekRange } from '../charts/trendText'
+import { LENS_TEXT, RED_FROM, fmt, langName } from '../charts/scales'
+import { lensNeed, verdictSentence, weekRange } from '../charts/trendText'
 import AiPanelTask from '../components/AiPanelTask'
 import ArticleRow, { replaceItem } from '../components/ArticleRow'
 import { ErrorBox, Loading } from '../components/Notices'
@@ -31,6 +31,8 @@ export default function Contribute() {
   if (!d) return <main className="page">{q.error ? <ErrorBox error={q.error} onRetry={q.retry} /> : <Loading />}</main>
   const ro = !can
   const red = meta.red_from ?? RED_FROM // one red threshold on every page: the API's
+  // the lens's words for a gap's verdict sentence (pooled lenses compare with other topics)
+  const needOf = (lens) => lensNeed(lens, meta.lenses.find((l) => l.key === lens)?.reference)
   // "Judge" opens the gap at its own lens and week; the page's saved lens is left alone
   const showGap = (g) => openGap(g.theme_id, g.region_id, { from: 'contribute', lens: g.lens, week: g.week })
   // a corrected row is replaced by the row the server sent back, so the queue stays and a second topic can follow
@@ -60,7 +62,7 @@ export default function Contribute() {
             <li key={`${g.theme_id}:${g.region_id}`} className="row" style={{ justifyContent: 'space-between', flexWrap: 'nowrap' }}>
               <div>
                 <b>{nm(themes.get(g.theme_id))}</b> · {nm(regions.get(g.region_id))}
-                <div className="small muted">{gapLabel(g.gap, red)} · {t('{articles} articles vs {need} {unit} ({lens} lens, week of {week})', {
+                <div className="small muted">{verdictSentence(g, needOf(g.lens), red)} · {t('{articles} articles vs {need} {unit} ({lens} lens, week of {week})', {
                   articles: fmt(n), need: fmt(g.need), unit: LENS_TEXT[g.lens]?.unit ?? '', lens: LENS_TEXT[g.lens]?.label ?? '', week: weekRange(g.week),
                 })}{all != null && all !== n && <span> · {t('{n} from all sources', { n: fmt(all) })}</span>}</div>
               </div>

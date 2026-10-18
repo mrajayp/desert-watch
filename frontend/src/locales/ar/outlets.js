@@ -225,10 +225,10 @@ export default {
   'monitored articles': 'مقالات مرصودة',
   'compared with this theme’s usual level': 'مقارنةً بالمستوى المعتاد لهذا الموضوع',
   'compared with other topics': 'مقارنةً بالمواضيع الأخرى',
-  'The score counts {count} of these, from the outlets we followed all year, against {expected} expected from other topics.':
-    'تحتسب الدرجة {count} منها، من وسائل الإعلام التي تابعناها طوال العام، مقابل عدد متوقع يبلغ {expected} قياسًا بالمواضيع الأخرى.',
-  'The score counts {count} of these, from the outlets we followed all year, against {expected} expected from this theme’s usual level.':
-    'تحتسب الدرجة {count} منها، من وسائل الإعلام التي تابعناها طوال العام، مقابل عدد متوقع يبلغ {expected} قياسًا بالمستوى المعتاد لهذا الموضوع.',
+  'The articles counted are from the outlets we followed all year. The expected level is what other topics get for the same need.':
+    'المقالات المحتسبة من وسائل الإعلام التي تابعناها طوال العام. والمستوى المتوقع هو ما تحظى به المواضيع الأخرى مقابل الحاجة نفسها.',
+  'The articles counted are from the outlets we followed all year. The expected level is this theme’s usual level.':
+    'المقالات المحتسبة من وسائل الإعلام التي تابعناها طوال العام. والمستوى المتوقع هو المستوى المعتاد لهذا الموضوع.',
   'Who is covering it': 'من يغطي الموضوع',
   'Previous 4 weeks: {articles} articles vs {need} {unit}. Monitored sources only.': 'الأسابيع الأربعة السابقة: عدد المقالات {articles} مقابل {need} ({unit}). المصادر المرصودة فقط.',
   'Is this a real gap?': 'هل هذه فجوة حقيقية؟',

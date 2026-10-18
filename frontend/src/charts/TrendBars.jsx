@@ -7,8 +7,8 @@
 import * as d3 from 'd3'
 import { memo, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { fmt, gapFill } from './scales'
-import { DAY, about, articles, judged, lensNeed, levelLegend, needLine, noSearchData, notJudged, shortfall, stepPath, trendGroups, usualLine, utc, verdict, weekEnd, weekRange, yScale } from './trendText'
+import { fmt, gapFill, verdictOf } from './scales'
+import { DAY, about, articles, backfilledNote, gapLabel, lensNeed, levelLegend, needLine, noSearchData, pillClass, stepPath, trendGroups, usualLine, utc, verdict, weekEnd, weekRange, yScale } from './trendText'
 import { HatchDefs, themeLabel, useSize, useTooltip } from './util'
 import { t, utcFormat } from '../i18n.js'
 
@@ -70,6 +70,7 @@ const Panel = memo(function Panel({ t: th, rows, hasNeed, note, fullName, width,
         {lined(r) && <div>{t('Expected for this week: {n}', { n: about(r.expected_week) })}</div>}
         {nl && <div>{nl}</div>}
         <div style={{ marginTop: 4 }}>{verdict(r, red, need)}</div>
+        {backfilledNote(r) && <div className="small muted">{backfilledNote(r)}</div>}
         {onPickBar && <div className="small muted">{keys ? t('Enter lists this week’s articles. G opens the gap.') : t('Click for this week’s articles')}</div>}
       </div>)
   }
@@ -106,15 +107,16 @@ const Panel = memo(function Panel({ t: th, rows, hasNeed, note, fullName, width,
       <div className="trend-head">
         <button type="button" className="linkish" aria-pressed={!!selected} title={t('{name}. Show this theme in the charts below.', { name })}
           onClick={() => onSelect?.(th.id)}>{fullName ? name : themeLabel(th, lang)}</button>
-        {last && (judged(last) ? (() => { const short = last.gap >= red; return (
-          <button type="button" className={short ? 'pill flag' : 'pill'}
+        {last && (() => { const v = verdictOf(last, red); return v && v !== 'unclear' ? (
+          // the verdict of the 4 weeks to this week: red only when the shortfall is larger than chance would explain
+          <button type="button" className={pillClass(v)}
             title={t('{week}. {verdict} Click for the full gap.', { week: weekRange(last.week), verdict: verdict(last, red, need) })}
             onClick={() => onPickWeek?.(th.id, last.week)}>
-            {short && <span className="glyph" aria-hidden="true">⚠︎</span>}
-            {shortfall(last.gap, red)}</button>) })()
+            {v === 'short' && <span className="glyph" aria-hidden="true">⚠︎</span>}
+            {gapLabel(last, red, need)}</button>)
           // a week that could not be judged: the pill explains the term (the strip under the chart still opens the gap)
           : <Link className="pill" to="/help#not-judged" title={t('{week}. {verdict} Why a week is not judged.', { week: weekRange(last.week), verdict: verdict(last, red, need) })}>
-            {notJudged(last.reason, need)}</Link>)}
+            {gapLabel(last, red, need)}</Link> })()}
       </div>
       <div className="small muted" style={{ margin: '2px 0 4px' }}>
         {scored ? t('4 weeks to {date}: {articles}.', { date: dayMonth(utc(weekEnd(last.week))), articles: articles(a4) })
@@ -152,7 +154,8 @@ const Panel = memo(function Panel({ t: th, rows, hasNeed, note, fullName, width,
           onKeyDown={onKey} />
         {focused && <rect x={L} y={T} width={width - R - L} height={y0 - T} fill="none" stroke="var(--focus)" strokeWidth={2} rx={2} pointerEvents="none" />}
         {rows.map((r) => {
-          const fill = r.in_progress ? null : judged(r) ? (r.gap >= red ? gapFill(r) : 'var(--gap-0)') : `url(#tb-hatch-${th.id})` // i18n-ok: an SVG fill reference, never shown
+          // the strip: the verdict's colour (red only for short), hatched when the 4 weeks were not judged
+          const fill = r.in_progress ? null : gapFill(r, red) || `url(#tb-hatch-${th.id})` // i18n-ok: an SVG fill reference, never shown
           return (
             <rect key={r.week} x={xs(r.week)} y={sy} width={step + 0.3} height={sh} fill={fill || 'transparent'}
               style={{ cursor: fill && onPickWeek ? 'pointer' : 'default' }} onClick={fill ? () => onPickWeek?.(th.id, r.week) : undefined}>
@@ -194,11 +197,14 @@ export default function TrendBars({ themes, data, lens, reference, scoredWeek, l
       <div className="legend" style={{ marginTop: 12 }}>
         <span><span className="sw" style={{ background: 'var(--accent)' }} />{t('Articles from the outlets we followed all year')}</span>
         <span><span className="sw" style={{ background: 'var(--ink-2)', height: 2, verticalAlign: 3 }} />{levelLegend(need)}</span>
-        <span><span className="ramp" style={{ marginInlineEnd: 5 }}>{[2, 3, 4, 5, 6].map((i) => <span key={i} style={{ background: `var(--gap-${i})` }} />)}</span>{t('Last 4 weeks fell clearly short')}</span>
-        <span><span className="sw" style={{ background: 'var(--gap-0)', boxShadow: 'inset 0 0 0 1px var(--line)' }} />{t('About as expected, or more')}</span>
+        <span><span className="ramp" style={{ marginInlineEnd: 5 }}>{[2, 3, 4, 5, 6].map((i) => <span key={i} style={{ background: `var(--gap-${i})` }} />)}</span>{t('Fewer articles than chance would explain')}</span>
+        <span><span className="sw" style={{ background: 'var(--gap-1)', boxShadow: 'inset 0 0 0 1px var(--line)' }} />{t('Possibly fewer, not enough to be sure')}</span>
+        <span><span className="sw" style={{ background: 'var(--gap-0)', boxShadow: 'inset 0 0 0 1px var(--line)' }} />{t('About as expected')}</span>
+        <span><span className="sw" style={{ background: 'var(--gap-over)', boxShadow: 'inset 0 0 0 1px var(--line)' }} />{t('More than expected')}</span>
         <span><svg width="14" height="12" style={{ verticalAlign: -2, marginInlineEnd: 5 }}><HatchDefs id="tb-hatch-legend" /><rect width="14" height="12" rx="2" fill="url(#tb-hatch-legend)" /></svg>{t('Not judged')}</span>
         <span><span className="sw" style={{ border: '1px dashed var(--accent)', background: 'none' }} />{t('This week, still coming in')}</span>
       </div>
+      <p className="small muted" style={{ margin: '6px 0 0' }}>{t('Red means the shortfall is larger than chance would explain. Among the red gaps on a page, about 1 in 10 will still be chance.')}</p>
     </div>
   )
 }

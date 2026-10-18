@@ -148,8 +148,9 @@ def _cell_json(c: CellWeek) -> dict:
             "ratio": c.ratio, "ref_ratio": c.ref_ratio, "gap": c.gap,
             "insufficient": c.insufficient, "flags": c.flags, "breakdown": c.breakdown,
             "reason": b.get("reason"), "in_progress": bool(b.get("in_progress")),
-            # the calibrated verdict (scoring.judge) with its evidence; null when there is nothing to judge
-            "verdict": c.verdict, "p_low": b.get("p_low"), "p_high": b.get("p_high"),
+            # the calibrated verdict (scoring.judge) with its evidence; null when there is nothing to judge.
+            # expected_4w is the level the verdict sentence quotes ("12 against about 31 expected")
+            "verdict": c.verdict, "expected_4w": b.get("expected_4w"), "p_low": b.get("p_low"), "p_high": b.get("p_high"),
             "ratio_lo": b.get("ratio_lo"), "ratio_hi": b.get("ratio_hi"), "chance": b.get("chance"),
             # the expected level rests on weeks searched back for (fewer articles): the interval was widened
             "baseline_backfilled": bool(b.get("baseline_backfilled"))}

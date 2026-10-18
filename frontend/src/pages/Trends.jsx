@@ -48,7 +48,7 @@ export default function Trends() {
   // a national-only lens still has regional article counts worth showing (unscored, striped)
   const ctxQ = useApi(nationalOnly && filters.week ? '/api/cells' + qs({ lens: 'journalist', week: filters.week }) : null, { deps: [version] })
   const regionalContext = useMemo(() => (nationalOnly && ctxQ.data
-    ? ctxQ.data.cells.filter((c) => meta.regions.find((r) => r.id === c.region_id)?.level !== 'national').map((c) => ({ ...c, insufficient: true, gap: null, flags: [] }))
+    ? ctxQ.data.cells.filter((c) => meta.regions.find((r) => r.id === c.region_id)?.level !== 'national').map((c) => ({ ...c, insufficient: true, gap: null, verdict: null, reason: null, flags: [] }))
     : []), [ctxQ.data, nationalOnly, meta])
   const nationalCells = cells.filter((c) => c.region_id === national.id)
   const heatRegions = [national, ...meta.regions.filter((r) => r.level === 'macro')]
@@ -123,7 +123,7 @@ export default function Trends() {
           <h2>{t('Articles per week, theme by theme')}</h2>
           <p className="sub">{t('Bars count the articles each week from the outlets we followed all year.')} {pooled
             ? t('The grey line is the expected level for {what}, going by what other topics get.', { what: t(need.usual) })
-            : t('The grey line is the expected level for {what}, going by this theme’s own record.', { what: t(need.usual) })} {t('The strip under each chart turns red when the last 4 weeks fell clearly short. Google News finds more for recent weeks when we search back, so bars run higher on the right.')}{pooled ? '' : ` ${t('The expected level lags behind that rise, so recent weeks can look better covered than they were.')}`} {t('Click a bar to see its articles, or the strip under it for the full gap. A theme’s name picks it for the charts below.')}</p>
+            : t('The grey line is the expected level for {what}, going by this theme’s own record.', { what: t(need.usual) })} {t('The strip under each chart turns red when the last 4 weeks fell short by more than chance would explain. Google News finds more for recent weeks when we search back, so bars run higher on the right.')}{pooled ? '' : ` ${t('The expected level lags behind that rise, so recent weeks can look better covered than they were.')}`} {t('Click a bar to see its articles, or the strip under it for the full gap. A theme’s name picks it for the charts below.')}</p>
           {!trend ? (trendQ.error && !trendQ.refreshing ? <ErrorBox error={trendQ.error} onRetry={trendQ.retry} /> : <Loading />) : (
             <>
               <TrendBars themes={meta.themes} data={trend} lens={filters.lens} reference={lensMeta?.reference}
@@ -145,7 +145,7 @@ export default function Trends() {
           </div>
           {cellsQ.error && <ErrorBox error={cellsQ.error} onRetry={cellsQ.retry} compact />}
           <Heatmap themes={meta.themes} regions={heatRegions} cells={[...cells, ...regionalContext]} svgRef={heatSvg} unit={LENS_TEXT[filters.lens].unit} lang={lang}
-            feedback={feedback} red={red} onSelect={(tid, rid) => openGap(tid, rid, { from: 'heatmap' })} />
+            feedback={feedback} red={red} need={need} onSelect={(tid, rid) => openGap(tid, rid, { from: 'heatmap' })} />
           <div className="card-head" style={{ marginTop: 18 }}>
             <div><h3 style={{ margin: 0 }}>{t('Arabic vs English coverage')}</h3>
               <p className="sub">{t('Monitored articles nationally, {n} weeks ending {week}.', { n: meta.window_weeks, week: weekDate })}</p></div>

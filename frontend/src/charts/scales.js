@@ -10,35 +10,41 @@ export const css = (name) => `var(--${name})`
 const lazy = (o) => Object.defineProperties({}, Object.fromEntries(
   Object.entries(o).map(([k, en]) => [k, { enumerable: true, get: () => t(en) }])))
 
-// Gap (ln of expected/actual coverage): 0 = as expected. Only under-coverage is coloured, and only from
-// the red threshold up: one threshold on every page, meta.red_from (settings.GAP_RED_FROM, the same value
-// Trends uses). Below it a cell is neutral and reads "about as expected"; over-coverage stays neutral too
-// (the tool is about deserts, not surpluses). RED_FROM is the fallback until /api/meta has loaded; pages
-// pass meta.red_from. The functions stay pure (red is an argument) so scripts/trends.test.mjs can check them.
+// Gap (ln of expected/actual coverage): 0 = as expected. What a cell is coloured and worded by is its
+// calibrated verdict (scoring.judge, API field `verdict`): red only for `short` (the shortfall is larger
+// than chance would explain, intensity by the gap), a pale tint for `possibly_short`, nothing for `usual`,
+// a blue tint for `over`, and no fill (hatched, "Not judged") for `unclear` or when there was nothing to
+// judge. RED_FROM mirrors meta.red_from (settings.GAP_RED_FROM): the first red step, and the threshold a
+// cell scored before verdicts existed falls back to (see verdictOf). The functions stay pure (red is an
+// argument) so scripts/trends.test.mjs can check them. The words are in charts/trendText.js.
 export const RED_FROM = 0.4
-// bins above red keep the colours they had (gap-2 … gap-6); the pale gap-1 band, which used to start at
-// 0.15, is retired so nothing below red is tinted
+// the red steps inside `short` keep the colours they had (gap-2 ... gap-6); gap-1 is the pale tint of
+// possibly_short, gap-over the blue tint of over
 export const gapBins = (red = RED_FROM) => [red, 0.7, 1.0, 1.5, 2.2]
 export const GAP_BINS = gapBins()
 export const GAP_STEPS = [2, 3, 4, 5, 6] // the --gap-N colour of each bin, for legends
-export function gapFill(cell, red = RED_FROM) {
-  if (!cell || cell.insufficient || cell.gap == null) return null
-  const bins = gapBins(red)
-  const g = cell.gap
-  let i = 0
-  while (i < bins.length && g >= bins[i]) i++
-  return css(`gap-${i ? GAP_STEPS[i - 1] : 0}`)
+export const VERDICTS = ['short', 'possibly_short', 'usual', 'over', 'unclear']
+// The verdict code of a cell: short | possibly_short | usual | over | unclear, or null when there was
+// nothing to judge (the week is still coming in, no need data...). A cell scored before verdicts existed
+// (a gap but no verdict: not recomputed yet) reads by the old threshold rule, so the page is never blank
+// between a deploy and the recompute that follows it.
+export function verdictOf(cell, red = RED_FROM) {
+  if (!cell || cell.in_progress) return null
+  if (cell.insufficient || cell.gap == null) return cell.verdict === 'unclear' || cell.reason === 'too_few_expected' ? 'unclear' : null
+  return cell.verdict || (cell.gap >= red ? 'short' : cell.gap <= -red ? 'over' : 'usual')
 }
-// a number with exactly d decimals and no grouping, in the interface language's digits and decimal mark
-const fixed = (v, d) => fmtNum(v, { minimumFractionDigits: d, maximumFractionDigits: d, useGrouping: false })
-// the one term for a gap that could not be judged is "Not judged"; the wording of a judged gap is the
-// same as the Trends verdict (charts/trendText.js shortfall), so a reader meets one phrase everywhere.
-// Over-coverage stays neutral here: the maps and lists are about deserts, not surpluses.
-export function gapLabel(g, red = RED_FROM) {
-  if (g == null) return t('Not judged')
-  if (g < red) return t('About as expected')
-  const x = Math.exp(g)
-  return t('About {x} times fewer articles than expected', { x: x >= 10 ? fixed(Math.round(x), 0) : fixed(x, 1) })
+export function gapFill(cell, red = RED_FROM) {
+  const v = verdictOf(cell, red)
+  if (v === 'short') {
+    const bins = gapBins(red)
+    let i = 0
+    while (i < bins.length && cell.gap >= bins[i]) i++
+    return css(`gap-${i ? GAP_STEPS[i - 1] : 2}`)
+  }
+  if (v === 'possibly_short') return css('gap-1')
+  if (v === 'usual') return css('gap-0')
+  if (v === 'over') return css('gap-over')
+  return null
 }
 
 export function covFill(n, max) {
@@ -139,6 +145,8 @@ export const LENS_TEXT = {
   search: lazy({ label: N_('Libyan searches (Google)'), unit: N_('search index'), blurb: N_('Google searches from people in Libya vs coverage, against the theme’s own recent history (national only)'), waiting: N_('waiting for the next import of search data') }),
 }
 
+// a number with exactly d decimals and no grouping, in the interface language's digits and decimal mark
+const fixed = (v, d) => fmtNum(v, { minimumFractionDigits: d, maximumFractionDigits: d, useGrouping: false })
 export const fmt = (n) => n == null ? '–' : n >= 1e6 ? t('{n}M', { n: fixed(n / 1e6, n >= 1e7 ? 0 : 1) }) : n >= 10000 ? t('{n}K', { n: fixed(n / 1000, n >= 100000 ? 0 : 1) }) : fmtNum(Math.round(n))
 
 // Where an article came from (item.source = collector key)

@@ -66,10 +66,61 @@ def test_admin_and_contribute_wording():
 
 def test_gap_panel_expected_and_rounding():
     s = _src("components/GapPanel.jsx")
-    assert "import { about, weekEnd, weekRange } from '../charts/trendText'" in s
+    assert "import { backfilledNote, gapLabel, lensNeed, verdictSentence, weekEnd, weekRange } from '../charts/trendText'" in s
     assert "meta.lenses.find((l) => l.key === filters.lens)" in s
-    # one word "expected" on every lens; the comparison names what it is against (B-R1.5 glossary)
-    assert "against {expected} expected from other topics." in s
-    assert "against {expected} expected from this theme’s usual level." in s
-    assert "expected: about(b.expected_4w)" in s
+    # the verdict sentence carries the counts, the interval and the chance; the note under it names the
+    # comparison in the one word "expected" (B-R1.5 glossary), and the backfilled note follows when set
+    assert "verdictSentence(c, need, red)" in s and "gapLabel(c, red, need)" in s and "backfilledNote(c)" in s
+    assert "The expected level is what other topics get for the same need." in s
+    assert "The expected level is this theme’s usual level." in s
+    assert "The score counts" not in s
     assert "fmt(b.expected_4w)" not in s and "minimum need" not in s and "{expected} usual." not in s
+
+
+LEGEND = "Red means the shortfall is larger than chance would explain. Among the red gaps on a page, about 1 in 10 will still be chance."
+WORDS = ROOT / "frontend" / "src" / "charts" / "trendText.js"
+
+
+def test_verdict_wording_on_every_surface():
+    """A-R2.2: every page builds the verdict from the same words (charts/trendText.js), red only for `short`,
+    and the three pages that colour gaps carry the 1-in-10 legend line."""
+    words = WORDS.read_text(encoding="utf-8")
+    # the sentence table: expected (never usual) in the sentences, the "1 in N" chance, the interval
+    for s in ("Fewer articles than expected", "Fewer articles than other topics get for {what}", "Possibly fewer than expected: {counts}. Not enough to be sure.",
+              "About as expected: {counts}.", "More articles than expected", "Too few to judge: {counts}, so even none at all could be chance.",
+              "A shortfall this size happens by chance about once in {n} such weeks.", "It could easily be chance.",
+              ", likely {lo} to {hi} times fewer", ", likely {lo} to {hi} times more",
+              "The expected level rests partly on weeks we searched back for, which find fewer articles. We widened the margin to allow for it."):
+        assert s in words, s
+    assert "than usual" not in words
+    for page in ("charts/TrendBars.jsx", "charts/Heatmap.jsx", "pages/ThisWeek.jsx"):
+        assert LEGEND in _src(page), page
+    # the surfaces render from the verdict, not from the gap threshold
+    assert "verdictSentence(c, need, red)" in _src("pages/ThisWeek.jsx") and "verdictOf(c, red) === 'short'" in _src("pages/ThisWeek.jsx")
+    assert "verdictSentence(c, need, red)" in _src("charts/Heatmap.jsx")
+    assert "verdictSentence(g, needOf(g.lens), red)" in _src("pages/Contribute.jsx")
+    assert "gapFill(r, red)" in _src("charts/TrendBars.jsx") and "pillClass(v)" in _src("charts/TrendBars.jsx")
+    scales = _src("charts/scales.js")
+    assert "if (v === 'short') {" in scales and "if (v === 'possibly_short') return css('gap-1')" in scales
+    assert "if (v === 'over') return css('gap-over')" in scales
+    # the Trends intro no longer says "clearly short"
+    assert "fell short by more than chance would explain" in _src("pages/Trends.jsx") and "fell clearly short" not in _src("pages/Trends.jsx")
+
+
+def test_md_how_we_decide_a_cell_is_short():
+    """The method page has the section, in both languages, and the help page the three glossary terms."""
+    assert "## How we decide a cell is short" in MD
+    sec = MD.split("## How we decide a cell is short")[1].split("\n## ")[0]
+    for s in ("Dispersion", "false-discovery rate at 10%", "Benjamini-Hochberg", "at least 1.5 times", "about 1 in 10 is still chance",
+              "likely 1.8 to 3.6 times fewer", "once in N such weeks", "Collection drift widens the margin", "fewer than 8 weeks",
+              "wider than 4 times either way", "test_stats_simulation.py"):
+        assert s in sec, s
+    assert "in six cases" in MD and "1.15 times" not in MD and "flag a gap from about 1.5 times fewer" not in MD
+    ar = (ROOT / "backend" / "app" / "content" / "how_the_numbers_work.ar.md").read_text(encoding="utf-8")
+    assert "## كيف نقرر أن الخلية أقل من المتوقع" in ar and "بنجاميني-هوكبرغ" in ar and "في ست حالات" in ar
+    help_md = (ROOT / "backend" / "app" / "content" / "help.md").read_text(encoding="utf-8")
+    help_ar = (ROOT / "backend" / "app" / "content" / "help.ar.md").read_text(encoding="utf-8")
+    for anchor in ("{#short}", "{#possibly-fewer}", "{#chance}"):
+        assert anchor in help_md and anchor in help_ar, anchor
+    assert "about 1 in 10 will still be chance" in help_md and "in six cases" in help_md and "From about 1.5 times fewer it turns red" not in help_md
+    assert "في ست حالات" in help_ar

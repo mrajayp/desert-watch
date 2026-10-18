@@ -28,6 +28,14 @@ add context from your own knowledge, and do not speculate about causes.
 - Never name any person. Institutions may be named when the JSON names them.
 - "Coverage" means monitored coverage (news sites and search results the tool can see), not all \
 reporting. Say "monitored" where it matters.
+- Each gap in top_gaps carries a verdict. Only "short" is a gap: fewer articles than chance would \
+explain. "possibly_short" is possibly fewer, not enough to be sure; "usual" is about as expected; \
+"over" is more than expected; "unclear" could not be judged. Report a gap with its own numbers, \
+verbatim: the articles against the expected count, the likely range ("likely 1.8 to 3.6 times \
+fewer", from likely_times_fewer_low and likely_times_fewer_high) and the chance ("happens by chance \
+about once in 50 such weeks", from chance_one_in; 1000 means once in 1000 or rarer; null means it \
+could easily be chance). Call a gap "new" only when new_short is true; otherwise it was already \
+short the week before. About 1 red gap in 10 is still chance, and the brief says so once.
 - Prefer concrete, checkable statements ("14 articles, all in Arabic") over adjectives.
 - Write in plain English. Use Markdown with exactly these headings, in this order, and keep the \
 whole brief under 450 words:
@@ -82,6 +90,12 @@ COUNTS_LIMIT = ("articles and previous_window count stories from the outlets and
                 "Recurring posts (daily rates, weather) are left out")
 UNSCORED_LIMIT = ("this week has no scores, so articles and previous_window count every monitored source and rise "
                   "whenever a feed or social route is added")
+# What a verdict is, for the facts: red (short) is a shortfall larger than chance would explain, judged
+# with a false-discovery rate of 10% across the week's cells, so about 1 red gap in 10 is still chance.
+VERDICT_LIMIT = ("a gap's verdict is short only when the shortfall is larger than chance would explain (false-discovery "
+                 "rate 10% across the week, so about 1 short gap in 10 is still chance) and the shortfall is at least "
+                 "{floor}x; possibly_short is fewer but not enough to be sure; usual is about as expected; over is more "
+                 "than expected; unclear could not be judged. A gap is new only when new_short is true")
 # Outlets whose route stopped reaching us (scoring.record_departures): their articles left every compared
 # week with them, so their silence shows as no gap. {n} outlets, {weeks} weeks.
 DEPARTURES_LIMIT = ("{n} outlet{s} left the comparison in the last {weeks} weeks: they stopped reaching us, so their "
@@ -137,18 +151,24 @@ def build_facts(s: Session, country: Country, week: date) -> dict:
                              "arabic": c.get("ar", 0), "english": c.get("en", 0),
                              "previous_window": sum(p.values()), "previous_window_all": sum(p.values())})
 
-    # scored gaps for every lens that has data this week
+    # scored gaps for every lens that has data this week, with the calibrated verdict and its evidence
+    # (scoring.judge): the short ones lead, then the rest by gap
     gaps = []
     for lens in LENSES:
         for cell in s.scalars(select(CellWeek).where(CellWeek.country_id == country.id, CellWeek.week_start == week,
                                                      CellWeek.lens == lens, CellWeek.insufficient.is_(False),
                                                      CellWeek.gap.is_not(None))):
+            b = cell.breakdown or {}
             gaps.append({"theme": themes[cell.theme_id].name_en if cell.theme_id in themes else "?",
                          "region": regions[cell.region_id].name_en, "lens": lens, "gap": round(cell.gap, 2),
                          "times_less_coverage_than_expected": round(2.718281828 ** cell.gap, 1),
                          "articles": scored_articles(cell), "articles_all": int(cell.coverage),
-                         "need": round(cell.need), "flags": cell.flags})
-    gaps.sort(key=lambda g: -g["gap"])
+                         "expected": round(b["expected_4w"], 1) if b.get("expected_4w") is not None else None,
+                         "need": round(cell.need), "flags": cell.flags,
+                         "verdict": cell.verdict, "new_short": bool(b.get("new_short")),
+                         "likely_times_fewer_low": b.get("ratio_lo"), "likely_times_fewer_high": b.get("ratio_hi"),
+                         "chance_one_in": b.get("chance")})
+    gaps.sort(key=lambda g: (g["verdict"] != "short", -g["gap"]))
 
     # districts: articles naming each one in the window (all themes, and gender only)
     gender_ids = {t.id for t in themes.values() if t.group == "gender"}
@@ -196,6 +216,7 @@ def build_facts(s: Session, country: Country, week: date) -> dict:
         "team_activity_this_week": {"gap_votes": dict(votes), "claims": dict(claims), "comments": comments or 0},
         "known_limits": ["monitored coverage only (Facebook only as the sample of posts Google indexes, no Telegram)",
                          COUNTS_LIMIT if scored else UNSCORED_LIMIT,
+                         *([VERDICT_LIMIT.format(floor=settings.MIN_SHORTFALL)] if any(g["verdict"] for g in gaps) else []),
                          "event and humanitarian need data are pending source keys" if not
                          {"events", "humanitarian"} & {g["lens"] for g in gaps} else "",
                          "most articles name no district",

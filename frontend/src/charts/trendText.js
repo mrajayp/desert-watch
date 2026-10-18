@@ -1,7 +1,7 @@
 // Words and scales for the Trends bars (charts/TrendBars.jsx), kept free of JSX so
 // scripts/trends.test.mjs can check them with node --test.
 import * as d3 from 'd3'
-import { fmt } from './scales.js'
+import { RED_FROM, fmt, verdictOf } from './scales.js'
 import { t, tn, utcFormat } from '../i18n.js'
 
 // marks a string for the Arabic catalogue where a table is defined; t() translates it when it is shown
@@ -40,6 +40,10 @@ const REASONS = {
   no_search_data: [N_('no search data for a week'), N_('Google gave no search data for one of these 4 weeks')],
   building_baseline: [N_('still building a baseline'), N_('We are still building a baseline for this theme')],
   in_progress: [N_('still coming in'), N_('This week is still coming in')],
+  // a judged cell (it has a gap) whose verdict is unclear: its dispersion rests on too few weeks, or the
+  // 90% interval on the shortfall is wider than 4x either way (see unclearReason)
+  too_little_history: [N_('too little history'), N_('There is too little history of this theme to judge its swing')],
+  margin_too_wide: [N_('margin too wide'), N_('The margin is too wide to say whether this is chance')],
 }
 // '' for a reason code this file does not know: the pill then says only "Not judged"
 export function reasonText(reason, need, long) {
@@ -55,7 +59,10 @@ export function notJudged(reason, need) {
 }
 
 const times = (g) => { const x = Math.exp(g); return x >= 10 ? String(Math.round(x)) : x.toFixed(1) }
-// red_from either way: clearly fewer (red on the page), clearly more (neutral), or about as expected
+// a multiple as the pages print it: one decimal under 10, whole from 10
+const mult = (x) => (x >= 10 ? String(Math.round(x)) : x.toFixed(1))
+// red_from either way: clearly fewer (red on the page), clearly more (neutral), or about as expected.
+// The old threshold wording, kept for a cell scored before verdicts existed (verdictOf falls back to it).
 export function shortfall(g, red) {
   return g >= red ? t('About {x} times fewer articles than expected', { x: times(g) })
     : g <= -red ? t('About {x} times more articles than expected', { x: times(-g) }) : t('About as expected')
@@ -64,22 +71,87 @@ export const articles = (n) => tn(n, '{num} article', '{num} articles', { num: f
 // one decimal under 10, so an expected level of 2.7 does not read as the 3-article minimum
 export const about = (v) => (v >= 10 ? t('about {n}', { n: fmt(v) }) : v >= 1 ? t('about {n}', { n: +v.toFixed(1) }) : t('less than 1'))
 export const judged = (r) => !r.in_progress && !r.insufficient && r.gap != null
-const against = (r, need) => (need?.pooled
-  ? t('{articles} against {about} expected from other topics', { articles: articles(r.articles_4w), about: about(r.expected_4w) })
-  : t('{articles} against {about} expected from this theme’s usual level', { articles: articles(r.articles_4w), about: about(r.expected_4w) }))
+const expectedOf = (r) => r.expected_4w ?? r.breakdown?.expected_4w ?? null
+const countOf = (r) => r.articles_4w ?? r.articles ?? r.coverage ?? 0
+// the counts a verdict rests on: "12 articles over 4 weeks against about 31 expected"
+const counts = (r) => (expectedOf(r) == null ? t('{articles} over 4 weeks', { articles: articles(countOf(r)) })
+  : t('{articles} over 4 weeks against {about} expected', { articles: articles(countOf(r)), about: about(expectedOf(r)) }))
 
-// the 4-week verdict for the week ending a row, as one or two sentences
-export function verdict(r, red, need) {
-  if (r.in_progress) return t('This week is still coming in. Not judged yet.')
-  if (r.reason === 'too_few_expected' && r.articles_4w != null && r.expected_4w != null) {
-    return t('Last 4 weeks: {counts}. {verdict}.', { counts: against(r, need), verdict: reasonText(r.reason, need, true) })
-  }
-  if (!judged(r)) {
-    const why = reasonText(r.reason, need, true)
-    return why ? t('Last 4 weeks: not judged. {reason}.', { reason: why }) : t('Last 4 weeks: not judged.')
-  }
-  return t('Last 4 weeks: {counts}. {verdict}.', { counts: against(r, need), verdict: shortfall(r.gap, red, need) })
+// Why a cell with a gap has no verdict (verdict unclear, scoring.judge): the 90% interval on the shortfall
+// is wider than 4 times either way (ratio_hi / ratio_lo > 16, settings.MAX_INTERVAL_RATIO), else the
+// theme's dispersion rests on fewer than 8 weeks. A cell expecting under 3 articles keeps its own reason.
+export function unclearReason(r) {
+  if (r.reason === 'too_few_expected' || r.gap == null) return 'too_few_expected'
+  return r.ratio_lo && r.ratio_hi && r.ratio_hi / r.ratio_lo > 16 ? 'margin_too_wide' : 'too_little_history'
 }
+
+// The headline of a cell, from its verdict: the words on the Trends pill, the maps, the lists and the gap
+// view. The multiple is exp(gap), as the gap score prints it. `cell` may be a bare gap (the old
+// signature), which reads by the threshold rule. With `need` an unjudged cell names its reason.
+export function gapLabel(cell, red = RED_FROM, need) {
+  if (typeof cell === 'number' || cell == null) cell = { gap: cell, insufficient: cell == null }
+  const v = verdictOf(cell, red)
+  if (v === 'short') return t('About {x} times fewer articles than expected', { x: times(cell.gap) })
+  if (v === 'over') return t('About {x} times more articles than expected', { x: times(-cell.gap) })
+  if (v === 'usual') return t('About as expected')
+  if (v === 'possibly_short') return t('Possibly fewer than expected')
+  if (v === 'unclear') return notJudged(unclearReason(cell), need)
+  return need && cell.reason ? notJudged(cell.reason, need) : t('Not judged')
+}
+// the pill class of a verdict: red for short, a pale tint for possibly_short, blue for over
+export const pillClass = (v) => (v === 'short' ? 'pill flag' : v === 'possibly_short' ? 'pill maybe' : v === 'over' ? 'pill over' : 'pill') // i18n-ok: CSS classes
+
+// how often a shortfall this size happens by chance: "1 in N" (breakdown.chance, N up to 1000, which is
+// a ceiling), or that it could easily be chance when the chance is above 1 in 5 (N null)
+export function chanceText(n) {
+  if (n == null) return t('It could easily be chance.')
+  if (n >= 1000) return t('A shortfall this size happens by chance less than once in 1000 such weeks.')
+  return t('A shortfall this size happens by chance about once in {n} such weeks.', { n })
+}
+// the 90% interval on the multiple, as a clause: ", likely 1.8 to 3.6 times fewer"; '' without one
+const span = (r, fewer) => {
+  if (r.ratio_lo == null || r.ratio_hi == null) return ''
+  return fewer ? t(', likely {lo} to {hi} times fewer', { lo: mult(r.ratio_lo), hi: mult(r.ratio_hi) })
+    : t(', likely {lo} to {hi} times more', { lo: mult(1 / r.ratio_hi), hi: mult(1 / r.ratio_lo) })
+}
+// the note on a cell whose expected level rests on weeks searched back for (breakdown.baseline_backfilled)
+export const backfilledNote = (r) => (r?.baseline_backfilled
+  ? t('The expected level rests partly on weeks we searched back for, which find fewer articles. We widened the margin to allow for it.') : null)
+
+// The verdict of a cell as one to three sentences, from its verdict, counts, interval and chance (the
+// wording table of the honest-verdicts release). The same sentence on every page. A cell scored before
+// verdicts existed (no verdict, see verdictOf) has no interval and no chance, so it gets neither clause.
+export function verdictSentence(r, need, red = RED_FROM) {
+  if (!r) return t('Not judged.')
+  if (r.in_progress) return t('This week is still coming in. Not judged yet.')
+  const v = verdictOf(r, red)
+  const c = counts(r)
+  const calibrated = !!r.verdict
+  const join = (...parts) => parts.filter(Boolean).join(' ')
+  // "head: counts, interval." reads in the same order in both languages, so the frame is shared
+  if (v === 'short') {
+    const head = need?.pooled ? t('Fewer articles than other topics get for {what}', { what: t(need.usual) }) : t('Fewer articles than expected')
+    return join(`${head}: ${c}${span(r, true)}.`, calibrated && chanceText(r.chance))
+  }
+  if (v === 'possibly_short') return join(t('Possibly fewer than expected: {counts}. Not enough to be sure.', { counts: c }), calibrated && chanceText(r.chance))
+  if (v === 'usual') {
+    return join(t('About as expected: {counts}.', { counts: c }),
+      calibrated && (r.chance == null ? t('The difference could easily be chance.') : t('Within the usual swing.')))
+  }
+  if (v === 'over') {
+    const head = need?.pooled ? t('More articles than other topics get for {what}', { what: t(need.usual) }) : t('More articles than expected')
+    return `${head}: ${c}${span(r, false)}.`
+  }
+  if (v === 'unclear') {
+    const why = unclearReason(r)
+    if (why === 'too_few_expected') return t('Too few to judge: {counts}, so even none at all could be chance.', { counts: c })
+    return t('Not judged: {counts}. {reason}.', { counts: c, reason: reasonText(why, need, true) })
+  }
+  const why = need ? reasonText(r.reason, need, true) : ''
+  return why ? t('Not judged. {reason}.', { reason: why }) : t('Not judged.')
+}
+// the 4-week verdict for the week ending a row (the Trends tooltip and strip titles)
+export const verdict = (r, red, need) => verdictSentence(r, need, red)
 
 // search lens: a week with no search data (not imported yet, or one Google held back). The Trends
 // panels then open on the lens's latest scored week.

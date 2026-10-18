@@ -2,8 +2,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { qs, track } from '../api'
 import { useApp } from '../App'
-import { LENS_TEXT, RED_FROM, fmt, gapFill, gapLabel } from '../charts/scales'
-import { weekEnd, weekRange } from '../charts/trendText'
+import { LENS_TEXT, RED_FROM, fmt, gapFill, verdictOf } from '../charts/scales'
+import { lensNeed, verdictSentence, weekEnd, weekRange } from '../charts/trendText'
 import ArticleRow from '../components/ArticleRow'
 import CoverageMap from '../components/CoverageMap'
 import LensSheet from '../components/LensSheet'
@@ -40,15 +40,18 @@ export default function ThisWeek() {
   const red = meta.red_from ?? RED_FROM
   const regionsById = useMemo(() => new Map(meta.regions.map((r) => [r.id, r])), [meta])
   const lensInfo = LENS_TEXT[filters.lens]
+  const lensMeta = meta.lenses.find((l) => l.key === filters.lens)
+  const need = lensNeed(filters.lens, lensMeta?.reference)
   const week = filters.week ? fmtDate(weekEnd(filters.week)) : ''
 
   const cellsQ = useApi(filters.week ? '/api/cells' + qs({ lens: filters.lens, week: filters.week }) : null, { deps: [version] })
   const cells = cellsQ.data?.cells || []
-  // the ranked gaps: the red ones (up to 7), else the five least covered; one lower-ranked cell last as
-  // "Also worth a look", so the ranking does not only reinforce itself (its impressions carry explore=true)
+  // the ranked gaps: the red ones (verdict short: the shortfall is larger than chance would explain, up to 7),
+  // else the five least covered; one lower-ranked cell last as "Also worth a look", so the ranking does
+  // not only reinforce itself (its impressions carry explore=true)
   const ranked = useMemo(() => {
-    const ok = cells.filter((c) => !c.insufficient && c.gap != null).sort((a, b) => b.gap - a.gap)
-    let top = ok.filter((c) => c.gap >= red).slice(0, 7)
+    const ok = cells.filter((c) => !c.insufficient && c.gap != null && verdictOf(c, red) !== 'unclear').sort((a, b) => b.gap - a.gap)
+    let top = ok.filter((c) => verdictOf(c, red) === 'short').slice(0, 7)
     if (!top.length) top = ok.slice(0, 5).map((c) => ({ ...c, fallback: true }))
     const rest = ok.filter((c) => !top.includes(c))
     if (rest.length && top.length >= 3 && !top[0].fallback) {
@@ -113,7 +116,7 @@ export default function ThisWeek() {
                   onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openCard(c, i) } }}>
                   <div>
                     <div className="t">{pick(th)} · <span style={{ fontWeight: 400 }}>{pick(r)}</span></div>
-                    <div className="verdict">{gapLabel(c.gap, red)}</div>
+                    <div className="verdict">{verdictSentence(c, need, red)}</div>
                     <div className="small muted">{t('{articles} articles vs {need} {unit}', { articles: fmt(n), need: fmt(c.need), unit: t(lensInfo.unit) })}
                       {all != null && all !== n && <span> · {t('{n} from all sources', { n: fmt(all) })}</span>}</div>
                     <div className="row" style={{ marginTop: 4 }}>
@@ -128,6 +131,8 @@ export default function ThisWeek() {
                   <span className="dot" style={{ width: 14, height: 14, borderRadius: 4, background: gapFill(c, red) || 'var(--surface-2)' }} aria-hidden="true" />
                 </div>)
             })}
+            {cellsQ.data && ranked.length > 0 && (
+              <p className="small muted" style={{ margin: '10px 0 0' }}>{t('Red means the shortfall is larger than chance would explain. Among the red gaps on a page, about 1 in 10 will still be chance.')}</p>)}
           </section>
           <section className="card">
             <h2>{t('Written this week')}</h2>

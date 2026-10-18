@@ -3,8 +3,8 @@ import { Link } from 'react-router-dom'
 import { api, dwell, qs } from '../api'
 import { useApp } from '../App'
 import { MixBar } from '../charts/Balance'
-import { DIMENSIONS, LENS_TEXT, fmt, gapLabel } from '../charts/scales'
-import { about, weekEnd, weekRange } from '../charts/trendText'
+import { DIMENSIONS, LENS_TEXT, RED_FROM, fmt } from '../charts/scales'
+import { backfilledNote, gapLabel, lensNeed, verdictSentence, weekEnd, weekRange } from '../charts/trendText'
 import { useApi } from '../hooks/useApi'
 import { useDraft } from '../hooks/useDraft'
 import { useMutation } from '../hooks/useMutation'
@@ -78,6 +78,8 @@ export default function GapPanel({ themeId, regionId, week: weekProp, lens: lens
   const b = c?.breakdown || {}
   // own_history lenses compare with the theme's usual level, pooled ones with what other topics get
   const reference = lensMeta?.reference || b.reference
+  const need = lensNeed(filters.lens, reference)
+  const red = meta.red_from ?? RED_FROM
   const myVote = d?.votes.find((v) => v.mine && v.week === d.week)
   const myClaim = d?.claims.find((x) => x.mine)
   // the server sends at most 150 articles; the full list is the Articles page with the same window
@@ -95,14 +97,17 @@ export default function GapPanel({ themeId, regionId, week: weekProp, lens: lens
           <div className="row" style={{ gap: 24, margin: '14px 0' }}>
             <div className="stat"><span className="v num">{fmt(c?.articles_all ?? c?.coverage ?? d.articles.total)}</span><span className="l">{t('monitored articles')}</span></div>
             <div className="stat"><span className="v num">{fmt(c?.need ?? 0)}</span><span className="l">{lensInfo.unit}</span></div>
-            <div className="stat"><span className="v" style={{ fontSize: 16, maxWidth: 200 }}>{gapLabel(c && !c.insufficient ? c.gap : null, meta.red_from)}</span>
+            <div className="stat"><span className="v" style={{ fontSize: 16, maxWidth: 200 }}>{gapLabel(c, red, need)}</span>
               <span className="l">{reference === 'own_history' ? t('compared with this theme’s usual level') : t('compared with other topics')}</span></div>
           </div>
           {(!c || c.insufficient) && <p className="small" style={{ marginTop: 0 }}><Link to="/help#not-judged">{t('Why a gap is not judged')}</Link></p>}
-          {b.articles_4w != null && b.expected_4w != null && (
-            <p className="small muted" style={{ marginTop: 0 }}>{reference === 'pooled'
-              ? t('The score counts {count} of these, from the outlets we followed all year, against {expected} expected from other topics.', { count: fmt(b.articles_4w), expected: about(b.expected_4w) })
-              : t('The score counts {count} of these, from the outlets we followed all year, against {expected} expected from this theme’s usual level.', { count: fmt(b.articles_4w), expected: about(b.expected_4w) })}</p>)}
+          {c && (
+            // the verdict with its counts, interval and chance; the counts are the score's (the outlets
+            // followed all year), the expected level the lens's comparison
+            <p className="small" style={{ marginTop: 0 }}>{verdictSentence(c, need, red)} <span className="muted">{reference === 'pooled'
+              ? t('The articles counted are from the outlets we followed all year. The expected level is what other topics get for the same need.')
+              : t('The articles counted are from the outlets we followed all year. The expected level is this theme’s usual level.')}</span></p>)}
+          {backfilledNote(c) && <p className="small muted" style={{ marginTop: 0 }}>{backfilledNote(c)}</p>}
           {c?.flags?.length > 0 && <div className="row"><WarningPills codes={c.flags} /></div>}
           {filters.lens === 'search' && <SearchTerms search={d.search} missing={b.search_missing_weeks} />}
           {c && (

@@ -144,8 +144,8 @@ export default {
   'Download PNG with source and method note': 'تنزيل PNG مع المصدر وملاحظة المنهجية',
   'Gender': 'النوع الاجتماعي',
 
-  // charts/scales.js: gap wording ("Not judged", "About as expected", "About {x} times fewer articles
-  // than expected") shares its keys with charts/trendText.js in trends.js
+  // the gap and verdict wording ("Not judged", "About as expected", "Fewer articles than expected: ...")
+  // lives in charts/trendText.js, with its keys in trends.js; charts/scales.js only colours a verdict
 
   // components/Warnings.jsx: read out before a warning pill's words
   'Warning:': 'تحذير:',

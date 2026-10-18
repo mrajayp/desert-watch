@@ -41,6 +41,11 @@ def test_digest_builds_facts_and_stores_text(db, monkeypatch):
     assert gv["articles_all"] == 1 and gv["previous_window"] == 0 and digest.UNSCORED_LIMIT in f["known_limits"]
     assert "Sabha" not in f["districts_with_no_monitored_articles"]
     assert fake.last["model"] == "claude-haiku-5-5" and "Never name any person" in fake.last["system"]
+    # the model is told what a verdict is, to quote the range and the chance verbatim, and when a gap is new
+    sys_prompt = fake.last["system"]
+    assert 'Only "short" is a gap' in sys_prompt and "verbatim" in sys_prompt and "chance_one_in" in sys_prompt
+    assert 'Call a gap "new" only when new_short is true' in sys_prompt and "About 1 red gap in 10 is still chance" in sys_prompt
+    assert "Do not" in sys_prompt and "headlines" in digest.__doc__.lower()      # the no-headlines rule stands
     assert d.content_md == "## This week in brief\nFacts only." and d.content_md_ar == "## الأسبوع باختصار\nوقائع فقط."
     assert "===ARABIC===" in fake.last["system"] and "## الأسبوع باختصار" in fake.last["system"]
     # cached: a second call does not re-run the model
@@ -85,6 +90,39 @@ def test_digest_compares_like_with_like_once_the_week_is_scored(db):
     top = next(g for g in f["top_gaps"] if g["theme"] == "Health" and g["lens"] == "audience")
     assert top["articles"] == 12 and top["articles_all"] == 52 and abs(top["gap"]) < 0.2
     assert digest.COUNTS_LIMIT in f["known_limits"] and digest.UNSCORED_LIMIT not in f["known_limits"]
+    # the calibrated verdict and its evidence travel with the gap (A-R2.2): the same values as the cell
+    assert top["verdict"] == cell.verdict in ("usual", "possibly_short", "short", "over", "unclear")
+    assert top["expected"] == round(cell.breakdown["expected_4w"], 1) and top["new_short"] is False
+    assert top["likely_times_fewer_low"] == cell.breakdown["ratio_lo"] and top["likely_times_fewer_high"] == cell.breakdown["ratio_hi"]
+    assert top["chance_one_in"] == cell.breakdown["chance"]
+    assert digest.VERDICT_LIMIT.format(floor=1.5) in f["known_limits"]
+
+
+def test_digest_facts_lead_with_short_gaps_and_carry_their_evidence(db):
+    """The short gaps come first whatever their gap, each with its range, chance and whether it is new."""
+    from app.models import CellWeek, Region, Theme
+    country = db.scalar(select(Country))
+    nat = db.scalar(select(Region.id).where(Region.country_id == country.id, Region.level == "national"))
+    t1, t2, t3 = db.scalars(select(Theme.id).where(Theme.active.is_(True)).order_by(Theme.id).limit(3)).all()
+    names = {t.id: t.name_en for t in db.scalars(select(Theme))}
+    wk = date(2026, 10, 5)
+    rows = [  # (theme, gap, verdict, evidence)
+        (t1, 0.9, "usual", {"articles_4w": 40, "expected_4w": 92.0, "ratio_lo": 1.3, "ratio_hi": 3.9, "chance": None, "new_short": False}),
+        (t2, 0.5, "short", {"articles_4w": 12, "expected_4w": 31.0, "ratio_lo": 1.8, "ratio_hi": 3.6, "chance": 50, "new_short": True}),
+        (t3, 0.6, "possibly_short", {"articles_4w": 1, "expected_4w": 4.0, "ratio_lo": 0.9, "ratio_hi": 4.1, "chance": 20, "new_short": False}),
+    ]
+    for tid, gap, verdict, b in rows:
+        db.add(CellWeek(country_id=country.id, theme_id=tid, region_id=nat, week_start=wk, lens="audience", need=1000,
+                        coverage=b["articles_4w"], gap=gap, insufficient=False, flags=[], verdict=verdict, breakdown=b))
+    db.commit()
+    gaps = digest.build_facts(db, country, wk)["top_gaps"]
+    assert [g["theme"] for g in gaps] == [names[t2], names[t1], names[t3]]     # short first, then by gap
+    short = gaps[0]
+    assert short["verdict"] == "short" and short["new_short"] is True and short["chance_one_in"] == 50
+    assert short["likely_times_fewer_low"] == 1.8 and short["likely_times_fewer_high"] == 3.6
+    assert short["articles"] == 12 and short["expected"] == 31.0
+    assert gaps[1]["verdict"] == "usual" and gaps[1]["chance_one_in"] is None and gaps[1]["new_short"] is False
+    assert gaps[2]["verdict"] == "possibly_short" and gaps[2]["chance_one_in"] == 20
 
 
 def test_digest_refusal_and_error_recorded(db, monkeypatch):

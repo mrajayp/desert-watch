@@ -30,8 +30,8 @@ export default {
     "الخط الرمادي هو المستوى المتوقع من المقالات مقابل {what}، استنادًا إلى ما تحظى به المواضيع الأخرى.",
   "The grey line is the expected level for {what}, going by this theme’s own record.":
     "الخط الرمادي هو المستوى المتوقع من المقالات مقابل {what}، استنادًا إلى سجل الموضوع نفسه.",
-  "The strip under each chart turns red when the last 4 weeks fell clearly short. Google News finds more for recent weeks when we search back, so bars run higher on the right.":
-    "يتحوّل الشريط أسفل كل رسم إلى الأحمر عندما تكون تغطية آخر 4 أسابيع أقل بوضوح. يجد البحث في أخبار غوغل مقالات أكثر للأسابيع الأخيرة عند البحث بأثر رجعي، لذا ترتفع الأعمدة على اليمين.",
+  "The strip under each chart turns red when the last 4 weeks fell short by more than chance would explain. Google News finds more for recent weeks when we search back, so bars run higher on the right.":
+    "يتحوّل الشريط أسفل كل رسم إلى الأحمر عندما يكون نقص آخر 4 أسابيع أكبر مما تفسره الصدفة. يجد البحث في أخبار غوغل مقالات أكثر للأسابيع الأخيرة عند البحث بأثر رجعي، لذا ترتفع الأعمدة على اليمين.",
   "The expected level lags behind that rise, so recent weeks can look better covered than they were.":
     "يتأخر المستوى المتوقع عن هذا الارتفاع، لذا قد تبدو الأسابيع الأخيرة أفضل تغطية مما كانت عليه.",
   "Click a bar to see its articles, or the strip under it for the full gap. A theme’s name picks it for the charts below.":
@@ -79,8 +79,12 @@ export default {
   "General": "مواضيع عامة",
   "Gender": "النوع الاجتماعي", // a theme group code, shown through t(g.label)
   "Articles from the outlets we followed all year": "مقالات وسائل الإعلام التي تابعناها طوال العام",
-  "Last 4 weeks fell clearly short": "تغطية آخر 4 أسابيع أقل بوضوح",
-  "About as expected, or more": "في حدود المتوقع أو أكثر",
+  // the legend: the verdict colours (red only when the shortfall is larger than chance would explain)
+  "Fewer articles than chance would explain": "مقالات أقل مما تفسره الصدفة",
+  "Possibly fewer, not enough to be sure": "ربما أقل، ولا يكفي للجزم",
+  "More than expected": "أكثر من المتوقع",
+  "Red means the shortfall is larger than chance would explain. Among the red gaps on a page, about 1 in 10 will still be chance.":
+    "الأحمر يعني أن النقص أكبر مما تفسره الصدفة. ومن بين الفجوات الحمراء في الصفحة، تبقى نحو واحدة من كل 10 من قبيل الصدفة.",
   // the one term for anything the tool could not score (charts, maps, lists, the gap view)
   "Not judged": "لم يُحكم عليه",
   "Not judged · {reason}": "لم يُحكم عليه · {reason}",
@@ -144,21 +148,53 @@ export default {
   "Google gave no search data for one of these 4 weeks": "لم يقدّم غوغل بيانات بحث عن أحد هذه الأسابيع الـ4",
   "still building a baseline": "خط الأساس قيد الإعداد",
   "We are still building a baseline for this theme": "لا يزال خط الأساس لهذا الموضوع قيد الإعداد",
+  // a judged gap whose verdict is unclear (too few weeks of history, or the margin wider than 4 times either way)
+  "too little history": "سجل قصير جدًا",
+  "There is too little history of this theme to judge its swing": "سجل هذا الموضوع أقصر من أن يُقدَّر تذبذبه",
+  "margin too wide": "الهامش واسع جدًا",
+  "The margin is too wide to say whether this is chance": "الهامش أوسع من أن يُعرف ما إذا كان ذلك صدفة",
   "still coming in": "البيانات لا تزال تصل",
   "This week is still coming in": "بيانات هذا الأسبوع لا تزال تصل",
   // judged: the same words on the Trends pill, the maps, the lists and the gap view (charts/scales.js)
   "About {x} times fewer articles than expected": "مقالات أقل من المتوقع بنحو {x} مرة",
   "About {x} times more articles than expected": "مقالات أكثر من المتوقع بنحو {x} مرة",
   "About as expected": "في حدود المتوقع",
+  "Possibly fewer than expected": "ربما أقل من المتوقع",
   "{num} articles": { zero: "لا مقالات", one: "مقال واحد", two: "مقالان", few: "{num} مقالات", many: "{num} مقالًا", other: "{num} مقال" },
   "about {n}": "نحو {n}",
   "less than 1": "أقل من 1",
-  "{articles} against {about} expected from other topics": "{articles} مقابل معدل متوقع يبلغ {about} قياسًا بالمواضيع الأخرى",
-  "{articles} against {about} expected from this theme’s usual level": "{articles} مقابل معدل متوقع يبلغ {about} قياسًا بالمستوى المعتاد لهذا الموضوع",
+  // the verdict sentence (trendText.verdictSentence): the same words on every page, built from the verdict,
+  // the counts, the 90% interval on the multiple and the chance in "1 in N" form
+  "{articles} over 4 weeks": "{articles} خلال 4 أسابيع",
+  "{articles} over 4 weeks against {about} expected": "{articles} خلال 4 أسابيع مقابل {about} متوقعًا",
+  "Fewer articles than expected": "مقالات أقل من المتوقع",
+  "Fewer articles than other topics get for {what}": "مقالات أقل مما تحظى به المواضيع الأخرى مقابل {what}",
+  "More articles than expected": "مقالات أكثر من المتوقع",
+  "More articles than other topics get for {what}": "مقالات أكثر مما تحظى به المواضيع الأخرى مقابل {what}",
+  ", likely {lo} to {hi} times fewer": "، أي أقل بنحو {lo} إلى {hi} مرة على الأرجح",
+  ", likely {lo} to {hi} times more": "، أي أكثر بنحو {lo} إلى {hi} مرة على الأرجح",
+  // the chance: N is 10, 20, 50, 100, 200, 500 or 1000, so the counted noun follows the Arabic number rules
+  "A shortfall this size happens by chance about once in {n} such weeks.": {
+    zero: "نقص بهذا الحجم يحدث بالصدفة نحو مرة واحدة في كل {n} أسبوع مماثل.",
+    one: "نقص بهذا الحجم يحدث بالصدفة نحو مرة واحدة في كل أسبوع مماثل.",
+    two: "نقص بهذا الحجم يحدث بالصدفة نحو مرة واحدة في كل أسبوعين مماثلين.",
+    few: "نقص بهذا الحجم يحدث بالصدفة نحو مرة واحدة في كل {n} أسابيع مماثلة.",
+    many: "نقص بهذا الحجم يحدث بالصدفة نحو مرة واحدة في كل {n} أسبوعًا مماثلًا.",
+    other: "نقص بهذا الحجم يحدث بالصدفة نحو مرة واحدة في كل {n} أسبوع مماثل.",
+  },
+  "A shortfall this size happens by chance less than once in 1000 such weeks.": "نقص بهذا الحجم يحدث بالصدفة أقل من مرة واحدة في كل 1000 أسبوع مماثل.",
+  "It could easily be chance.": "قد يكون ذلك مجرد صدفة.",
+  "Possibly fewer than expected: {counts}. Not enough to be sure.": "ربما أقل من المتوقع: {counts}. لا يكفي للجزم.",
+  "About as expected: {counts}.": "في حدود المتوقع: {counts}.",
+  "Within the usual swing.": "ضمن التذبذب المعتاد.",
+  "The difference could easily be chance.": "قد يكون الفارق مجرد صدفة.",
+  "Too few to judge: {counts}, so even none at all could be chance.": "أقل من أن يُحكم عليه: {counts}، وحتى غياب المقالات تمامًا قد يكون صدفة.",
+  "Not judged: {counts}. {reason}.": "لم يُحكم عليه: {counts}. {reason}.",
+  "Not judged. {reason}.": "لم يُحكم عليه. {reason}.",
+  "Not judged.": "لم يُحكم عليه.",
   "This week is still coming in. Not judged yet.": "بيانات هذا الأسبوع لا تزال تصل. لم يُحكم عليه بعد.",
-  "Last 4 weeks: {counts}. {verdict}.": "آخر 4 أسابيع: {counts}. {verdict}.",
-  "Last 4 weeks: not judged. {reason}.": "آخر 4 أسابيع: لم يُحكم عليها. {reason}.",
-  "Last 4 weeks: not judged.": "آخر 4 أسابيع: لم يُحكم عليها.",
+  "The expected level rests partly on weeks we searched back for, which find fewer articles. We widened the margin to allow for it.":
+    "يستند المستوى المتوقع جزئيًا إلى أسابيع بحثنا عنها بأثر رجعي، وهي تعطي مقالات أقل. وسّعنا الهامش مراعاةً لذلك.",
   "{label} so far": "{label} حتى الآن",
   "{label}: {n} (English {en}, Arabic {ar}).": "{label}: {n} (الإنجليزية {en}، العربية {ar}).",
   "{line} Before we trimmed one-day spikes: {n}.": "{line} قبل استبعاد القفزات المفاجئة ليوم واحد: {n}.",

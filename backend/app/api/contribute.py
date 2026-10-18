@@ -3,7 +3,7 @@ Each queue is cheap to compute and capped; the page links each task to where it 
 from datetime import timedelta
 
 from fastapi import APIRouter, Depends
-from sqlalchemy import and_, exists, func, not_, select
+from sqlalchemy import and_, exists, func, not_, or_, select
 from sqlalchemy.orm import Session
 
 from .. import auth, settings
@@ -29,25 +29,31 @@ def contribute(country: str = "LY", s: Session = Depends(get_db), u: User = Depe
     has_region = exists().where(ItemRegion.item_id == Item.id, ItemRegion.active.is_(True))
     assessed = exists().where(ArticleAssessment.item_id == Item.id)
 
-    # 1. Gaps nobody has judged yet: the biggest scored gaps of the last 4 weeks, across lenses
-    #    (a single week is often empty: the current one is partial, and coverage surges hide gaps)
+    # 1. Gaps nobody has judged yet: the biggest red gaps of the last 4 weeks, across lenses (a single
+    #    week is often empty: the current one is partial, and coverage surges hide gaps). Red is the
+    #    calibrated verdict `short` (the shortfall is larger than chance would explain); a cell scored
+    #    before verdicts existed (no verdict yet) still qualifies by the old threshold, GAP_MIN.
     week = s.scalar(select(func.max(CellWeek.week_start)).where(CellWeek.country_id == c.id))
     gaps = []
     if week:
         first = week - timedelta(weeks=3)
         voted = {(v.theme_id, v.region_id, v.week_start) for v in s.scalars(select(GapVote).where(GapVote.week_start >= first))}
+        red = or_(CellWeek.verdict == "short", and_(CellWeek.verdict.is_(None), CellWeek.gap >= GAP_MIN))
         for cell in s.scalars(select(CellWeek).where(
                 CellWeek.country_id == c.id, CellWeek.week_start >= first, CellWeek.insufficient.is_(False),
-                CellWeek.gap.is_not(None), CellWeek.gap >= GAP_MIN).order_by(CellWeek.gap.desc()).limit(200)):
+                CellWeek.gap.is_not(None), red).order_by(CellWeek.gap.desc()).limit(200)):
             if (cell.theme_id, cell.region_id, cell.week_start) in voted or any(
                     g["theme_id"] == cell.theme_id and g["region_id"] == cell.region_id for g in gaps):
                 continue
             # articles: the scored count the gap used; articles_all: every monitored source (= coverage,
-            # kept for one release)
+            # kept for one release). The verdict fields are what the row's sentence is built from.
+            b = cell.breakdown or {}
             gaps.append({"theme_id": cell.theme_id, "region_id": cell.region_id, "lens": cell.lens, "gap": cell.gap,
                          "week": cell.week_start.isoformat(), "articles": scored_articles(cell),
                          "articles_all": int(cell.coverage), "coverage": cell.coverage, "need": cell.need,
-                         "flags": cell.flags})
+                         "flags": cell.flags, "verdict": cell.verdict, "expected_4w": b.get("expected_4w"),
+                         "ratio_lo": b.get("ratio_lo"), "ratio_hi": b.get("ratio_hi"), "chance": b.get("chance"),
+                         "baseline_backfilled": bool(b.get("baseline_backfilled"))})
             if len(gaps) == 6:
                 break
 

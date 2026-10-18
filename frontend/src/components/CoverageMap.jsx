@@ -11,7 +11,7 @@ import { qs } from '../api'
 import { useApp } from '../App'
 import GeoNetwork, { GeoLegend } from '../charts/GeoNetwork'
 import RegionalNetwork from '../charts/RegionalNetwork'
-import { DIMENSIONS, LENS_TEXT, RED_FROM, categoryOf, fmt } from '../charts/scales'
+import { DIMENSIONS, LENS_TEXT, RED_FROM, categoryOf, fmt, verdictOf } from '../charts/scales'
 import { weekEnd } from '../charts/trendText'
 import { ExportMenu } from '../charts/util'
 import { useApi } from '../hooks/useApi'
@@ -80,11 +80,13 @@ export default function CoverageMap({ cells, heading = true, outlets = false }) 
   const cellsByRegion = useMemo(() => {
     const m = new Map()
     if (mode === 'gap') {
+      // the worst cell per district colours it: a short verdict before any other, then the largest gap
+      const rank = (c) => (verdictOf(c, red) === 'short' ? 100 : 0) + (c.gap ?? -9)
       for (const c of cells) {
         if (!inScope(c.theme_id)) continue
         const prev = m.get(c.region_id)
         // the maps' "articles name this district" count is the all-source one (it matches the lines drawn)
-        if (!prev || (c.gap ?? -9) > (prev.gap ?? -9)) m.set(c.region_id, { ...c, coverage: c.articles_all ?? c.coverage })
+        if (!prev || rank(c) > rank(prev)) m.set(c.region_id, { ...c, coverage: c.articles_all ?? c.coverage })
       }
     } else if (network) {
       for (const e of network.edges) {
@@ -96,7 +98,7 @@ export default function CoverageMap({ cells, heading = true, outlets = false }) 
       }
     }
     return m
-  }, [cells, network, mode, themeId, themeGroup]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [cells, network, mode, themeId, themeGroup, red]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const nationalCells = cells.filter((c) => c.region_id === national.id)
   const presentCats = useMemo(() => new Set((network?.nodes || []).filter((n) => n.type === 'outlet').map((n) => categoryOf(n, filters.colorBy))), [network, filters.colorBy])

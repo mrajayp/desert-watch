@@ -87,7 +87,6 @@ export default {
   "{n} covered": "سبقت تغطيته ({n})",
   "{n} not newsworthy": "بلا قيمة إخبارية ({n})",
   "No data for this theme and region": "لا توجد بيانات لهذا الموضوع وهذه المنطقة",
-  "Under-coverage": "نقص التغطية",
   // the hatch legend reads "Not judged" (its key lives in trends.js with charts/trendText.js)
   "Number = articles from outlets we followed all year (4 weeks)": "الرقم = مقالات وسائل الإعلام التي تابعناها طوال العام (4 أسابيع)",
   "a journalist marked it a real gap": "صنّفها أحد الصحفيين فجوةً حقيقية",

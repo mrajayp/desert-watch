@@ -2,25 +2,33 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import * as d3 from 'd3'
-import { LENS_NEED, SEARCH_FEW, lensNeed, trendGroups, levelLegend, needLine, noSearchData, notJudged, reasonText, shortfall, stepPath, usualLine, verdict, weekEnd, weekRange, yScale } from '../src/charts/trendText.js'
-import { GAP_BINS, GAP_STEPS, RED_FROM, gapBins, gapFill, gapLabel } from '../src/charts/scales.js'
+import { LENS_NEED, SEARCH_FEW, backfilledNote, chanceText, gapLabel, lensNeed, trendGroups, levelLegend, needLine, noSearchData, notJudged, pillClass, reasonText, shortfall, stepPath, unclearReason, usualLine, verdict, verdictSentence, weekEnd, weekRange, yScale } from '../src/charts/trendText.js'
+import { GAP_BINS, GAP_STEPS, RED_FROM, VERDICTS, gapBins, gapFill, verdictOf } from '../src/charts/scales.js'
 
 const need = LENS_NEED.audience
 
-test('one red threshold: colour and label start at red_from on every page', () => {
+test('a cell scored before verdicts existed reads by the one red threshold on every page', () => {
   // the fallback mirrors settings.GAP_RED_FROM; pages pass meta.red_from
   assert.equal(RED_FROM, 0.4)
   assert.equal(GAP_BINS[0], RED_FROM)
   assert.deepEqual(gapBins(0.3), [0.3, 0.7, 1.0, 1.5, 2.2])
   assert.equal(GAP_STEPS.length, gapBins().length)
+  // no verdict yet (not recomputed): the threshold rule stands in, so the page is never blank after a deploy
+  assert.equal(verdictOf({ gap: 0.2 }), 'usual')
+  assert.equal(verdictOf({ gap: 0.4 }), 'short')
+  assert.equal(verdictOf({ gap: -0.4 }), 'over')
+  assert.equal(verdictOf({ gap: 0.4, verdict: null }, 0.5), 'usual')
   // below red: neutral and "About as expected", so the old 0.15 band is no longer tinted
   assert.equal(gapFill({ gap: 0.2 }), 'var(--gap-0)')
   assert.equal(gapFill({ gap: 0.39 }, 0.4), 'var(--gap-0)')
   assert.equal(gapLabel(0.39, 0.4), 'About as expected')
-  assert.equal(gapLabel(-0.5), 'About as expected')
+  // clearly more is said (and tinted blue), no longer folded into "as expected"
+  assert.equal(gapLabel(-0.5), 'About 1.6 times more articles than expected')
+  assert.equal(gapFill({ gap: -0.5 }), 'var(--gap-over)')
   // from red: the first red step and a multiple, in the same words as the Trends pill
   assert.equal(gapFill({ gap: 0.4 }, 0.4), 'var(--gap-2)')
   assert.equal(gapLabel(0.4, 0.4), 'About 1.5 times fewer articles than expected')
+  assert.equal(gapLabel({ gap: 0.4 }, 0.4), 'About 1.5 times fewer articles than expected')
   assert.equal(shortfall(0.4, 0.4), 'About 1.5 times fewer articles than expected')
   // the threshold is the argument, not a constant
   assert.equal(gapFill({ gap: 0.4 }, 0.5), 'var(--gap-0)')
@@ -37,9 +45,87 @@ test('one red threshold: colour and label start at red_from on every page', () =
   assert.equal(gapFill({ gap: null }), null)
   assert.equal(gapFill(null), null)
   assert.equal(gapLabel(null), 'Not judged')
+  assert.equal(verdictOf(null), null)
+  assert.equal(verdictOf({ gap: 0.9, in_progress: true, verdict: 'short' }), null)
+  // a row stripped to "not judged" (the heatmap's regional context) keeps no verdict
+  assert.equal(verdictOf({ gap: null, insufficient: true, verdict: null, reason: null }), null)
+  // without a chance or an interval the sentence carries the counts alone: no claim about chance
+  assert.equal(verdictSentence({ gap: 0.51, articles_4w: 166, expected_4w: 279.4 }, need),
+    'Fewer articles than expected: 166 articles over 4 weeks against about 279 expected.')
+  assert.equal(verdictSentence({ gap: 0.04, articles_4w: 238, expected_4w: 248.38 }, need),
+    'About as expected: 238 articles over 4 weeks against about 248 expected.')
 })
 const row = (o) => ({ week: '2026-10-05', articles: 105, articles_all: 148, gap: 0.04, insufficient: false, in_progress: false,
   articles_4w: 238, expected_4w: 248.38, reason: null, ...o })
+// a cell with a calibrated verdict (scoring.judge): the six API fields beside the counts
+const judged = (verdict, o) => row({ verdict, p_low: null, p_high: null, ratio_lo: null, ratio_hi: null, chance: null, baseline_backfilled: false, ...o })
+
+test('every verdict has its colour, its headline and its sentence, red only for short', () => {
+  assert.deepEqual(VERDICTS, ['short', 'possibly_short', 'usual', 'over', 'unclear'])
+  // short: red by the gap, the multiple on the pill, the counts, the 90% interval and the chance in the sentence
+  const short = judged('short', { gap: Math.log(36 / 17), articles_4w: 12, expected_4w: 31, ratio_lo: 1.8, ratio_hi: 3.6, chance: 50 })
+  assert.equal(verdictOf(short), 'short')
+  assert.equal(gapFill(short), 'var(--gap-3)')
+  assert.equal(pillClass('short'), 'pill flag')
+  assert.equal(gapLabel(short, 0.4, need), 'About 2.1 times fewer articles than expected')
+  assert.equal(verdictSentence(short, need),
+    'Fewer articles than expected: 12 articles over 4 weeks against about 31 expected, likely 1.8 to 3.6 times fewer. A shortfall this size happens by chance about once in 50 such weeks.')
+  // a pooled lens names what other topics get for the same need
+  assert.equal(verdictSentence(short, lensNeed('humanitarian', 'pooled')),
+    'Fewer articles than other topics get for this many ReliefWeb reports: 12 articles over 4 weeks against about 31 expected, likely 1.8 to 3.6 times fewer. A shortfall this size happens by chance about once in 50 such weeks.')
+  // 1000 is a ceiling: once in 1000 or rarer
+  assert.equal(verdictSentence(judged('short', { gap: 1.4, articles_4w: 0, expected_4w: 20, ratio_lo: 2.3, ratio_hi: 9.1, chance: 1000 }), need),
+    'Fewer articles than expected: 0 articles over 4 weeks against about 20 expected, likely 2.3 to 9.1 times fewer. A shortfall this size happens by chance less than once in 1000 such weeks.')
+  // possibly short: a pale tint, never red, even past the old threshold
+  const maybe = judged('possibly_short', { gap: 0.5, articles_4w: 1, expected_4w: 4, ratio_lo: 0.9, ratio_hi: 4.1, chance: 20 })
+  assert.equal(gapFill(maybe), 'var(--gap-1)')
+  assert.equal(pillClass('possibly_short'), 'pill maybe')
+  assert.equal(gapLabel(maybe), 'Possibly fewer than expected')
+  assert.equal(verdictSentence(maybe, need),
+    'Possibly fewer than expected: 1 article over 4 weeks against about 4 expected. Not enough to be sure. A shortfall this size happens by chance about once in 20 such weeks.')
+  // usual: no colour; past 1 in 5 the difference could easily be chance, else it is within the usual swing
+  const usual = judged('usual', { gap: 0.1, articles_4w: 28, expected_4w: 31 })
+  assert.equal(gapFill(usual), 'var(--gap-0)')
+  assert.equal(pillClass('usual'), 'pill')
+  assert.equal(gapLabel(usual), 'About as expected')
+  assert.equal(verdictSentence(usual, need), 'About as expected: 28 articles over 4 weeks against about 31 expected. The difference could easily be chance.')
+  // a shortfall below the 1.5x floor reads usual however sure it is, and is not red
+  const floor = judged('usual', { gap: 0.45, articles_4w: 300, expected_4w: 460, chance: 10, ratio_lo: 1.2, ratio_hi: 1.4 })
+  assert.equal(gapFill(floor, 0.4), 'var(--gap-0)')
+  assert.equal(verdictSentence(floor, need), 'About as expected: 300 articles over 4 weeks against about 460 expected. Within the usual swing.')
+  // over: a blue tint, the interval the other way round (times more)
+  const over = judged('over', { gap: -0.8, articles_4w: 70, expected_4w: 31, ratio_lo: 0.345, ratio_hi: 0.588 })
+  assert.equal(gapFill(over), 'var(--gap-over)')
+  assert.equal(pillClass('over'), 'pill over')
+  assert.equal(gapLabel(over), 'About 2.2 times more articles than expected')
+  assert.equal(verdictSentence(over, need), 'More articles than expected: 70 articles over 4 weeks against about 31 expected, likely 1.7 to 2.9 times more.')
+  assert.equal(verdictSentence(over, lensNeed('events', 'pooled')), 'More articles than other topics get for this many events: 70 articles over 4 weeks against about 31 expected, likely 1.7 to 2.9 times more.')
+  // unclear, expecting under 3 articles: not judged, and the sentence says why
+  const few = judged('unclear', { gap: null, insufficient: true, reason: 'too_few_expected', articles_4w: 0, expected_4w: 2.1 })
+  assert.equal(gapFill(few), null)
+  assert.equal(unclearReason(few), 'too_few_expected')
+  assert.equal(gapLabel(few, 0.4, need), 'Not judged · expected level too low')
+  assert.equal(verdictSentence(few, need), 'Too few to judge: 0 articles over 4 weeks against about 2.1 expected, so even none at all could be chance.')
+  // unclear with a gap: the interval wider than 4x either way, else too few weeks of history
+  const wide = judged('unclear', { gap: 0.6, articles_4w: 5, expected_4w: 10, ratio_lo: 0.3, ratio_hi: 6 })
+  assert.equal(gapFill(wide), null)
+  assert.equal(unclearReason(wide), 'margin_too_wide')
+  assert.equal(gapLabel(wide), 'Not judged · margin too wide')
+  assert.equal(verdictSentence(wide, need), 'Not judged: 5 articles over 4 weeks against about 10 expected. The margin is too wide to say whether this is chance.')
+  const young = judged('unclear', { gap: 0.6, articles_4w: 5, expected_4w: 10, ratio_lo: 0.8, ratio_hi: 4 })
+  assert.equal(unclearReason(young), 'too_little_history')
+  assert.equal(gapLabel(young), 'Not judged · too little history')
+  assert.equal(verdictSentence(young, need), 'Not judged: 5 articles over 4 weeks against about 10 expected. There is too little history of this theme to judge its swing.')
+  // the chance in words
+  assert.equal(chanceText(null), 'It could easily be chance.')
+  assert.equal(chanceText(10), 'A shortfall this size happens by chance about once in 10 such weeks.')
+  assert.equal(chanceText(1000), 'A shortfall this size happens by chance less than once in 1000 such weeks.')
+  // the note on an expected level that rests on weeks searched back for
+  assert.equal(backfilledNote(judged('short', { baseline_backfilled: true })),
+    'The expected level rests partly on weeks we searched back for, which find fewer articles. We widened the margin to allow for it.')
+  assert.equal(backfilledNote(short), null)
+  assert.equal(backfilledNote(null), null)
+})
 
 test('week ranges and ends', () => {
   assert.equal(weekRange('2026-10-05'), '5 to 11 Oct 2026')
@@ -61,27 +147,30 @@ test('pill wording follows red_from and e^gap, and says expected on every lens',
 })
 
 test('verdict sentences carry the drawn numbers or the reason', () => {
-  // an own-record lens names its comparison: this theme's usual level
-  assert.equal(verdict(row(), 0.4, need), 'Last 4 weeks: 238 articles against about 248 expected from this theme’s usual level. About as expected.')
+  // the Trends tooltip: the same sentence as every other page (verdict() wraps verdictSentence)
+  assert.equal(verdict(row(), 0.4, need), 'About as expected: 238 articles over 4 weeks against about 248 expected.')
   assert.equal(verdict(row({ gap: 0.51, articles_4w: 166, expected_4w: 279.4 }), 0.4, need),
-    'Last 4 weeks: 166 articles against about 279 expected from this theme’s usual level. About 1.7 times fewer articles than expected.')
+    'Fewer articles than expected: 166 articles over 4 weeks against about 279 expected.')
   assert.equal(verdict(row({ in_progress: true, gap: null, insufficient: true }), 0.4, need), 'This week is still coming in. Not judged yet.')
   // economy on the snapshot: 700 against about 401 no longer reads 'as expected'
   assert.equal(verdict(row({ gap: Math.log((401.0 + 5) / (700 + 5)), articles_4w: 700, expected_4w: 401.0 }), 0.4, need),
-    'Last 4 weeks: 700 articles against about 401 expected from this theme’s usual level. About 1.7 times more articles than expected.')
+    'More articles than expected: 700 articles over 4 weeks against about 401 expected.')
   // too few expected is about the expected level, and quotes it
   assert.equal(verdict(row({ gap: null, insufficient: true, reason: 'too_few_expected', articles_4w: 6, expected_4w: 1.8 }), 0.4, need),
-    'Last 4 weeks: 6 articles against about 1.8 expected from this theme’s usual level. The expected level is too low to judge.')
+    'Too few to judge: 6 articles over 4 weeks against about 1.8 expected, so even none at all could be chance.')
   assert.equal(reasonText('too_few_expected', need, false), 'expected level too low')
   assert.equal(verdict(row({ gap: null, insufficient: true, reason: 'no_need_data' }), 0.4, need),
-    'Last 4 weeks: not judged. No reader data linked to this theme.')
+    'Not judged. No reader data linked to this theme.')
   assert.equal(reasonText('no_need_data', need, false), 'no reader data')
   // one term, "Not judged", then the reason; a reason this file does not know adds nothing
   assert.equal(notJudged('too_few_expected', need), 'Not judged · expected level too low')
   assert.equal(notJudged('no_need_data', need), 'Not judged · no reader data')
   assert.equal(reasonText('something_new', need, false), '')
   assert.equal(notJudged('something_new', need), 'Not judged')
-  assert.equal(verdict(row({ gap: null, insufficient: true, reason: 'something_new' }), 0.4, need), 'Last 4 weeks: not judged.')
+  assert.equal(verdict(row({ gap: null, insufficient: true, reason: 'something_new' }), 0.4, need), 'Not judged.')
+  // the headline of an unjudged cell names the reason only when the page knows the lens's words
+  assert.equal(gapLabel(row({ gap: null, insufficient: true, reason: 'no_need_data' }), 0.4, need), 'Not judged · no reader data')
+  assert.equal(gapLabel(row({ gap: null, insufficient: true, reason: 'no_need_data' })), 'Not judged')
 })
 
 test('need line shows the lens unit, the language split and trimmed spikes', () => {
@@ -147,7 +236,7 @@ test('search lens speaks of Google searches, never Wikipedia', () => {
   assert.equal(levelLegend(search), 'Usual level for this much search interest')
   // a week that has ended but is not imported yet, or one Google held back
   const gone = row({ gap: null, insufficient: true, reason: 'no_search_data', need_week: 0, expected_week: null, ref: null, expected_4w: null })
-  assert.equal(verdict(gone, 0.4, search), 'Last 4 weeks: not judged. Google gave no search data for one of these 4 weeks.')
+  assert.equal(verdict(gone, 0.4, search), 'Not judged. Google gave no search data for one of these 4 weeks.')
   assert.equal(reasonText('no_search_data', search, false), 'no search data for a week')
   assert.ok(noSearchData(gone) && noSearchData({ need_week: 40, reason: 'no_search_data' }) && !noSearchData({ need_week: 40, reason: null }))
   for (const text of [needLine(gone, search, 'search'), verdict(gone, 0.4, search), reasonText('no_need_data', search, true)]) {
@@ -172,22 +261,23 @@ test('the usual line breaks on a week with no search data instead of dropping to
 test('pooled lenses say expected from other topics; own-record lenses from this theme’s usual level', () => {
   const hum = lensNeed('humanitarian', 'pooled')
   assert.ok(hum.pooled && !lensNeed('humanitarian').pooled && !LENS_NEED.humanitarian.pooled)
-  assert.equal(verdict(row(), 0.4, hum), 'Last 4 weeks: 238 articles against about 248 expected from other topics. About as expected.')
+  assert.equal(verdict(row(), 0.4, hum), 'About as expected: 238 articles over 4 weeks against about 248 expected.')
+  // a shortfall on a pooled lens is against what other topics get for the same need
   assert.equal(verdict(row({ gap: 0.51, articles_4w: 166, expected_4w: 279.4 }), 0.4, hum),
-    'Last 4 weeks: 166 articles against about 279 expected from other topics. About 1.7 times fewer articles than expected.')
+    'Fewer articles than other topics get for this many ReliefWeb reports: 166 articles over 4 weeks against about 279 expected.')
   assert.equal(shortfall(-0.47, 0.4, hum), 'About 1.6 times more articles than expected')
   assert.equal(verdict(row({ gap: null, insufficient: true, reason: 'too_few_expected', articles_4w: 6, expected_4w: 1.8 }), 0.4, hum),
-    'Last 4 weeks: 6 articles against about 1.8 expected from other topics. The expected level is too low to judge.')
+    'Too few to judge: 6 articles over 4 weeks against about 1.8 expected, so even none at all could be chance.')
   assert.equal(reasonText('too_few_expected', hum, false), 'expected level too low')
   assert.equal(levelLegend(hum), 'Expected level for this many ReliefWeb reports, going by other topics')
   // one report is below the humanitarian need floor
   assert.equal(reasonText('too_little_need', hum, false), 'too few reports')
   assert.equal(notJudged('too_little_need', hum), 'Not judged · too few reports')
   assert.equal(verdict(row({ gap: null, insufficient: true, reason: 'too_little_need' }), 0.4, hum),
-    'Last 4 weeks: not judged. There were too few ReliefWeb reports to judge.')
+    'Not judged. There were too few ReliefWeb reports to judge.')
   assert.equal(reasonText('too_little_need', LENS_NEED.audience, false), 'too little data')
-  // own-record lenses name their comparison but still say expected
-  assert.equal(verdict(row(), 0.4, lensNeed('audience', 'own_history')), 'Last 4 weeks: 238 articles against about 248 expected from this theme’s usual level. About as expected.')
+  // own-record lenses say expected without naming other topics
+  assert.equal(verdict(row(), 0.4, lensNeed('audience', 'own_history')), 'About as expected: 238 articles over 4 weeks against about 248 expected.')
 })
 
 test('search lens: measured themes first, the rest keep their charts under a heading that says why', () => {

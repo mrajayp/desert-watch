@@ -1,8 +1,11 @@
-// Theme × region grid. Fill = gap (red ramp from meta.red_from); striped = not judged;
-// each cell also prints the count the score used (articles, from the outlets followed all year) so the
-// score is never a black box; the tooltip adds the all-source count when it differs.
+// Theme × region grid. Fill = the verdict (red only when the shortfall is larger than chance would
+// explain, intensity by the gap from meta.red_from; a pale tint for possibly fewer, blue for more);
+// striped = not judged. Each cell also prints the count the score used (articles, from the outlets
+// followed all year) so the score is never a black box; the tooltip adds the all-source count when it
+// differs and the verdict sentence with its interval and chance.
 import { useRef } from 'react'
-import { GAP_STEPS, fmt, gapFill, gapLabel } from './scales'
+import { GAP_STEPS, fmt, gapFill, verdictOf } from './scales'
+import { verdictSentence } from './trendText'
 import { HatchDefs, fitLabel, groupedRows, themeLabel, useSize, useTooltip } from './util'
 import { WarningPills } from '../components/Warnings'
 import { pick, t } from '../i18n'
@@ -11,8 +14,9 @@ import { pick, t } from '../i18n'
 const voteText = (k, v) => (k === 'real' ? t('{n} real', { n: v }) : k === 'covered' ? t('{n} covered', { n: v })
   : k === 'not_newsworthy' ? t('{n} not newsworthy', { n: v }) : `${v} ${k.replace('_', ' ')}`)
 
-// red: meta.red_from (gapFill/gapLabel fall back to their default until it is known)
-export default function Heatmap({ themes, regions, cells, onSelect, svgRef, unit = 'need', lang = 'en', feedback = {}, red }) {
+// red: meta.red_from (gapFill falls back to its default until it is known); need: the lens's words
+// (trendText.lensNeed), for the verdict sentence
+export default function Heatmap({ themes, regions, cells, onSelect, svgRef, unit = 'need', lang = 'en', feedback = {}, red, need }) {
   const wrap = useRef(null)
   const W = useSize(wrap, 700)
   const tip = useTooltip()
@@ -48,7 +52,7 @@ export default function Heatmap({ themes, regions, cells, onSelect, svgRef, unit
               const c = byKey.get(`${th.id}:${r.id}`)
               const fill = gapFill(c, red) || (c ? 'url(#hm-hatch)' : 'var(--surface-2)') // i18n-ok: SVG pattern reference, not shown
               const fb = feedback[`${th.id}:${r.id}`]
-              const dark = c && !c.insufficient && c.gap >= 1.0
+              const dark = c && verdictOf(c, red) === 'short' && c.gap >= 1.0
               // articles = the count the score used; articles_all = every source (coverage until the API sends them)
               const n = c?.articles ?? c?.coverage
               const all = c?.articles_all ?? c?.coverage
@@ -59,7 +63,7 @@ export default function Heatmap({ themes, regions, cells, onSelect, svgRef, unit
                     <div><b>{nm(th)} · {nm(r)}</b>
                       <div>{t('{articles} articles · {need} {unit}', { articles: fmt(n), need: fmt(c.need), unit: t(unit) })}</div>
                       {all != null && all !== n && <div className="muted">{t('{n} from all sources', { n: fmt(all) })}</div>}
-                      <div>{gapLabel(c.insufficient ? null : c.gap, red)}</div>
+                      <div>{verdictSentence(c, need, red)}</div>
                       <WarningPills codes={c.flags} block />
                       {fb && <div className="small muted" style={{ marginTop: 4 }}>{t('Team: {votes}', { votes: Object.entries(fb).map(([k, v]) => voteText(k, v)).join(t(', ')) })}</div>}
                     </div>) : <div>{t('No data for this theme and region')}</div>, wrap.current)}>
@@ -73,11 +77,15 @@ export default function Heatmap({ themes, regions, cells, onSelect, svgRef, unit
       </svg>
       {tip.node}
       <div className="legend" style={{ marginTop: 8 }}>
-        <span>{t('Under-coverage')} <span className="ramp">{GAP_STEPS.map((i) => <span key={i} style={{ background: `var(--gap-${i})` }} />)}</span></span>
+        <span><span className="ramp" style={{ marginInlineEnd: 5 }}>{GAP_STEPS.map((i) => <span key={i} style={{ background: `var(--gap-${i})` }} />)}</span>{t('Fewer articles than chance would explain')}</span>
+        <span><span className="sw" style={{ background: 'var(--gap-1)', boxShadow: 'inset 0 0 0 1px var(--line)' }} />{t('Possibly fewer, not enough to be sure')}</span>
+        <span><span className="sw" style={{ background: 'var(--gap-0)', boxShadow: 'inset 0 0 0 1px var(--line)' }} />{t('About as expected')}</span>
+        <span><span className="sw" style={{ background: 'var(--gap-over)', boxShadow: 'inset 0 0 0 1px var(--line)' }} />{t('More than expected')}</span>
         <span><svg width="14" height="12" style={{ verticalAlign: -2, marginInlineEnd: 5 }}><rect width="14" height="12" fill="url(#hm-hatch)" rx="2" /></svg>{t('Not judged')}</span>
         <span>{t('Number = articles from outlets we followed all year (4 weeks)')}</span>
         <span><svg width="10" height="10" style={{ verticalAlign: -1, marginInlineEnd: 4 }}><circle cx="5" cy="5" r="3" fill="var(--ink)" /></svg>{t('a journalist marked it a real gap')}</span>
       </div>
+      <p className="small muted" style={{ margin: '6px 0 0' }}>{t('Red means the shortfall is larger than chance would explain. Among the red gaps on a page, about 1 in 10 will still be chance.')}</p>
     </div>
   )
 }
