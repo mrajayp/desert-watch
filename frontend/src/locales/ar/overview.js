@@ -1,6 +1,16 @@
 // Arabic for the overview files (see docs/i18n.md). Keys are the exact English strings passed to t()/tn().
 export default {
-  // pages/Overview.jsx
+  // pages/ThisWeek.jsx: the landing page ("This week" itself is in shell.js, with the navigation)
+  "Lens: {lens}": "العدسة: {lens}",
+  "Stories nobody is covering": "قصص لا يغطيها أحد",
+  "{articles} articles vs {need} {unit}": "المقالات: {articles} مقابل {unit}: {need}",
+  "Written this week": "ما كُتب هذا الأسبوع",
+  "The newest monitored articles of the last 7 days, from every source.": "أحدث المقالات المرصودة في الأيام السبعة الأخيرة، من جميع المصادر.",
+  "No articles in the last 7 days.": "لا مقالات في الأيام السبعة الأخيرة.",
+  "See all {n} articles": "عرض كل المقالات ({n})",
+  "Map: where coverage reaches": "الخريطة: إلى أين تصل التغطية",
+
+  // pages/Overview.jsx (the Map page) and components/CoverageMap.jsx
   "All {group} themes": "جميع مواضيع {group}",
   "gender": "النوع الاجتماعي",
   // the weeks a score covers, ending on a Sunday: "4 weeks to 11 Oct 2026" (also the gap view's subtitle)
@@ -57,27 +67,11 @@ export default {
   "No theme is clearly falling behind its need signal in these weeks; these are the least covered relative to it.":
     "لا يتأخر أي موضوع بوضوح عن مؤشر الحاجة في هذه الأسابيع؛ هذه هي المواضيع الأقل تغطية قياسًا به.",
   "Nothing has been judged for this lens and week.": "لم يُحكم على أي شيء لهذه العدسة وهذا الأسبوع.",
-  "{articles} articles vs {need} {unit} · {gap}": "المقالات: {articles} مقابل {unit}: {need} · {gap}",
   "{n} from all sources": "{n} من جميع المصادر",
   "Shown to check the ranking isn't only reinforcing itself": "يُعرض هذا للتحقق من أن الترتيب لا يعزّز نفسه فحسب",
   "Also worth a look": "يستحق نظرة أيضًا",
   "✓ {n} real": "✓ فجوة حقيقية ({n})",
   "someone is on it": "قيد العمل عليه",
-  "Arabic vs English coverage": "التغطية بالعربية مقابل الإنجليزية",
-  "Monitored articles nationally, {n} weeks ending {week}.": {
-    zero: "المقالات المرصودة على المستوى الوطني، 0 أسبوع حتى {week}.",
-    one: "المقالات المرصودة على المستوى الوطني، أسبوع واحد حتى {week}.",
-    two: "المقالات المرصودة على المستوى الوطني، أسبوعان حتى {week}.",
-    few: "المقالات المرصودة على المستوى الوطني، {n} أسابيع حتى {week}.",
-    many: "المقالات المرصودة على المستوى الوطني، {n} أسبوعًا حتى {week}.",
-    other: "المقالات المرصودة على المستوى الوطني، {n} أسبوع حتى {week}.",
-  },
-  "Arabic vs English coverage of {country}": "التغطية بالعربية مقابل الإنجليزية عن {country}",
-  "Striped = not judged: the week is still coming in, or there is too little data.":
-    "المخطّط = لم يُحكم عليه: بيانات الأسبوع ما زالت تصل، أو البيانات قليلة جدًا.",
-  "Striped = not judged: the week is still coming in, or there is too little data. This lens is national only, so the regional columns show article counts until regional need data arrives.":
-    "المخطّط = لم يُحكم عليه: بيانات الأسبوع ما زالت تصل، أو البيانات قليلة جدًا. هذه العدسة على المستوى الوطني فقط، لذا تعرض أعمدة المناطق أعداد المقالات إلى أن تصل بيانات الحاجة على مستوى المناطق.",
-  "Coverage gaps by theme and region — {country}": "فجوات التغطية حسب الموضوع والمنطقة — {country}",
   "Outlets in this view": "وسائل الإعلام في هذا العرض",
   "Click an outlet to see and suggest its categories. Categories need evidence; contested labels show their confidence.":
     "يمكن النقر على وسيلة إعلامية لعرض فئاتها واقتراح فئات لها. تحتاج الفئات إلى أدلة؛ وتُظهر التصنيفات المتنازع عليها درجة الثقة بها.",

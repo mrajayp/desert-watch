@@ -247,6 +247,8 @@ export default {
   'UN, embassy and government statements on this theme in the same weeks. Not counted as coverage.':
     'بيانات الأمم المتحدة والسفارات والحكومة بشأن هذا الموضوع في الأسابيع نفسها. لا تُحتسب ضمن التغطية.',
   'Need signals ({n})': 'مؤشرات الحاجة ({n})',
+  'Why a gap is not judged': 'لماذا لا يُحكم على الفجوة',
+  'More in Help': 'المزيد في صفحة المساعدة',
   'Gap = how much less coverage there is than expected, given the need signal. A gap is not judged when there is too little need data, or when we would expect fewer than {n} articles.': {
     zero: 'الفجوة = مقدار نقص التغطية عن المتوقع، بالنظر إلى مؤشر الحاجة. لا يُحكم على الفجوة حين تكون بيانات الحاجة قليلة جدًا، أو حين يكون المتوقع أقل من {n} مقال.',
     one: 'الفجوة = مقدار نقص التغطية عن المتوقع، بالنظر إلى مؤشر الحاجة. لا يُحكم على الفجوة حين تكون بيانات الحاجة قليلة جدًا، أو حين يكون المتوقع أقل من مقال واحد.',

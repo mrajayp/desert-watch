@@ -1,13 +1,14 @@
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import { qs } from '../api'
 import { useApp } from '../App'
 import Filters from '../components/Filters'
 import { ErrorBox, Loading } from '../components/Notices'
 import TrendBars from '../charts/TrendBars'
+import Heatmap from '../charts/Heatmap'
 import IndicatorLines from '../charts/IndicatorLines'
 import { lensNeed, weekEnd, weekRange } from '../charts/trendText'
-import { HistoryLine, MonthlyCoverage } from '../charts/Balance'
-import { LENS_TEXT, sourceLabel } from '../charts/scales'
+import { HistoryLine, LanguageBalance, MonthlyCoverage } from '../charts/Balance'
+import { LENS_TEXT, RED_FROM, sourceLabel } from '../charts/scales'
 import { ExportMenu } from '../charts/util'
 import { useApi } from '../hooks/useApi'
 import { usePageTitle } from '../hooks/usePageTitle'
@@ -25,7 +26,7 @@ const basisWord = (k) => (BASIS_WORDS[k] ? t(BASIS_WORDS[k]) : sourceLabel(k))
 const daySpan = (from, to) => t('{from} → {to}', { from: fmtDate(from), to: fmtDate(to) })
 
 export default function Trends() {
-  const { meta, filters, setFilters, lang, openGap, openArticles } = useApp()
+  const { meta, filters, setFilters, lang, openGap, openArticles, version } = useApp()
   const national = meta.regions.find((r) => r.level === 'national')
   const [regionPick, setRegionPick] = useState(national.id)
   // only regions the lens has need data for (the audience lens is national only)
@@ -38,6 +39,24 @@ export default function Trends() {
   const region = meta.regions.find((r) => r.id === regionId)
   usePageTitle(t('Trends'))
   const histSvg = useRef(null)
+  // By region: the gap heatmap and the language balance for the lens and week in the URL
+  const heatSvg = useRef(null), langSvg = useRef(null)
+  const red = meta.red_from ?? RED_FROM
+  const nationalOnly = lensMeta && lensMeta.levels.length === 1
+  const cellsQ = useApi(filters.week ? '/api/cells' + qs({ lens: filters.lens, week: filters.week }) : null, { deps: [version] })
+  const cells = cellsQ.data?.cells || []
+  // a national-only lens still has regional article counts worth showing (unscored, striped)
+  const ctxQ = useApi(nationalOnly && filters.week ? '/api/cells' + qs({ lens: 'journalist', week: filters.week }) : null, { deps: [version] })
+  const regionalContext = useMemo(() => (nationalOnly && ctxQ.data
+    ? ctxQ.data.cells.filter((c) => meta.regions.find((r) => r.id === c.region_id)?.level !== 'national').map((c) => ({ ...c, insufficient: true, gap: null, flags: [] }))
+    : []), [ctxQ.data, nationalOnly, meta])
+  const nationalCells = cells.filter((c) => c.region_id === national.id)
+  const heatRegions = [national, ...meta.regions.filter((r) => r.level === 'macro')]
+  const feedback = Object.fromEntries(cells.map((c) => [`${c.theme_id}:${c.region_id}`, c.votes]))
+  // the weeks shown end on the Sunday of the selected week (filters.week is its Monday)
+  const weekDate = filters.week ? fmtDate(weekEnd(filters.week)) : ''
+  const cellsCaption = t('Source: Desert Watch monitored coverage (Google News, Google Alerts, GDELT, outlet and YouTube feeds, social posts Google indexes) · {window}.',
+    { window: t('{n} weeks to {date}', { n: meta.window_weeks, date: weekDate }) })
   const grp = String(filters.themeId).startsWith('group:') ? filters.themeId.slice(6) : null
   const themeId = grp ? meta.themes.find((t) => t.group === grp)?.id : filters.themeId ? +filters.themeId : meta.themes[0].id
   const monthSvg = useRef(null)
@@ -88,7 +107,7 @@ export default function Trends() {
   const basis = trend?.basis
   return (
     <>
-      <Filters showWeek={false} showColor={false} showTheme={false}>
+      <Filters showColor={false} showTheme={false}>
         <label>{t('Region')}
           <select value={regionId} onChange={(e) => setRegionPick(+e.target.value)} disabled={regions.length < 2}
             title={regions.length < 2 ? t('The {lens} lens only has figures for all of {country}', { lens: LENS_TEXT[filters.lens]?.label || filters.lens, country }) : undefined}>
@@ -115,6 +134,24 @@ export default function Trends() {
                   {t('The counts cover the {outlets} outlets we collected from all through {from} to {to}, from {sources}. We leave out the backfill and newer feeds so a new source does not look like more coverage.',
                     { outlets: basis.outlets, from: longDate(basis.from), to: longDate(basis.to), sources: andList(basis.sources.map(basisWord)) })}</p>)}
             </>)}
+        </section>
+        <section className="card" style={{ marginTop: 16 }}>
+          <div className="card-head">
+            <div><h2>{t('By region')}</h2>
+              <p className="sub">{t('{lens} lens · {n} weeks to {date}', { lens: t(LENS_TEXT[filters.lens].label), n: meta.window_weeks, date: weekDate })}. {nationalOnly
+                ? t('Striped = not judged: the week is still coming in, or there is too little data. This lens is national only, so the regional columns show article counts until regional need data arrives.')
+                : t('Striped = not judged: the week is still coming in, or there is too little data.')}</p></div>
+            <ExportMenu svgRef={heatSvg} title={t('Coverage gaps by theme and region — {country}', { country })} caption={cellsCaption} filename="gap-heatmap" />
+          </div>
+          {cellsQ.error && <ErrorBox error={cellsQ.error} onRetry={cellsQ.retry} compact />}
+          <Heatmap themes={meta.themes} regions={heatRegions} cells={[...cells, ...regionalContext]} svgRef={heatSvg} unit={LENS_TEXT[filters.lens].unit} lang={lang}
+            feedback={feedback} red={red} onSelect={(tid, rid) => openGap(tid, rid, { from: 'heatmap' })} />
+          <div className="card-head" style={{ marginTop: 18 }}>
+            <div><h3 style={{ margin: 0 }}>{t('Arabic vs English coverage')}</h3>
+              <p className="sub">{t('Monitored articles nationally, {n} weeks ending {week}.', { n: meta.window_weeks, week: weekDate })}</p></div>
+            <ExportMenu svgRef={langSvg} title={t('Arabic vs English coverage of {country}', { country })} caption={cellsCaption} filename="language-balance" />
+          </div>
+          <LanguageBalance themes={meta.themes} cells={nationalCells} lang={lang} svgRef={langSvg} />
         </section>
         {signals?.indicators?.length > 0 && (
           <section className="card" style={{ marginTop: 16 }}>

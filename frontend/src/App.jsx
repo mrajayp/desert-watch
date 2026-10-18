@@ -14,6 +14,8 @@ import { useApi } from './hooks/useApi'
 import { useFilters } from './hooks/useFilters'
 import { useWide } from './hooks/useMedia'
 import { addPath, articlePath, articlesPath, detailKind, filterSearch, gapParams, gapPath, idList, loginPath, outletPath, parentPath, parseId, safeNext } from './routes'
+import ThisWeek from './pages/ThisWeek'
+import Help from './pages/Help'
 import Overview from './pages/Overview'
 import Trends from './pages/Trends'
 import Outlets from './pages/Outlets'
@@ -77,15 +79,19 @@ export default function App() {
 
 // a plain, serialisable copy of a location, kept in history state as the page behind a dialog
 const bare = (l) => ({ pathname: l.pathname, search: l.search || '', hash: l.hash || '' })
+// the pages behind the More menu (the five main ones are in the bar itself)
+const MORE_PATHS = ['/map', '/timeline', '/digest', '/help', '/me', '/admin']
 
 function Shell({ me, setMe, lang, setLang, metaQ }) {
   const meta = metaQ.data
   const [version, setVersion] = useState(0) // bump to refetch after feedback
+  const [more, setMore] = useState(false) // the More menu is open
   const nav = useNavigate()
   const loc = useLocation()
   const wide = useWide()
   const can = me.role !== 'viewer' // one flag: may vote, correct, rate, comment, add
   const locRef = useRef(loc); locRef.current = loc
+  useEffect(() => { setMore(false) }, [loc.pathname]) // the menu closes once a page is chosen
 
   // A detail view (gap, article, outlet, add) sits over the page it was opened from; a shared link
   // has no such page, so its parent list stands in. From 900px up the page stays rendered behind the
@@ -95,6 +101,7 @@ function Shell({ me, setMe, lang, setLang, metaQ }) {
   const pageLoc = background && wide ? background : loc
   const [filters, setFilters] = useFilters(meta, background ? background.search : loc.search)
   const carry = filterSearch(new URLSearchParams(pageLoc.search)) // lens and week follow the reader from page to page
+  const moreActive = MORE_PATHS.some((p) => pageLoc.pathname === p || pageLoc.pathname.startsWith(`${p}/`))
 
   const pendingQ = useApi(me.role === 'admin' ? '/api/admin/users' : null, { deps: [version] })
   const pending = pendingQ.data ? pendingQ.data.filter((u) => u.status === 'pending').length : 0
@@ -144,24 +151,45 @@ function Shell({ me, setMe, lang, setLang, metaQ }) {
           <div className="brand"><span className="brand-mark" aria-hidden="true" />Desert Watch
             <span className="muted small" style={{ fontWeight: 400 }}>{pick(meta?.country, 'name')}</span></div>
           <nav className="nav" aria-label={t('Main')}>
-            <NavLink to={{ pathname: '/', search: carry }} end>{t('Map')}</NavLink>
-            <NavLink to={{ pathname: '/trends', search: carry }}>{t('Trends')}</NavLink>
-            <NavLink to="/timeline">{t('Timeline')}</NavLink>
+            <NavLink to={{ pathname: '/', search: carry }} end>{t('This week')}</NavLink>
             <NavLink to="/articles" end>{t('Articles')}</NavLink>
+            <NavLink to={{ pathname: '/trends', search: carry }}>{t('Trends')}</NavLink>
             <NavLink to={{ pathname: '/outlets', search: carry }} end>{t('Outlets')}</NavLink>
-            <NavLink to="/digest">{t('Digest')}</NavLink>
             <NavLink to="/contribute">{t('Contribute')}</NavLink>
-            {me.role === 'admin' && <NavLink to="/admin">{t('Admin')}{pending > 0 && <span className="pill flag" style={{ marginInlineStart: 4 }}>{pending}</span>}</NavLink>}
-            <NavLink to="/me">{t('Privacy')}</NavLink>
+            <button type="button" className={`nav-more${moreActive ? ' active' : ''}`} aria-haspopup="true" aria-expanded={more} onClick={() => setMore(!more)}>
+              {t('More')} <span aria-hidden="true">▾</span>{pending > 0 && <span className="pill flag" style={{ marginInlineStart: 4 }}>{pending}</span>}</button>
           </nav>
           <div className="who">
             {can && <button className="btn small primary" onClick={() => value.openAdd()}>{t('+ Add article')}</button>}
             {!can && <span className="pill" title={t('Read-only account: an admin can give you contributor access')}>{t('read-only')}</span>}
             <LangSwitch lang={lang} setLang={setLang} />
-            <span dir="auto">{me.display_name}</span>
-            <button className="btn small ghost" onClick={logout}>{t('Sign out')}</button>
+            <span className="who-name" dir="auto">{me.display_name}</span>
+            <button className="btn small ghost who-out" onClick={logout}>{t('Sign out')}</button>
           </div>
         </header>
+        {more && (
+          // the More menu: under the bar on a desktop, above the bottom bar on a phone (where it also holds the name and Sign out)
+          <>
+            <div className="more-backdrop" onClick={() => setMore(false)} />
+            <nav className="more-menu" aria-label={t('More')} onKeyDown={(e) => { if (e.key === 'Escape') setMore(false) }}>
+              <NavLink to={{ pathname: '/map', search: carry }}>{t('Map')}</NavLink>
+              <NavLink to="/timeline">{t('Timeline')}</NavLink>
+              <NavLink to="/digest">{t('Digest')}</NavLink>
+              <NavLink to="/help">{t('Help')}</NavLink>
+              <NavLink to="/me">{t('Privacy')}</NavLink>
+              {me.role === 'admin' && <NavLink to="/admin">{t('Admin')}{pending > 0 && <span className="pill flag" style={{ marginInlineStart: 4 }}>{pending}</span>}</NavLink>}
+              <div className="more-who">
+                <span className="small muted" dir="auto">{me.display_name}</span>
+                <button type="button" className="btn small ghost" onClick={logout}>{t('Sign out')}</button>
+              </div>
+            </nav>
+          </>)}
+        <nav className="bottombar" aria-label={t('Main')}>
+          <NavLink to={{ pathname: '/', search: carry }} end>{t('This week')}</NavLink>
+          <NavLink to="/articles" end>{t('Articles')}</NavLink>
+          <NavLink to="/contribute">{t('Contribute')}</NavLink>
+          <button type="button" className={moreActive ? 'active' : undefined} aria-haspopup="true" aria-expanded={more} onClick={() => setMore(!more)}>{t('More')}</button>
+        </nav>
         <div id="main" className="main" tabIndex={-1}>
           {!can && <ReadOnlyNotice />}
           {!meta ? (
@@ -169,7 +197,10 @@ function Shell({ me, setMe, lang, setLang, metaQ }) {
           ) : (
             <>
               <Routes location={pageLoc}>
-                <Route path="/" element={<Overview />} />
+                <Route path="/" element={<ThisWeek />} />
+                <Route path="/map" element={<Overview />} />
+                <Route path="/help" element={<Help />} />
+                <Route path="/help/methods" element={<Help methods />} />
                 <Route path="/trends" element={<Trends />} />
                 <Route path="/outlets" element={<Outlets />} />
                 <Route path="/admin" element={me.role === 'admin' ? <Admin /> : <Navigate to="/" replace />} />

@@ -85,6 +85,26 @@ export default {
   "Not judged": "لم يُحكم عليه",
   "Not judged · {reason}": "لم يُحكم عليه · {reason}",
   "This week, still coming in": "هذا الأسبوع، والبيانات لا تزال تصل",
+  // the pill of a week that could not be judged links to the help page
+  "{week}. {verdict} Why a week is not judged.": "{week}. {verdict} لماذا لا يُحكم على الأسبوع.",
+
+  // pages/Trends.jsx: the By region block (the gap heatmap and the language balance)
+  "By region": "حسب المنطقة",
+  "Striped = not judged: the week is still coming in, or there is too little data.":
+    "المخطّط = لم يُحكم عليه: بيانات الأسبوع ما زالت تصل، أو البيانات قليلة جدًا.",
+  "Striped = not judged: the week is still coming in, or there is too little data. This lens is national only, so the regional columns show article counts until regional need data arrives.":
+    "المخطّط = لم يُحكم عليه: بيانات الأسبوع ما زالت تصل، أو البيانات قليلة جدًا. هذه العدسة على المستوى الوطني فقط، لذا تعرض أعمدة المناطق أعداد المقالات إلى أن تصل بيانات الحاجة على مستوى المناطق.",
+  "Coverage gaps by theme and region — {country}": "فجوات التغطية حسب الموضوع والمنطقة — {country}",
+  "Arabic vs English coverage": "التغطية بالعربية مقابل الإنجليزية",
+  "Monitored articles nationally, {n} weeks ending {week}.": {
+    zero: "المقالات المرصودة على المستوى الوطني، 0 أسبوع حتى {week}.",
+    one: "المقالات المرصودة على المستوى الوطني، أسبوع واحد حتى {week}.",
+    two: "المقالات المرصودة على المستوى الوطني، أسبوعان حتى {week}.",
+    few: "المقالات المرصودة على المستوى الوطني، {n} أسابيع حتى {week}.",
+    many: "المقالات المرصودة على المستوى الوطني، {n} أسبوعًا حتى {week}.",
+    other: "المقالات المرصودة على المستوى الوطني، {n} أسبوع حتى {week}.",
+  },
+  "Arabic vs English coverage of {country}": "التغطية بالعربية مقابل الإنجليزية عن {country}",
 
   // charts/trendText.js
   "Wikipedia views": "مشاهدات ويكيبيديا",

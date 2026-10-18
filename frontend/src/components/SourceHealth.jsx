@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom'
 import { useApp } from '../App'
 import { useApi } from '../hooks/useApi'
-import { fmtDateTime, t, tn } from '../i18n'
+import { fmtAgo, fmtDateTime, t, tn } from '../i18n'
 import { ErrorBox } from './Notices'
 
 const N_ = (s) => s // marks English for the catalogue; translated with t() when shown
@@ -11,8 +11,8 @@ const statusText = (s) => (STATUS_TEXT[s] ? t(STATUS_TEXT[s]) : s)
 // not faults: a source waiting for its key, or one whose key is set but whose collector is not written yet
 const WAITING = new Set(['awaiting_key', 'not_built'])
 
-// compact: one line at the foot of the map page ("2 sources stale", with a link to Admin for admins).
-// Otherwise the full table, on the Admin page.
+// compact: one line at the foot of the This week and Map pages: "Data updated 12 minutes ago · 2 sources
+// stale · Help" (admins get a link to Admin instead). Otherwise the full table, on the Admin page.
 export default function SourceHealth({ compact = false }) {
   const { me } = useApp()
   const q = useApi('/api/sources/health')
@@ -21,11 +21,16 @@ export default function SourceHealth({ compact = false }) {
   if (compact) {
     if (!rows.length) return null
     const admin = me.role === 'admin'
-    if (!bad.length && !admin) return null
+    // the newest successful run of any source: when the data last changed (ISO stamps sort as text)
+    const latest = rows.map((r) => r.last_ok).filter(Boolean).sort().pop()
+    const parts = []
+    if (latest) parts.push(t('Data updated {ago}', { ago: fmtAgo(latest) }))
+    if (bad.length) parts.push(tn(bad.length, '{n} source stale', '{n} sources stale'))
+    else if (admin) parts.push(t('All sources up to date'))
+    if (!parts.length) return null
     return (
       <p className="small muted source-line" role="status">
-        {bad.length ? tn(bad.length, '{n} source stale', '{n} sources stale') : t('All sources up to date')}
-        {admin && <> · <Link to="/admin">{t('Admin')}</Link></>}
+        {parts.join(' · ')} · {admin ? <Link to="/admin">{t('Admin')}</Link> : <Link to="/help#updates">{t('Help')}</Link>}
       </p>
     )
   }

@@ -1,5 +1,7 @@
 // The URL scheme, in one place, with no React in it (scripts/routes.test.mjs runs it in Node).
-//   /                                  the map (Overview)
+//   /                                  This week (the landing page: ranked gaps, what was written, the map)
+//   /map                               the map (Overview)
+//   /help#term  /help/methods          the help page and its glossary anchors; the full method notes (admins)
 //   /gaps/:themeId/:regionId?lens=&week=   one gap (a dialog over the page from 900px up, a page below)
 //   /articles?theme=&region=&days=&start=&end=&lang=&source=&q=&basis=   the article list
 //   /articles/:id                      one article: rate, correct, discuss

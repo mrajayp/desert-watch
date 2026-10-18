@@ -4,6 +4,7 @@
 // onClose (the app navigates back, or to the parent list when there is no page behind). Focus moves to
 // the heading on open and returns to the trigger on close; Tab cycles inside while it is a panel.
 // mode="modal" keeps the panel form at every width (the tracking notice, which blocks the app anyway).
+// variant="sheet" is a panel from the foot of the screen (the lens picker on the This week page).
 import { useEffect, useId, useRef } from 'react'
 import { useWide } from '../hooks/useMedia'
 import { t } from '../i18n'
@@ -76,7 +77,7 @@ export default function Dialog({ title, subtitle, actions, onClose, backdropClos
   return (
     <>
       <div className="drawer-backdrop" onClick={onBackdrop} />
-      <aside className={`${variant === 'modal' ? 'modal' : 'drawer'} ${className}`} role="dialog" aria-modal="true" aria-labelledby={id} ref={box} onKeyDown={onKeyDown}>
+      <aside className={`${variant === 'modal' ? 'modal' : variant === 'sheet' ? 'sheet' : 'drawer'} ${className}`} role="dialog" aria-modal="true" aria-labelledby={id} ref={box} onKeyDown={onKeyDown}>
         {heading}
         {children}
       </aside>

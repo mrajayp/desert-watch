@@ -6,6 +6,7 @@
 // G opens its gap.
 import * as d3 from 'd3'
 import { memo, useMemo, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { fmt, gapFill } from './scales'
 import { DAY, about, articles, judged, lensNeed, levelLegend, needLine, noSearchData, notJudged, shortfall, stepPath, trendGroups, usualLine, utc, verdict, weekEnd, weekRange, yScale } from './trendText'
 import { HatchDefs, themeLabel, useSize, useTooltip } from './util'
@@ -105,12 +106,15 @@ const Panel = memo(function Panel({ t: th, rows, hasNeed, note, fullName, width,
       <div className="trend-head">
         <button type="button" className="linkish" aria-pressed={!!selected} title={t('{name}. Show this theme in the charts below.', { name })}
           onClick={() => onSelect?.(th.id)}>{fullName ? name : themeLabel(th, lang)}</button>
-        {last && (() => { const short = judged(last) && last.gap >= red; return (
+        {last && (judged(last) ? (() => { const short = last.gap >= red; return (
           <button type="button" className={short ? 'pill flag' : 'pill'}
             title={t('{week}. {verdict} Click for the full gap.', { week: weekRange(last.week), verdict: verdict(last, red, need) })}
             onClick={() => onPickWeek?.(th.id, last.week)}>
             {short && <span className="glyph" aria-hidden="true">⚠︎</span>}
-            {judged(last) ? shortfall(last.gap, red) : notJudged(last.reason, need)}</button>) })()}
+            {shortfall(last.gap, red)}</button>) })()
+          // a week that could not be judged: the pill explains the term (the strip under the chart still opens the gap)
+          : <Link className="pill" to="/help#not-judged" title={t('{week}. {verdict} Why a week is not judged.', { week: weekRange(last.week), verdict: verdict(last, red, need) })}>
+            {notJudged(last.reason, need)}</Link>)}
       </div>
       <div className="small muted" style={{ margin: '2px 0 4px' }}>
         {scored ? t('4 weeks to {date}: {articles}.', { date: dayMonth(utc(weekEnd(last.week))), articles: articles(a4) })

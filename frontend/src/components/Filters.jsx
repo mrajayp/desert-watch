@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { useApp } from '../App'
 import { DIMENSIONS, LENS_TEXT } from '../charts/scales'
 import { weekRange } from '../charts/trendText'
@@ -53,7 +54,7 @@ export default function Filters({ showLens = true, showTheme = true, showColor =
                     onClick={() => pickLens(l.key)}>{lensName(l)}</button>))}
               </div>)}
           </div>
-          {current && <p className="lens-blurb small muted">{lensNote(current)}</p>}
+          {current && <p className="lens-blurb small muted">{lensNote(current)} · <Link to="/help#lens">{t('What is a lens?')}</Link></p>}
         </div>)}
       {showTheme && (
         <label>{t('Theme')}

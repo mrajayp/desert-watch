@@ -98,6 +98,7 @@ export default function GapPanel({ themeId, regionId, week: weekProp, lens: lens
             <div className="stat"><span className="v" style={{ fontSize: 16, maxWidth: 200 }}>{gapLabel(c && !c.insufficient ? c.gap : null, meta.red_from)}</span>
               <span className="l">{reference === 'own_history' ? t('compared with this theme’s usual level') : t('compared with other topics')}</span></div>
           </div>
+          {(!c || c.insufficient) && <p className="small" style={{ marginTop: 0 }}><Link to="/help#not-judged">{t('Why a gap is not judged')}</Link></p>}
           {b.articles_4w != null && b.expected_4w != null && (
             <p className="small muted" style={{ marginTop: 0 }}>{reference === 'pooled'
               ? t('The score counts {count} of these, from the outlets we followed all year, against {expected} expected from other topics.', { count: fmt(b.articles_4w), expected: about(b.expected_4w) })
@@ -173,7 +174,7 @@ export default function GapPanel({ themeId, regionId, week: weekProp, lens: lens
               <h3>{t('Need signals ({n})', { n: fmt(d.need_items.total) })}</h3>
               <ul className="list small">{d.need_items.items.slice(0, 20).map((it) => <li key={it.id}>{fmtDate(it.published_at)} · <span dir="auto">{it.title}</span> <span className="muted num">{fmt(it.value)}</span></li>)}</ul>
             </>)}
-          <p className="small muted" style={{ marginTop: 16 }}>{t('Gap = how much less coverage there is than expected, given the need signal. A gap is not judged when there is too little need data, or when we would expect fewer than {n} articles.', { n: lensMeta?.min_expected ?? 3 })}</p>
+          <p className="small muted" style={{ marginTop: 16 }}>{t('Gap = how much less coverage there is than expected, given the need signal. A gap is not judged when there is too little need data, or when we would expect fewer than {n} articles.', { n: lensMeta?.min_expected ?? 3 })} <Link to="/help#gap">{t('More in Help')}</Link></p>
         </>)}
     </Dialog>
   )

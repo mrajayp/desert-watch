@@ -111,3 +111,14 @@ const D3_EN = timeFormatLocale({
 })
 // d3.utcFormat in the interface language, for chart axes and tooltips
 export const utcFormat = (spec) => (current === 'ar' ? D3_AR : D3_EN).utcFormat(spec)
+
+// how long ago a timestamp was, in words: "12 minutes ago" / "قبل 12 دقيقة" (Western digits)
+export function fmtAgo(d, now = Date.now()) {
+  if (d == null || d === '') return ''
+  const date = asDate(d)
+  if (Number.isNaN(+date)) return ''
+  const s = Math.max(0, Math.round((now - date.getTime()) / 1000))
+  const rtf = new Intl.RelativeTimeFormat(locale(), { numeric: 'always' })
+  for (const [unit, n] of [['day', 86400], ['hour', 3600], ['minute', 60]]) if (s >= n) return rtf.format(-Math.round(s / n), unit)
+  return rtf.format(-s, 'second')
+}

@@ -16,6 +16,9 @@ export default {
   'Read-only account: an admin can give you contributor access': 'حساب للقراءة فقط: يمكن للمشرف منح صلاحية المساهمة',
   'read-only': 'قراءة فقط',
   'Sign out': 'تسجيل الخروج',
+  'This week': 'هذا الأسبوع',
+  'More': 'المزيد',
+  'Help': 'المساعدة',
 
   // pages/Auth.jsx: sign in, request access, accept an invitation
   'Find the stories nobody is covering in Libya: where need is high and monitored coverage is thin.': 'اكتشاف القصص التي لا يغطيها أحد في ليبيا: حيث الحاجة مرتفعة والتغطية المرصودة ضعيفة.',
@@ -109,6 +112,11 @@ export default {
   'Colour outlets by': 'تلوين وسائل الإعلام حسب',
   'Filter by source': 'التصفية حسب المصدر',
   'All {n}': 'الكل {n}',
+  'What is a lens?': 'ما العدسة؟',
+
+  // components/LensSheet.jsx: the lens picker on the This week page
+  'Choose a lens': 'اختيار العدسة',
+  'Not available yet: {why}': 'غير متاحة بعد: {why}',
 
   // components/SourceHealth.jsx and the Admin health card: run statuses are API codes, shown as words
   'ok': 'ناجح',
@@ -121,6 +129,7 @@ export default {
   'stale': 'غير محدَّث',
   '{n} sources stale': { zero: 'لا مصادر متأخرة التحديث', one: 'مصدر واحد متأخر التحديث', two: 'مصدران متأخرا التحديث', few: '{n} مصادر متأخرة التحديث', many: '{n} مصدرًا متأخر التحديث', other: '{n} مصدر متأخر التحديث' },
   'All sources up to date': 'كل المصادر محدّثة',
+  'Data updated {ago}': 'آخر تحديث للبيانات {ago}',
   'Source': 'المصدر',
   'Status': 'الحالة',
   'Last success': 'آخر نجاح',

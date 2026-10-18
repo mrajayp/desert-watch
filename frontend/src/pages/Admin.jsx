@@ -448,7 +448,7 @@ function HealthCard() {
 // "How the numbers work": every calculation in plain words. Collapsed by default.
 function MethodsCard() {
   const [open, setOpen] = useState(false)
-  const q = useApi(open ? '/api/admin/methods' : null)
+  const q = useApi(open ? '/api/content/how_the_numbers_work' : null)
   const md = q.data?.markdown
   return (
     <section className="card" style={{ marginTop: 16 }}>

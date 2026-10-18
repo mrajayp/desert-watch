@@ -241,7 +241,7 @@ body.dialog-open { overflow: hidden; }
 @media (forced-colors: active) { .gap-fill { forced-color-adjust: none; } }
 /* a finger, not a mouse: every control at least 36px tall */
 @media (pointer: coarse) {
-  .btn, .seg button, .seg label > span, .chip, button.pill, .nav a, select, .linkish,
+  .btn, .seg button, .seg label > span, .chip, button.pill, .nav a, .nav-more, .more-menu a, select, .linkish,
   input[type=text], input[type=email], input[type=password], input[type=url], input[type=search] { min-height: 36px; }
   .btn, .chip, .nav a, .linkish { display: inline-flex; align-items: center; }
   input[type=range] { height: 36px; }
@@ -264,3 +264,54 @@ body.dialog-open { overflow: hidden; }
 button.pill { border: 0; font: inherit; font-size: 11.5px; cursor: pointer; }
 button.pill:hover { box-shadow: inset 0 0 0 1px var(--axis); }
 .viz text.halo { paint-order: stroke; stroke: var(--surface); stroke-width: 3px; stroke-linejoin: round; }
+
+/* ---- This week (pages/ThisWeek.jsx): the list, with the map beside it from 1000px up */
+.thisweek-top { margin-bottom: 14px; }
+.thisweek-top label { color: var(--ink-2); font-size: 13px; }
+.lens-chip { max-width: 100%; white-space: normal; text-align: start; }
+.thisweek-grid { display: grid; gap: 16px; align-items: start; }
+@media (min-width: 1000px) { .thisweek-grid.with-map { grid-template-columns: minmax(0, 56fr) minmax(0, 44fr); } }
+.thisweek-list { display: grid; gap: 16px; min-width: 0; }
+.gapcard .verdict { font-size: 13px; color: var(--ink); margin-top: 1px; }
+.digest-excerpt h2 a { color: inherit; }
+.clamp-2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+/* a section heading that opens and closes its section (the landing page's map) */
+.disclose { display: flex; align-items: center; gap: 8px; width: 100%; border: 0; background: none; padding: 0; font: inherit; color: inherit; cursor: pointer; text-align: start; }
+.disclose h2 { margin: 0; }
+.disclose .caret { display: inline-block; color: var(--muted); transition: transform .15s; }
+[dir="rtl"] .disclose .caret { transform: scaleX(-1); }
+.disclose[aria-expanded="true"] .caret, [dir="rtl"] .disclose[aria-expanded="true"] .caret { transform: rotate(90deg); }
+
+/* the lens picker (components/LensSheet.jsx): a panel from the foot of the screen */
+.sheet { position: fixed; bottom: 0; left: 50%; transform: translateX(-50%); width: min(560px, 100vw); max-height: 85vh; overflow: auto; background: var(--surface); z-index: 41; border-radius: 12px 12px 0 0; padding: 18px; box-shadow: var(--shadow); }
+.lens-list > li { padding: 4px 0; border: 0; }
+.lens-option { display: grid; gap: 2px; width: 100%; text-align: start; border: 1px solid var(--axis); background: var(--surface); border-radius: 8px; padding: 10px 12px; cursor: pointer; font: inherit; color: inherit; }
+.lens-option .t { font-weight: 600; }
+.lens-option[aria-pressed="true"] { border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
+.lens-option:disabled { color: var(--muted); cursor: not-allowed; }
+
+/* the More menu (App.jsx) and the phone bottom bar */
+.nav-more { border: 0; background: none; padding: 6px 10px; border-radius: 6px; color: var(--ink-2); cursor: pointer; font: inherit; white-space: nowrap; }
+.nav-more:hover { background: var(--surface-2); }
+.nav-more.active { background: var(--surface-2); color: var(--ink); font-weight: 600; }
+.more-backdrop { position: fixed; inset: 0; z-index: 45; }
+.more-menu { position: fixed; top: 52px; inset-inline-end: 12px; z-index: 46; min-width: 200px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; box-shadow: var(--shadow); padding: 6px; display: grid; }
+.more-menu a { padding: 8px 12px; border-radius: 6px; color: var(--ink); text-align: start; }
+.more-menu a:hover { background: var(--surface-2); text-decoration: none; }
+.more-menu a.active { background: var(--surface-2); font-weight: 600; }
+.more-who { display: none; border-top: 1px solid var(--line); margin-top: 6px; padding: 8px 12px 4px; gap: 8px; align-items: center; justify-content: space-between; }
+.bottombar { display: none; }
+@media (max-width: 639px) {
+  .topbar .nav, .who .who-name, .who .who-out { display: none; }
+  .shell { padding-bottom: 56px; }
+  .bottombar { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); position: fixed; bottom: 0; inset-inline: 0; z-index: 30; background: var(--surface); border-top: 1px solid var(--line); }
+  .bottombar a, .bottombar button { display: flex; align-items: center; justify-content: center; min-height: 52px; padding: 0 4px; color: var(--ink-2); border: 0; background: none; font: inherit; font-size: 13px; text-align: center; border-radius: 0; }
+  .bottombar a:hover { text-decoration: none; }
+  .bottombar a.active, .bottombar button.active { color: var(--ink); font-weight: 600; box-shadow: inset 0 2px 0 var(--ink); }
+  .more-menu { top: auto; bottom: 60px; inset-inline: 8px; }
+  .more-who { display: flex; }
+  .notices { bottom: 70px; }
+}
+/* help: a link to /help#term lands under the sticky top bar */
+.md h3, .md h4 { scroll-margin-top: 70px; }
+.md h4 { margin: 14px 0 4px; font-size: 13.5px; }

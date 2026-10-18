@@ -1,269 +1,30 @@
-import * as d3 from 'd3'
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { qs, track } from '../api'
+import { qs } from '../api'
 import { useApp } from '../App'
+import CoverageMap from '../components/CoverageMap'
 import Filters from '../components/Filters'
-import GeoNetwork, { GeoLegend } from '../charts/GeoNetwork'
-import RegionalNetwork from '../charts/RegionalNetwork'
-import Heatmap from '../charts/Heatmap'
-import { LanguageBalance } from '../charts/Balance'
-import { DIMENSIONS, LENS_TEXT, RED_FROM, categoryOf, fmt, gapFill, gapLabel } from '../charts/scales'
-import { weekEnd } from '../charts/trendText'
-import { ExportMenu } from '../charts/util'
 import { ErrorBox } from '../components/Notices'
 import SourceHealth from '../components/SourceHealth'
-import { WarningPills } from '../components/Warnings'
 import { useApi } from '../hooks/useApi'
 import { usePageTitle } from '../hooks/usePageTitle'
-import { fmtDate, pick, t } from '../i18n'
+import { t } from '../i18n'
 
-// the first day of the window that ends with `week` (a Monday), `weeks` weeks long
-const windowStart = (week, weeks) => new Date(new Date(`${week}T00:00:00Z`).getTime() - (weeks - 1) * 7 * 864e5).toISOString().slice(0, 10)
-
-let geoCache = null
-async function loadGeo(meta) {
-  if (geoCache) return geoCache
-  const b = meta.country.boundaries
-  const [d, m] = await Promise.all([fetch(`/geo/${b.districts_geojson}`).then((r) => r.json()),
-    b.macro_geojson ? fetch(`/geo/${b.macro_geojson}`).then((r) => r.json()) : null])
-  // d3-geo uses spherical winding: a polygon whose area exceeds a hemisphere is "inside out"
-  // (RFC 7946 files wind the other way). Reverse such rings.
-  const rewind = (fc) => { fc.features.forEach((f) => {
-    if (d3.geoArea(f) <= 2 * Math.PI) return
-    const g = f.geometry
-    const rev = (poly) => poly.map((ring) => ring.slice().reverse())
-    if (g.type === 'Polygon') g.coordinates = rev(g.coordinates)
-    else if (g.type === 'MultiPolygon') g.coordinates = g.coordinates.map(rev) }); return fc }
-  geoCache = { districts: rewind(d), macro: m ? rewind(m) : null }
-  return geoCache
-}
-
+// The Map page (/map): who covers where, in both map views, with the outlets in view. The ranked gap
+// list is the This week page (/), the heatmap and the language balance are the Trends page's By region block.
 export default function Overview() {
-  const { meta, filters, lang, openGap, openOutlet, openArticles, version } = useApp()
+  const { filters, version } = useApp()
   usePageTitle(t('Map'))
-  const [geo, setGeo] = useState(null)
-  const [geoErr, setGeoErr] = useState(null)
-  const [geoTick, setGeoTick] = useState(0)
-  const [selected, setSelected] = useState(null)
-  const [minEdge, setMinEdge] = useState(2)
-  const [mapView, setMapView] = useState(() => { try { return localStorage.getItem('dw_mapview') || 'region' } catch { return 'region' } })
-  const pickView = (v) => { setMapView(v); try { localStorage.setItem('dw_mapview', v) } catch { /* storage blocked */ } }
-  const mapSvg = useRef(null), heatSvg = useRef(null), langSvg = useRef(null)
-
-  useEffect(() => {
-    let live = true
-    setGeoErr(null)
-    loadGeo(meta).then((g) => live && setGeo(g)).catch((e) => live && setGeoErr(e))
-    return () => { live = false }
-  }, [meta, geoTick])
-  const regionsById = useMemo(() => new Map(meta.regions.map((r) => [r.id, r])), [meta])
-  // one red threshold on every page: the API's (settings.GAP_RED_FROM), the same one Trends uses
-  const red = meta.red_from ?? RED_FROM
-  const lensMeta = meta.lenses.find((l) => l.key === filters.lens)
-  const nationalOnly = lensMeta && lensMeta.levels.length === 1
   const cellsQ = useApi(filters.week ? '/api/cells' + qs({ lens: filters.lens, week: filters.week }) : null, { deps: [version] })
   const cells = cellsQ.data?.cells || []
-  // A national-only lens still has regional coverage counts worth showing (unscored, hatched).
-  const ctxQ = useApi(nationalOnly && filters.week ? '/api/cells' + qs({ lens: 'journalist', week: filters.week }) : null, { deps: [version] })
-  const regionalContext = useMemo(() => (nationalOnly && ctxQ.data
-    ? ctxQ.data.cells.filter((c) => regionsById.get(c.region_id)?.level !== 'national').map((c) => ({ ...c, insufficient: true, gap: null, flags: [] }))
-    : []), [ctxQ.data, nationalOnly, regionsById])
-  const themeGroupKey = String(filters.themeId).startsWith('group:') ? filters.themeId.slice(6) : null
-  const netQ = useApi('/api/network' + qs({ theme_id: themeGroupKey ? '' : filters.themeId, theme_group: themeGroupKey, week: filters.week, weeks: meta.window_weeks }), { deps: [version] })
-  const network = netQ.data
-  const loadError = cellsQ.error || netQ.error || geoErr
-  const retryLoads = () => { cellsQ.retry(); netQ.retry(); ctxQ.retry(); if (geoErr) setGeoTick((n) => n + 1) }
-
-  const themeGroup = String(filters.themeId).startsWith('group:') ? filters.themeId.slice(6) : null
-  const themeId = filters.themeId && !themeGroup ? +filters.themeId : null
-  const groupIds = themeGroup ? new Set(meta.themes.filter((t) => t.group === themeGroup).map((t) => t.id)) : null
-  const inScope = (tid) => (themeId ? tid === themeId : groupIds ? groupIds.has(tid) : true)
-  const national = meta.regions.find((r) => r.level === 'national')
-
-  // map values per district: gap (if this lens has regional need) else monitored coverage from the network
-  const hasRegionalGap = cells.some((c) => regionsById.get(c.region_id)?.level === 'district' && !c.insufficient)
-  const mode = hasRegionalGap ? 'gap' : 'coverage'
-  const cellsByRegion = useMemo(() => {
-    const m = new Map()
-    if (mode === 'gap') {
-      for (const c of cells) {
-        if (!inScope(c.theme_id)) continue
-        const prev = m.get(c.region_id)
-        // the maps' "articles name this district" count is the all-source one (it matches the lines drawn)
-        if (!prev || (c.gap ?? -9) > (prev.gap ?? -9)) m.set(c.region_id, { ...c, coverage: c.articles_all ?? c.coverage })
-      }
-    } else if (network) {
-      for (const e of network.edges) {
-        if (e.kind !== 'outlet_region') continue
-        const rid = +e.target.slice(2)
-        const p = m.get(rid) || { coverage: 0, flags: [] }
-        p.coverage += e.weight
-        m.set(rid, p)
-      }
-    }
-    return m
-  }, [cells, network, mode, themeId])
-
-  const nationalCells = cells.filter((c) => c.region_id === national.id)
-  const ranked = useMemo(() => {
-    const ok = cells.filter((c) => !c.insufficient && c.gap != null && inScope(c.theme_id))
-      .sort((a, b) => b.gap - a.gap)
-    let top = ok.filter((c) => c.gap >= red).slice(0, 7)
-    if (!top.length) top = ok.slice(0, 5).map((c) => ({ ...c, fallback: true }))
-    // "Also worth a look": one random lower-ranked cell, last, so rankings don't only reinforce themselves
-    // (its impressions and clicks are logged with explore=true; the owner has not decided whether to keep it)
-    const rest = ok.filter((c) => !top.includes(c))
-    if (rest.length && top.length >= 3 && !top[0].fallback) {
-      const pick = rest[Math.floor(Math.random() * rest.length)]
-      top.push({ ...pick, explore: true })
-    }
-    return top
-  }, [cells, themeId, themeGroup, red])
-  useEffect(() => {
-    ranked.forEach((c, i) => track('impression', 'gap', `${c.theme_id}:${c.region_id}`, { position: i, lens: filters.lens, explore: !!c.explore, list: 'top_gaps' }))
-  }, [ranked, filters.lens])
-
-  const fallback = ranked.length > 0 && ranked[0].fallback
-  const presentCats = useMemo(() => new Set((network?.nodes || []).filter((n) => n.type === 'outlet').map((n) => categoryOf(n, filters.colorBy))), [network, filters.colorBy])
-  const heatRegions = [national, ...meta.regions.filter((r) => r.level === 'macro')]
-  const feedback = Object.fromEntries(cells.map((c) => [`${c.theme_id}:${c.region_id}`, c.votes]))
-  // theme group codes come from the API (only "gender" today); the catalogue has their Arabic
-  const themeName = themeId ? pick(meta.themes.find((x) => x.id === themeId)) : themeGroup ? t('All {group} themes', { group: t(themeGroup) }) : t('All themes')
-  // the weeks shown end on the Sunday of the selected week (filters.week is its Monday)
-  const week = filters.week ? fmtDate(weekEnd(filters.week)) : ''
-  const windowText = t('{n} weeks to {date}', { n: meta.window_weeks, date: week })
-  const country = pick(meta.country)
-  const caption = t('Source: Desert Watch monitored coverage (Google News, Google Alerts, GDELT, outlet and YouTube feeds, social posts Google indexes) · {window}.', { window: windowText }) + '\n' +
-    t('Lines join outlets to districts their articles name. Monitored coverage only. We see Facebook only through the posts Google indexes, and Telegram not at all.') + '\n' + pick(meta.country.boundaries, 'attribution')
-  // unplaced is counted over every source, so its share is of the all-source count
-  const unplacedShare = nationalCells.length ? d3.sum(nationalCells, (c) => c.breakdown?.unplaced || 0) / Math.max(1, d3.sum(nationalCells, (c) => c.articles_all ?? c.coverage)) : null
-  const lensInfo = LENS_TEXT[filters.lens]
-  const lens = t(lensInfo.label)
-  // A district click opens the theme that coloured it (cellsByRegion keeps the worst cell per district).
-  // With no scored cell (coverage mode, or an unscored district) it opens the district's articles for
-  // the same window instead of an unscored gap for theme #1.
-  const openDistrict = (rid) => {
-    setSelected(rid)
-    const cell = mode === 'gap' ? cellsByRegion.get(rid) : null
-    if (cell?.theme_id) { openGap(cell.theme_id, rid, { from: 'map' }); return }
-    openArticles({
-      title: pick(regionsById.get(rid), 'name'), from: 'map',
-      subtitle: t('Monitored articles naming this district, {n} weeks ending {week}.', { n: meta.window_weeks, week }),
-      query: filters.week ? { region_id: rid, start: windowStart(filters.week, meta.window_weeks), end: weekEnd(filters.week) } : { region_id: rid, days: meta.window_weeks * 7 },
-    })
-  }
-
   return (
     <>
       <Filters />
       <main className="page">
-        {loadError && <ErrorBox error={loadError} onRetry={retryLoads} />}
+        {cellsQ.error && <ErrorBox error={cellsQ.error} onRetry={cellsQ.retry} />}
         <section className="card">
-            <div className="card-head">
-              <div>
-                <h2>{t('Who covers where · {theme}', { theme: themeName })}</h2>
-                <p className="sub">{mode === 'gap'
-                  ? (themeId ? t('Districts shaded by under-coverage on the {lens} lens.', { lens }) : t('Districts shaded by under-coverage on the {lens} lens, worst theme per district.', { lens }))
-                  : t('The {lens} lens only has national figures, so districts show how many monitored articles name them. Pale districts with no lines are the deserts.', { lens })}
-                  {unplacedShare != null && ` ${t('{pct}% of articles name no district.', { pct: Math.round(unplacedShare * 100) })}`}</p>
-              </div>
-              <div className="row">
-                <span className="seg" role="group" aria-label={t('Map view')}>
-                  <button aria-pressed={mapView === 'region'} onClick={() => pickView('region')}>{t('Sources by country')}</button>
-                  <button aria-pressed={mapView === 'libya'} onClick={() => pickView('libya')}>{t('Libya detail')}</button>
-                </span>
-                <label className="small row">{t('Hide links under')}
-                  <select value={minEdge} onChange={(e) => setMinEdge(+e.target.value)} aria-label={t('Minimum articles per link')}>
-                    {[1, 2, 3, 5, 10].map((n) => <option key={n} value={n}>{n}</option>)}</select> {t('articles', { n: minEdge })}</label>
-                <ExportMenu svgRef={mapSvg} title={t('Who covers where in {country} — {theme}', { country, theme: themeName })} caption={caption} filename="who-covers-where" />
-              </div>
-            </div>
-            {mapView === 'region' ? (
-              <RegionalNetwork geo={geo?.districts} meta={meta} network={network} cellsByRegion={cellsByRegion} mode={mode}
-                svgRef={mapSvg} minEdge={minEdge} red={red}
-                onSelectRegion={openDistrict} />
-            ) : <>
-            <GeoNetwork geo={geo?.districts} macroGeo={geo?.macro} meta={meta} network={network} cellsByRegion={cellsByRegion}
-              colorBy={filters.colorBy} mode={mode} lang={lang} svgRef={mapSvg} selectedRegion={selected} minEdge={minEdge} red={red}
-              onSelectRegion={openDistrict}
-              onSelectOutlet={(o) => openOutlet(+o.id.slice(2))} />
-            <GeoLegend mode={mode} colorBy={filters.colorBy} present={presentCats} />
-            </>}
-          </section>
-        <div className="grid halves" style={{ marginTop: 16 }}>
-          <section className="card">
-            <h2>{fallback ? t('Least covered, {n} weeks to {date}', { n: meta.window_weeks, date: week }) : t('Biggest gaps, {n} weeks to {date}', { n: meta.window_weeks, date: week })}</h2>
-            <p className="sub">{t('{blurb}. Click to review, vote and comment.', { blurb: t(lensInfo.blurb) })}</p>
-            {fallback && <p className="small muted">{t('No theme is clearly falling behind its need signal in these weeks; these are the least covered relative to it.')}</p>}
-            {ranked.length === 0 && <div className="empty">{t('Nothing has been judged for this lens and week.')}</div>}
-            {ranked.map((c, i) => {
-              const th = meta.themes.find((x) => x.id === c.theme_id)
-              const r = regionsById.get(c.region_id)
-              // articles = the count the score used; articles_all = every source (coverage until the API sends them)
-              const n = c.articles ?? c.coverage
-              const all = c.articles_all ?? c.coverage
-              return (
-                <div key={`${c.theme_id}:${c.region_id}`} className="gapcard" role="button" tabIndex={0}
-                  onClick={() => openGap(c.theme_id, c.region_id, { position: i, explore: !!c.explore, list: 'top_gaps' })}
-                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openGap(c.theme_id, c.region_id, { position: i, explore: !!c.explore, list: 'top_gaps' }) } }}>
-                  <div>
-                    <div className="t">{pick(th)} · <span style={{ fontWeight: 400 }}>{pick(r)}</span></div>
-                    <div className="small muted">{t('{articles} articles vs {need} {unit} · {gap}', { articles: fmt(n), need: fmt(c.need), unit: t(lensInfo.unit), gap: gapLabel(c.gap, red) })}
-                      {all != null && all !== n && <span> · {t('{n} from all sources', { n: fmt(all) })}</span>}</div>
-                    <div className="row" style={{ marginTop: 4 }}>
-                      {c.explore && <span className="pill" title={t("Shown to check the ranking isn't only reinforcing itself")}>{t('Also worth a look')}</span>}
-                      <WarningPills codes={c.flags} />
-                      {c.votes?.real > 0 && <span className="pill">{t('✓ {n} real', { n: c.votes.real })}</span>}
-                      {c.votes?.covered > 0 && <span className="pill">{t('{n} covered', { n: c.votes.covered })}</span>}
-                      {c.comments > 0 && <span className="pill">💬 {c.comments}</span>}
-                      {c.claims?.working > 0 && <span className="pill ok">{t('someone is on it')}</span>}
-                    </div>
-                  </div>
-                  <span className="dot" style={{ width: 14, height: 14, borderRadius: 4, background: gapFill(c, red) || 'var(--surface-2)' }} aria-hidden="true" />
-                </div>)
-            })}
-          </section>
-          <section className="card">
-            <div className="card-head">
-              <div><h2>{t('Arabic vs English coverage')}</h2><p className="sub">{t('Monitored articles nationally, {n} weeks ending {week}.', { n: meta.window_weeks, week })}</p></div>
-              <ExportMenu svgRef={langSvg} title={t('Arabic vs English coverage of {country}', { country })} caption={caption} filename="language-balance" />
-            </div>
-            <LanguageBalance themes={meta.themes.filter((t) => inScope(t.id))} cells={nationalCells} lang={lang} svgRef={langSvg} />
-          </section>
-        </div>
-        <section className="card" style={{ marginTop: 16 }}>
-          <div className="card-head">
-            <div><h2>{t('Gap by theme and region')}</h2>
-              <p className="sub">{t('{lens} lens · {n} weeks to {date}', { lens, n: meta.window_weeks, date: week })}. {nationalOnly
-                ? t('Striped = not judged: the week is still coming in, or there is too little data. This lens is national only, so the regional columns show article counts until regional need data arrives.')
-                : t('Striped = not judged: the week is still coming in, or there is too little data.')}</p></div>
-            <ExportMenu svgRef={heatSvg} title={t('Coverage gaps by theme and region — {country}', { country })} caption={caption} filename="gap-heatmap" />
-          </div>
-          <Heatmap themes={meta.themes.filter((t) => inScope(t.id))} regions={heatRegions} cells={[...cells, ...regionalContext]} svgRef={heatSvg} unit={lensInfo.unit} lang={lang}
-            feedback={feedback} red={red} onSelect={(t, r) => openGap(t, r, { from: 'heatmap' })} />
-        </section>
-        <section className="card" style={{ marginTop: 16 }}>
-          <h2>{t('Outlets in this view')}</h2>
-          <p className="sub">{t('Click an outlet to see and suggest its categories. Categories need evidence; contested labels show their confidence.')}</p>
-          <OutletStrip network={network} colorBy={filters.colorBy} onOpen={(id) => openOutlet(id)} />
+          <CoverageMap cells={cells} outlets />
         </section>
         <SourceHealth compact />
       </main>
     </>
-  )
-}
-
-function OutletStrip({ network, colorBy, onOpen }) {
-  if (!network) return null
-  const outlets = network.nodes.filter((n) => n.type === 'outlet').sort((a, b) => b.articles - a.articles).slice(0, 30)
-  const dim = DIMENSIONS[colorBy]
-  return (
-    <div className="chips">
-      {outlets.map((o) => (
-        <button key={o.id} className="chip" onClick={() => onOpen(+o.id.slice(2))} title={t(dim.values[categoryOf(o, colorBy)])}>
-          <span className="dot" style={{ background: `var(--${dim.colors[categoryOf(o, colorBy)] || 'cat-unknown'})`, marginInlineEnd: 5 }} />
-          <span dir="auto">{pick(o)}</span> <span className="muted num">{fmt(o.articles)}</span>
-        </button>))}
-    </div>
   )
 }

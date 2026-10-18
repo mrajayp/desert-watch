@@ -1,4 +1,5 @@
 import { Fragment, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { api } from '../api'
 import { useApp } from '../App'
 import { ErrorBox, Loading } from '../components/Notices'
@@ -12,15 +13,29 @@ import { N_, fmtDateTime, getLang, t } from '../i18n'
 const STATUS = { error: N_('error'), refused: N_('refused') }
 const status = (s) => t(STATUS[s] || s)
 
-// Minimal, safe Markdown: headings, bullets, paragraphs, **bold**, *italic*. Text only, no HTML.
+// Minimal, safe Markdown: headings (with an optional {#id} anchor, the same in both languages), bullets,
+// paragraphs, **bold**, *italic* and [text](url) links. A link may go to an http(s) page (opened in a
+// new tab), to an #anchor on the page, or to a path inside this site (/me); anything else is shown as
+// plain text. Text only, no HTML.
+const SAFE_HREF = /^(https?:\/\/|#|\/(?![/\\]))/
+const HEADING = /^(#{1,4})\s+(.*?)(?:\s*\{#([\w-]+)\})?\s*$/
+const slug = (s) => s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '-').replace(/^-+|-+$/g, '')
+
+function Href({ href, children }) {
+  if (href.startsWith('#')) return <a href={href}>{children}</a>
+  if (href.startsWith('/')) return <Link to={href}>{children}</Link>
+  return <a href={href} target="_blank" rel="noreferrer noopener">{children}</a>
+}
+
 function inline(text) {
   const parts = []
-  const re = /(\*\*[^*]+\*\*|\*[^*]+\*)/g
+  const re = /(\*\*[^*]+\*\*|\*[^*]+\*|\[([^\]]+)\]\(([^)\s]+)\))/g
   let last = 0, m
   while ((m = re.exec(text))) {
     if (m.index > last) parts.push(text.slice(last, m.index))
     const tok = m[0]
-    parts.push(tok.startsWith('**') ? <strong key={m.index}>{tok.slice(2, -2)}</strong> : <em key={m.index}>{tok.slice(1, -1)}</em>)
+    if (tok.startsWith('[')) parts.push(SAFE_HREF.test(m[3]) ? <Href key={m.index} href={m[3]}>{inline(m[2])}</Href> : m[2])
+    else parts.push(tok.startsWith('**') ? <strong key={m.index}>{tok.slice(2, -2)}</strong> : <em key={m.index}>{tok.slice(1, -1)}</em>)
     last = m.index + tok.length
   }
   if (last < text.length) parts.push(text.slice(last))
@@ -36,15 +51,15 @@ export function Markdown({ text }) {
     if (bullet) { (list ||= []).push(bullet[1]); continue }
     if (list) { blocks.push({ ul: list }); list = null }
     if (!line.trim()) continue
-    const h = line.match(/^(#{1,4})\s+(.*)/)
-    blocks.push(h ? { h: h[1].length, text: h[2] } : { p: line })
+    const h = line.match(HEADING)
+    blocks.push(h ? { h: h[1].length, text: h[2], id: h[3] || slug(h[2]) } : { p: line })
   }
   if (list) blocks.push({ ul: list })
   return (
     <div className="md" dir="auto">
       {blocks.map((b, i) => (
         <Fragment key={i}>
-          {b.h && (b.h <= 2 ? <h3 style={{ marginTop: 18 }}>{inline(b.text)}</h3> : <h4>{inline(b.text)}</h4>)}
+          {b.h && (b.h <= 2 ? <h3 id={b.id} style={{ marginTop: 18 }}>{inline(b.text)}</h3> : <h4 id={b.id}>{inline(b.text)}</h4>)}
           {b.p && <p>{inline(b.p)}</p>}
           {b.ul && <ul>{b.ul.map((li, j) => <li key={j}>{inline(li)}</li>)}</ul>}
         </Fragment>))}

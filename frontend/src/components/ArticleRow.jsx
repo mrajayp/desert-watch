@@ -41,8 +41,9 @@ export function CorrectionForm({ item, onChanged }) {
   )
 }
 
-// One article with inline corrections. Every correction is a training label.
-export default function ArticleRow({ item: given, onChanged, context = {} }) {
+// One article with inline corrections. Every correction is a training label. actions=false leaves
+// out the row's buttons (a read-only list such as "Written this week").
+export default function ArticleRow({ item: given, onChanged, context = {}, actions = true }) {
   const { meta, openItem, openOutlet, can } = useApp()
   const [open, setOpen] = useState(null)  // 'fix' | 'label'
   const [row, setRow] = useState(given)   // the row as the server last sent it back
@@ -67,19 +68,20 @@ export default function ArticleRow({ item: given, onChanged, context = {} }) {
           <div className="row small" style={{ marginTop: 3 }}>
             <ThemePills item={item} />
             {item.region_ids.map((r) => <span key={r} className="pill">📍 {pick(regions.get(r), 'name')}</span>)}
-            {can && <button className="btn small ghost" style={{ padding: '0 4px' }} aria-expanded={open === 'label'}
+            {can && actions && <button className="btn small ghost" style={{ padding: '0 4px' }} aria-expanded={open === 'label'}
               onClick={() => setOpen(open === 'label' ? null : 'label')}>{t('Label topics')}</button>}
             {note && <span className="muted">{note === 'off' ? t('Saved: not about {country}', { country }) : t('Saved')}</span>}
           </div>
         </div>
-        <div className="row" style={{ flexWrap: 'nowrap' }}>
-          {can ? (
-            <>
-              <button className="btn small" onClick={() => openItem(item.id, context)}>{t('Rate')}</button>
-              <button className="btn small ghost" aria-expanded={open === 'fix'} onClick={() => setOpen(open === 'fix' ? null : 'fix')} title={t('Correct topic or place')}>{t('Correct')}</button>
-            </>
-          ) : <button className="btn small ghost" onClick={() => openItem(item.id, context)}>{t('Details')}</button>}
-        </div>
+        {actions && (
+          <div className="row" style={{ flexWrap: 'nowrap' }}>
+            {can ? (
+              <>
+                <button className="btn small" onClick={() => openItem(item.id, context)}>{t('Rate')}</button>
+                <button className="btn small ghost" aria-expanded={open === 'fix'} onClick={() => setOpen(open === 'fix' ? null : 'fix')} title={t('Correct topic or place')}>{t('Correct')}</button>
+              </>
+            ) : <button className="btn small ghost" onClick={() => openItem(item.id, context)}>{t('Details')}</button>}
+          </div>)}
       </div>
       {open === 'label' && (
         <div className="card" style={{ marginTop: 6, padding: 10 }}>
