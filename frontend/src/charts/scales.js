@@ -10,22 +10,31 @@ export const css = (name) => `var(--${name})`
 const lazy = (o) => Object.defineProperties({}, Object.fromEntries(
   Object.entries(o).map(([k, en]) => [k, { enumerable: true, get: () => t(en) }])))
 
-// Gap (ln of expected/actual coverage): 0 = as expected. Only under-coverage is coloured;
-// over-coverage stays neutral (the tool is about deserts, not surpluses).
-export const GAP_BINS = [0.15, 0.4, 0.7, 1.0, 1.5, 2.2]
-export function gapFill(cell) {
+// Gap (ln of expected/actual coverage): 0 = as expected. Only under-coverage is coloured, and only from
+// the red threshold up: one threshold on every page, meta.red_from (settings.GAP_RED_FROM, the same value
+// Trends uses). Below it a cell is neutral and reads "about as expected"; over-coverage stays neutral too
+// (the tool is about deserts, not surpluses). RED_FROM is the fallback until /api/meta has loaded; pages
+// pass meta.red_from. The functions stay pure (red is an argument) so scripts/trends.test.mjs can check them.
+export const RED_FROM = 0.4
+// bins above red keep the colours they had (gap-2 … gap-6); the pale gap-1 band, which used to start at
+// 0.15, is retired so nothing below red is tinted
+export const gapBins = (red = RED_FROM) => [red, 0.7, 1.0, 1.5, 2.2]
+export const GAP_BINS = gapBins()
+export const GAP_STEPS = [2, 3, 4, 5, 6] // the --gap-N colour of each bin, for legends
+export function gapFill(cell, red = RED_FROM) {
   if (!cell || cell.insufficient || cell.gap == null) return null
+  const bins = gapBins(red)
   const g = cell.gap
   let i = 0
-  while (i < GAP_BINS.length && g >= GAP_BINS[i]) i++
-  return css(`gap-${i}`)
+  while (i < bins.length && g >= bins[i]) i++
+  return css(`gap-${i ? GAP_STEPS[i - 1] : 0}`)
 }
 // a number with exactly d decimals and no grouping, in the interface language's digits and decimal mark
 const fixed = (v, d) => fmtNum(v, { minimumFractionDigits: d, maximumFractionDigits: d, useGrouping: false })
-export function gapLabel(g) {
+export function gapLabel(g, red = RED_FROM) {
   if (g == null) return t('insufficient evidence')
+  if (g < red) return t('about as expected')
   const x = Math.exp(g)
-  if (g < 0.15) return t('covered about as expected or more')
   return t('about {x}× less coverage than expected', { x: x >= 10 ? fixed(Math.round(x), 0) : fixed(x, 1) })
 }
 

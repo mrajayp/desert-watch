@@ -1,8 +1,8 @@
-from datetime import date
+from datetime import date, timedelta
 
 from fastapi import HTTPException
 from sqlalchemy import and_, func, or_, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, aliased
 
 from ..engagement import attach_engagement, by_pickup
 from ..models import Country, Item, ItemRegion, ItemTheme, Outlet, OutletCategory, Region, Theme
@@ -99,7 +99,8 @@ def items_query(s: Session, *, country_id: int, theme_id: int | None, region: Re
 
 def _items_stmt(s: Session, *, country_id: int, theme_id: int | None, region: Region | None, start, end,
                 kinds, outlet_id: int | None, q: str | None, lang: str | None, pairs: set | None = None):
-    stmt = select(Item).where(Item.country_id == country_id, Item.kind.in_(kinds), Item.relevant.is_(True), Item.duplicate_of.is_(None),
+    from ..scoring import counted_items   # the one predicate behind every count (relevant, kept copy, not recurring)
+    stmt = select(Item).where(*counted_items(country_id), Item.kind.in_(kinds),
                               Item.published_at >= start, Item.published_at < end)
     if lang:
         stmt = stmt.where(Item.lang == lang)
@@ -114,10 +115,22 @@ def _items_stmt(s: Session, *, country_id: int, theme_id: int | None, region: Re
     if q:
         stmt = stmt.where(Item.title.ilike(f"%{q}%"))
     if pairs:
+        # the kept copy, or any other copy of the same story, came through a comparable pair: the same
+        # rule as the scores and the Trends bars (scoring.load_stories), so a bar's list adds up to the bar
         by_src: dict[str, list] = {}
         for src, oid in pairs:
             by_src.setdefault(src, []).append(oid)
-        stmt = stmt.where(or_(*(and_(Item.source_key == src, Item.outlet_id.in_(oids)) for src, oids in by_src.items())))
+        copy = aliased(Item)
+
+        def in_pairs(src_col, oid_col):
+            return or_(*(and_(src_col == src, oid_col.in_(oids)) for src, oids in by_src.items()))
+        # a plain IN (subquery), not a correlated EXISTS: duplicate_of has no index, and SQLite then
+        # materialises the set of stories with a comparable copy once instead of scanning per row
+        with_copy = select(copy.duplicate_of).where(copy.duplicate_of.is_not(None), copy.kind == "article",
+                                                    copy.relevant.is_(True), copy.published_at >= start - timedelta(days=2),
+                                                    copy.published_at < end + timedelta(days=2),
+                                                    in_pairs(copy.source_key, copy.outlet_id))
+        stmt = stmt.where(or_(in_pairs(Item.source_key, Item.outlet_id), Item.id.in_(with_copy)))
     return stmt
 
 

@@ -74,9 +74,9 @@ export default function GapPanel({ themeId, regionId, week: weekProp, lens: lens
       </div>
 
       <div className="row" style={{ gap: 24, margin: '14px 0' }}>
-        <div className="stat"><span className="v num">{fmt(c?.coverage ?? d.articles.total)}</span><span className="l">{t('monitored articles')}</span></div>
+        <div className="stat"><span className="v num">{fmt(c?.articles_all ?? c?.coverage ?? d.articles.total)}</span><span className="l">{t('monitored articles')}</span></div>
         <div className="stat"><span className="v num">{fmt(c?.need ?? 0)}</span><span className="l">{lensInfo.unit}</span></div>
-        <div className="stat"><span className="v" style={{ fontSize: 16, maxWidth: 200 }}>{c ? gapLabel(c.insufficient ? null : c.gap) : t('not scored')}</span>
+        <div className="stat"><span className="v" style={{ fontSize: 16, maxWidth: 200 }}>{c ? gapLabel(c.insufficient ? null : c.gap, meta.red_from) : t('not scored')}</span>
           <span className="l">{reference === 'own_history' ? t('vs this theme’s previous 12 weeks') : t('vs comparable cells')}</span></div>
       </div>
       {b.articles_4w != null && b.expected_4w != null && (

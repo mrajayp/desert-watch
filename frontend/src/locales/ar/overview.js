@@ -34,9 +34,10 @@ export default {
   "No theme is clearly falling behind its need signal this week; these are the least covered relative to it.":
     "لا يتأخر أي موضوع بوضوح عن مؤشر الحاجة هذا الأسبوع؛ هذه هي المواضيع الأقل تغطية قياسًا به.",
   "No cells with enough evidence for this lens and week.": "لا توجد خلايا ببيانات كافية لهذه العدسة وهذا الأسبوع.",
-  "{coverage} articles vs {need} {unit} · {gap}": "المقالات: {coverage} مقابل {unit}: {need} · {gap}",
+  "{articles} articles vs {need} {unit} · {gap}": "المقالات: {articles} مقابل {unit}: {need} · {gap}",
+  "{n} from all sources": "{n} من جميع المصادر",
   "Shown to check the ranking isn't only reinforcing itself": "يُعرض هذا للتحقق من أن الترتيب لا يعزّز نفسه فحسب",
-  "exploring": "استكشاف",
+  "Also worth a look": "يستحق نظرة أيضًا",
   "✓ {n} real": "✓ فجوة حقيقية ({n})",
   "someone is on it": "قيد العمل عليه",
   "Arabic vs English coverage": "التغطية بالعربية مقابل الإنجليزية",
@@ -61,7 +62,7 @@ export default {
 
   // charts/Heatmap.jsx
   "Gap by theme and region": "الفجوة حسب الموضوع والمنطقة",
-  "{coverage} articles · {need} {unit}": "المقالات: {coverage} · {unit}: {need}",
+  "{articles} articles · {need} {unit}": "المقالات: {articles} · {unit}: {need}",
   "need": "الحاجة",
   "Team: {votes}": "الفريق: {votes}",
   ", ": "، ",
@@ -71,7 +72,7 @@ export default {
   "No data for this cell": "لا توجد بيانات لهذه الخلية",
   "Under-coverage": "نقص التغطية",
   "insufficient evidence": "بيانات غير كافية",
-  "Number = monitored articles (4 weeks)": "الرقم = المقالات المرصودة (4 أسابيع)",
+  "Number = articles from outlets we followed all year (4 weeks)": "الرقم = مقالات وسائل الإعلام التي تابعناها طوال العام (4 أسابيع)",
   "a journalist marked it a real gap": "صنّفها أحد الصحفيين فجوةً حقيقية",
 
   // charts/GeoNetwork.jsx

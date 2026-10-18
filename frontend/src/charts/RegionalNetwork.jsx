@@ -59,7 +59,7 @@ const EXTENT = { type: 'MultiPoint', coordinates: [[-11, 6], [57, 6], [-11, 55],
 const LIBYA_UNPLACED = [17.0, 34.6] // in the sea north of Sirte: "Libyan outlets, base not set"
 const UNKNOWN = [-6.5, 20.0]         // over the Sahara west: "origin unknown"
 
-export default function RegionalNetwork({ geo, meta, network, cellsByRegion, mode, svgRef, onSelectRegion, minEdge = 1 }) {
+export default function RegionalNetwork({ geo, meta, network, cellsByRegion, mode, svgRef, onSelectRegion, minEdge = 1, red }) { // red: meta.red_from
   const wrap = useRef(null)
   const W = useSize(wrap, 1000)
   const H = Math.round(W * (W < 640 ? 0.95 : 0.62))
@@ -130,7 +130,7 @@ export default function RegionalNetwork({ geo, meta, network, cellsByRegion, mod
   if (!layout) return <div ref={wrap} className="viz"><div className="empty">{t('Loading map…')}</div></div>
   const { path, districts, groups, arcs, wScale, rScale, reach } = layout
   const maxCov = d3.max(districts, (d) => cellsByRegion.get(d.id)?.coverage || 0) || 1
-  const fillFor = (d) => (mode === 'gap' ? gapFill(cellsByRegion.get(d.id)) || 'url(#hatch)' : covFill(cellsByRegion.get(d.id)?.coverage || 0, maxCov)) // i18n-ok: SVG pattern reference, not shown
+  const fillFor = (d) => (mode === 'gap' ? gapFill(cellsByRegion.get(d.id), red) || 'url(#hatch)' : covFill(cellsByRegion.get(d.id)?.coverage || 0, maxCov)) // i18n-ok: SVG pattern reference, not shown
   const curve = (a) => {
     const sx = a.g.x, sy = a.g.y, tx = a.t.x, ty = a.t.y
     const mx = (sx + tx) / 2, my = (sy + ty) / 2, dx = tx - sx, dy = ty - sy

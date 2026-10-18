@@ -1,6 +1,7 @@
 """Gap scoring. One cell per (theme, region, week, lens) over a 4-week rolling window.
 
-  C          = articles in the window, from comparable source|outlet pairs only
+  C          = stories in the window, from comparable source|outlet pairs only (a story found by two
+               routes counts once, and counts when any of its copies' pairs is comparable)
   E          = ref * need                                 # articles the reference expects
   gap        = ln((E + A) / (C + A))                      # > 0: fewer articles than expected
              = ln(ref / shrunk), shrunk = (C + A) / (need + A / ref)
@@ -111,9 +112,100 @@ class CoverageAgg:
     scope: Counter = field(default_factory=Counter)
     alignment: Counter = field(default_factory=Counter)
     source: Counter = field(default_factory=Counter)
-    pairs: Counter = field(default_factory=Counter)   # (source, outlet_id) -> articles
-    late: Counter = field(default_factory=Counter)    # (source, outlet_id) -> articles after the last need day
+    # (frozenset of the story's (source, outlet_id) pairs across its copies, lang) -> stories. A story
+    # counts in a comparison when any copy's pair is comparable (see load_stories).
+    pairs: Counter = field(default_factory=Counter)
+    late: Counter = field(default_factory=Counter)    # same keys -> stories after the last need day
     unplaced: int = 0
+
+
+def counted_in(pairs: Counter, keep: set | frozenset | None) -> int:
+    """Stories in a CoverageAgg.pairs (or .late) counter whose pair set meets `keep` (None: every story)."""
+    return sum(v for (ps, _), v in pairs.items() if keep is None or not keep.isdisjoint(ps))
+
+
+def not_recurring():
+    """SQL: the item is not a recurring post (recurring.mark_recurring sets extra.recurring on daily
+    exchange rates, weather, prayer times...). Part of the counted-item predicate everywhere."""
+    return func.coalesce(func.json_extract(Item.extra, "$.recurring"), 0) == 0
+
+
+def counted_items(country_id: int):
+    """The one predicate behind every count of coverage: relevant, the kept copy of its story, not a
+    recurring post. Used by scoring, the Trends bars, the article lists and the digest."""
+    return (Item.country_id == country_id, Item.relevant.is_(True), Item.duplicate_of.is_(None), not_recurring())
+
+
+@dataclass(slots=True)
+class StoryRow:
+    """One counted story (or one need reading), dated and sourced by its kept copy. ids: every copy."""
+    id: int
+    kind: str
+    published_at: datetime
+    lang: str | None
+    outlet_id: int | None
+    source_key: str
+    value: float
+    themes: frozenset
+    pairs: frozenset
+    ids: tuple
+
+
+COPY_MARGIN = timedelta(days=2)   # a duplicate copy is published within a day of the kept one (dedupe.py)
+
+
+def load_stories(s: Session, country_id: int, start: date, end: date, *, kinds: tuple[str, ...] | None = None,
+                 region_ids: list[int] | None = None) -> list[StoryRow]:
+    """Counted items published in [start, end), one row per story. A story's theme links and
+    source|outlet pairs are the union across its copies: the feed copy is kept (dedupe.py) while the
+    Google News copy's pair may be the one that is comparable over time, and the story must count
+    once whichever copy is kept. Items with no active theme link on any copy are left out. With
+    region_ids, only stories any copy of which is tagged with one of them."""
+    q = (select(Item.id, Item.kind, Item.published_at, Item.lang, Item.outlet_id, Item.source_key, Item.value,
+                ItemTheme.theme_id)
+         .outerjoin(ItemTheme, and_(ItemTheme.item_id == Item.id, ItemTheme.active.is_(True)))
+         .where(*counted_items(country_id), Item.published_at >= _dt(start), Item.published_at < _dt(end)))
+    if kinds:
+        q = q.where(Item.kind.in_(kinds))
+    stories: dict[int, list] = {}
+    for r in s.execute(q):
+        st = stories.get(r.id)
+        if st is None:
+            st = stories[r.id] = [r, set(), set(), [r.id]]   # row, themes, pairs, ids
+        if r.theme_id is not None:
+            st[1].add(r.theme_id)
+    if stories:
+        cq = (select(Item.id, Item.duplicate_of, Item.source_key, Item.outlet_id, ItemTheme.theme_id)
+              .outerjoin(ItemTheme, and_(ItemTheme.item_id == Item.id, ItemTheme.active.is_(True)))
+              .where(Item.country_id == country_id, Item.kind == "article", Item.relevant.is_(True),
+                     Item.duplicate_of.is_not(None), Item.published_at >= _dt(start) - COPY_MARGIN,
+                     Item.published_at < _dt(end) + COPY_MARGIN))
+        for c in s.execute(cq):
+            st = stories.get(c.duplicate_of)
+            if st is None:
+                continue
+            if c.outlet_id is not None:
+                st[2].add((c.source_key, c.outlet_id))
+            if c.theme_id is not None:
+                st[1].add(c.theme_id)
+            if c.id not in st[3]:
+                st[3].append(c.id)
+    placed = None
+    if region_ids is not None:
+        ids = [i for st in stories.values() for i in st[3]]
+        placed = set()
+        for i in range(0, len(ids), 900):   # SQLite's variable limit
+            placed.update(s.scalars(select(ItemRegion.item_id).where(
+                ItemRegion.item_id.in_(ids[i:i + 900]), ItemRegion.region_id.in_(region_ids), ItemRegion.active.is_(True))))
+    out = []
+    for r, themes, pairs, ids in stories.values():
+        if not themes or (placed is not None and placed.isdisjoint(ids)):
+            continue
+        if r.kind == "article" and r.outlet_id is not None:
+            pairs.add((r.source_key, r.outlet_id))
+        out.append(StoryRow(r.id, r.kind, r.published_at, r.lang, r.outlet_id, r.source_key, r.value,
+                            frozenset(themes), frozenset(pairs), tuple(ids)))
+    return out
 
 
 def coverage_flags(cur: CoverageAgg, prev_cov: float, need: float, prev_need: float,
@@ -137,11 +229,13 @@ def coverage_flags(cur: CoverageAgg, prev_cov: float, need: float, prev_need: fl
 
 # ---------------------------------------------------------------- comparable sources
 def pair_spans(s: Session, country_id: int) -> dict[tuple[str, int], tuple[date, date]]:
-    """First and last article day of every source|outlet pair that may count in comparisons over time."""
+    """First and last article day of every source|outlet pair that may count in comparisons over time.
+    Every copy of a story counts here: a Google News pair whose recent copies are all duplicates of the
+    outlet's feed is still collecting, and must not drop out of the whole basis."""
     return {(src, oid): (lo.date(), hi.date()) for src, oid, lo, hi in s.execute(
         select(Item.source_key, Item.outlet_id, func.min(Item.published_at), func.max(Item.published_at))
         .where(Item.country_id == country_id, Item.kind == "article", Item.relevant.is_(True),
-               Item.duplicate_of.is_(None), Item.outlet_id.is_not(None), Item.source_key.not_in(NOT_FOR_TRENDS))
+               Item.outlet_id.is_not(None), Item.source_key.not_in(NOT_FOR_TRENDS))
         .group_by(Item.source_key, Item.outlet_id)).all()}
 
 
@@ -160,8 +254,7 @@ def coverage_start(s: Session, country_id: int) -> date | None:
     """First full week of coverage we can compare over time (cold start): from relevant articles counted
     once, of the sources trends use. Baselines never reach back before it."""
     first = s.scalar(select(func.min(Item.published_at)).where(
-        Item.country_id == country_id, Item.kind == "article", Item.relevant.is_(True), Item.duplicate_of.is_(None),
-        Item.source_key.not_in(NOT_FOR_TRENDS | {"user"})))
+        *counted_items(country_id), Item.kind == "article", Item.source_key.not_in(NOT_FOR_TRENDS | {"user"})))
     return week_start(first.date()) + timedelta(weeks=1) if first else None
 
 
@@ -237,6 +330,14 @@ def need_end_day(s: Session, country_id: int, now: date) -> date | None:
     latest = s.scalar(select(func.max(Item.published_at)).where(
         Item.country_id == country_id, Item.kind == "pageview", Item.published_at < _dt(now + timedelta(days=1))))
     return latest.date() if latest else None
+
+
+def scored_articles(c: CellWeek) -> int:
+    """The count a cell's gap was computed on: stories from comparable source|outlet pairs in its window
+    (breakdown.articles_4w). Pages show it as `articles`, beside `articles_all` (every monitored source)."""
+    b = c.breakdown or {}
+    n = b.get("articles_4w", b.get("scored_coverage"))
+    return int(c.coverage if n is None else n)
 
 
 def latest_complete_week(s: Session, country_id: int, upto: date | None = None, *, reach: int = 12) -> date | None:
@@ -321,25 +422,20 @@ def compute(s: Session, country_id: int, *, weeks: int = 12, today: date | None 
             keeps[wk] = comparable_pairs(None, None, max(lo, cov_start) if cov_start else lo, wk, spans=spans) or None
         return keeps[wk]
 
-    def counted(pairs: Counter, keep: set | None) -> int:
-        return sum(v for k, v in pairs.items() if keep is None or k in keep)
+    counted = counted_in
     themes = s.scalars(select(Theme).where(Theme.active.is_(True))).all()
     dims = _outlet_dims(s)
     capped = capped_pageviews(s, country_id, history_from, last + timedelta(days=7))
 
-    # ---- load items once: (week, theme, region) -> aggregates
-    rows = s.execute(
-        select(Item.id, Item.kind, Item.published_at, Item.lang, Item.outlet_id, Item.source_key, Item.value,
-               ItemTheme.theme_id)
-        .join(ItemTheme, and_(ItemTheme.item_id == Item.id, ItemTheme.active.is_(True)))
-        .where(Item.country_id == country_id, Item.relevant.is_(True), Item.duplicate_of.is_(None),
-               Item.published_at >= _dt(history_from), Item.published_at < _dt(last + timedelta(days=7)))
-    ).all()
-    item_regions: dict[int, list[int]] = defaultdict(list)
-    ids = {r.id for r in rows}
+    # ---- load items once, one row per story: (week, theme, region) -> aggregates
+    rows = load_stories(s, country_id, history_from, last + timedelta(days=7))
+    # a place tag on any copy of a story places the story
+    root_of = {i: r.id for r in rows for i in r.ids}
+    item_regions: dict[int, set[int]] = defaultdict(set)
     for ir in s.scalars(select(ItemRegion).where(ItemRegion.active.is_(True))):
-        if ir.item_id in ids:
-            item_regions[ir.item_id].append(ir.region_id)
+        root = root_of.get(ir.item_id)
+        if root is not None:
+            item_regions[root].add(ir.region_id)
 
     weekly_cov: dict[tuple, CoverageAgg] = defaultdict(CoverageAgg)
     weekly_need: dict[tuple, dict] = defaultdict(lambda: defaultdict(float))  # (wk,theme,region) -> lens -> value
@@ -349,32 +445,36 @@ def compute(s: Session, country_id: int, *, weeks: int = 12, today: date | None 
         day = r.published_at.date()
         wk = week_start(day)
         regs = {national.id}
-        for rid in item_regions.get(r.id, []):
+        for rid in item_regions.get(r.id, ()):
             regs.update(ancestors(rid))
         if r.kind == "article":
             d = dims.get(r.outlet_id, {})
-            pair = (r.source_key, r.outlet_id)
-            for reg in regs:
-                a = weekly_cov[(wk, r.theme_id, reg)]
-                a.total += 1
-                a.lang[r.lang or "und"] += 1
-                a.scope[d.get("scope", "unknown")] += 1
-                a.alignment[d.get("alignment", "unknown")] += 1
-                a.source[r.source_key] += 1
-                a.pairs[pair] += 1
-                if need_end and day > need_end:
-                    a.late[pair] += 1
-                if reg == national.id and not item_regions.get(r.id):
-                    a.unplaced += 1
+            lang = r.lang or "und"
+            key = (r.pairs, lang)
+            late = bool(need_end and day > need_end)
+            for theme_id in r.themes:
+                for reg in regs:
+                    a = weekly_cov[(wk, theme_id, reg)]
+                    a.total += 1
+                    a.lang[lang] += 1
+                    a.scope[d.get("scope", "unknown")] += 1
+                    a.alignment[d.get("alignment", "unknown")] += 1
+                    a.source[r.source_key] += 1
+                    a.pairs[key] += 1
+                    if late:
+                        a.late[key] += 1
+                    if reg == national.id and not item_regions.get(r.id):
+                        a.unplaced += 1
         else:
             v = capped.get(r.id, r.value)
             for lens, cfg in LENSES.items():
                 if r.kind in cfg["kinds"]:
-                    for reg in regs:
-                        k = (wk, r.theme_id, reg)
-                        weekly_need[k][lens] += v
-                        weekly_raw[k][lens] += r.value
-                        weekly_lang[k][lens][r.lang or "und"] += v
+                    for theme_id in r.themes:
+                        for reg in regs:
+                            k = (wk, theme_id, reg)
+                            weekly_need[k][lens] += v
+                            weekly_raw[k][lens] += r.value
+                            weekly_lang[k][lens][r.lang or "und"] += v
 
     def window(wk_end: date, theme_id, region_id):
         agg, need, raw = CoverageAgg(), defaultdict(float), defaultdict(float)
@@ -454,8 +554,17 @@ def compute(s: Session, country_id: int, *, weeks: int = 12, today: date | None 
                                    "in_progress" if ip else "building_baseline")
                     # coverage-drop flag: both windows counted on the same comparable pairs
                     prev_ok = (wk - timedelta(weeks=2 * settings.WINDOW_WEEKS - 1)) >= collection_start
-                    flags = coverage_flags(agg, counted(pagg.pairs, keep) if prev_ok else 0, need[lens], pneed[lens],
-                                           cur_comparable=scored_cov)
+                    prev_scored = counted(pagg.pairs, keep) if prev_ok else None
+                    flags = coverage_flags(agg, prev_scored or 0, need[lens], pneed[lens], cur_comparable=scored_cov)
+                    # the scored stories by language (the all-source split is breakdown.lang)
+                    scored_lang: Counter = Counter()
+                    for (ps, lg), v in agg.pairs.items():
+                        if keep is None or not keep.isdisjoint(ps):
+                            scored_lang[lg] += v
+                    if cut:
+                        for (ps, lg), v in agg.late.items():
+                            if keep is None or not keep.isdisjoint(ps):
+                                scored_lang[lg] -= v
                     if ip:  # a week still coming in always looks like a drop
                         flags = [f for f in flags if f != "coverage_drop"]
                     elif cut:  # judged although its need data never reached the week's end
@@ -463,7 +572,7 @@ def compute(s: Session, country_id: int, *, weeks: int = 12, today: date | None 
                     k = (wk, t.id, rid)
                     need_week = weekly_need.get(k, {}).get(lens, 0.0)
                     wcov = weekly_cov.get(k)
-                    used = {p for p in agg.pairs if keep is None or p in keep}
+                    used = {p for (ps, _) in agg.pairs for p in ps if keep is None or p in keep}
                     s.add(CellWeek(
                         country_id=country_id, theme_id=t.id, region_id=rid, week_start=wk, lens=lens,
                         need=need[lens], coverage=agg.total, ratio=sc.ratio, ref_ratio=sc.ref_ratio, gap=sc.gap,
@@ -471,6 +580,10 @@ def compute(s: Session, country_id: int, *, weeks: int = 12, today: date | None 
                         breakdown={"lang": dict(agg.lang), "scope": dict(agg.scope),
                                    "alignment": dict(agg.alignment), "source": dict(agg.source),
                                    "unplaced": agg.unplaced, "prev_coverage": pagg.total,
+                                   # the previous window on the same comparable pairs (None when it
+                                   # predates collection): what the digest compares articles_4w with
+                                   "prev_scored_coverage": prev_scored,
+                                   "scored_lang": {k: v for k, v in scored_lang.items() if v},
                                    "prev_need": pneed[lens], "reference": cfg["reference"],
                                    "baseline_windows": baseline_windows, "partial_window": partial,
                                    "building_baseline": building,

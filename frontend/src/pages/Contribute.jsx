@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { api } from '../api'
 import { useApp } from '../App'
-import { LENS_TEXT, fmt, gapLabel } from '../charts/scales'
+import { LENS_TEXT, RED_FROM, fmt, gapLabel } from '../charts/scales'
 import AiPanelTask from '../components/AiPanelTask'
 import ArticleRow from '../components/ArticleRow'
 import { LabelForm, NotCounted, ThemePills } from '../components/ThemeLabels'
@@ -28,6 +28,7 @@ export default function Contribute() {
   const regions = new Map(meta.regions.map((r) => [r.id, r]))
   if (!d) return <main className="page"><div className="empty">{t('Loading…')}</div></main>
   const ro = !d.can_contribute
+  const red = meta.red_from ?? RED_FROM // one red threshold on every page: the API's
   const showGap = (g) => { setFilters({ lens: g.lens, week: g.week }); openGap(g.theme_id, g.region_id, { from: 'contribute' }) }
 
   return (
@@ -46,16 +47,20 @@ export default function Contribute() {
       <div className="grid halves" style={{ marginTop: 16 }}>
         <Task n="1" title={t('Is this really a gap?')} why={t('The biggest gaps of the last 4 weeks that nobody has judged yet. Your vote decides whether they stay at the top.')}
           empty={t('No unjudged gaps in the last 4 weeks.')}>
-          {d.gaps.length > 0 && <ul className="list">{d.gaps.map((g) => (
+          {d.gaps.length > 0 && <ul className="list">{d.gaps.map((g) => {
+            // articles = the count the score used; articles_all = every source (coverage until the API sends them)
+            const n = g.articles ?? g.coverage
+            const all = g.articles_all ?? g.coverage
+            return (
             <li key={`${g.theme_id}:${g.region_id}`} className="row" style={{ justifyContent: 'space-between', flexWrap: 'nowrap' }}>
               <div>
                 <b>{nm(themes.get(g.theme_id))}</b> · {nm(regions.get(g.region_id))}
-                <div className="small muted">{gapLabel(g.gap)} · {t('{coverage} articles vs {need} {unit} ({lens} lens, week of {week})', {
-                  coverage: fmt(g.coverage), need: fmt(g.need), unit: LENS_TEXT[g.lens]?.unit ?? '', lens: LENS_TEXT[g.lens]?.label ?? '', week: day(g.week),
-                })}</div>
+                <div className="small muted">{gapLabel(g.gap, red)} · {t('{articles} articles vs {need} {unit} ({lens} lens, week of {week})', {
+                  articles: fmt(n), need: fmt(g.need), unit: LENS_TEXT[g.lens]?.unit ?? '', lens: LENS_TEXT[g.lens]?.label ?? '', week: day(g.week),
+                })}{all != null && all !== n && <span> · {t('{n} from all sources', { n: fmt(all) })}</span>}</div>
               </div>
               <button className="btn small primary" onClick={() => showGap(g)}>{t('Judge')}</button>
-            </li>))}</ul>}
+            </li>) })}</ul>}
         </Task>
 
         <Task n="2" title={t('Know something we missed?')} why={t('Most coverage on Facebook, and anything on Telegram or in print, does not reach us. Adding a link counts it as coverage, so the gap shrinks where it should.')}>

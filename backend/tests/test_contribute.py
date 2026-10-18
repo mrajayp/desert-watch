@@ -28,6 +28,27 @@ def test_contribute_queues_and_tally(client, users, db):
     assert d["mine"]["suggestions"] == 1 and d["my_suggestions"][0]["kind"] == "source"
 
 
+def test_contribute_gaps_start_at_the_red_threshold_and_carry_the_scored_count(client, users, db):
+    from datetime import date
+    from app import settings
+    from app.api.contribute import GAP_MIN
+    from app.models import CellWeek, Region, Theme
+    assert GAP_MIN == settings.GAP_RED_FROM == 0.4
+    c = db.scalar(select(Country))
+    nat = db.scalar(select(Region.id).where(Region.country_id == c.id, Region.level == "national"))
+    t1, t2 = db.scalars(select(Theme.id).where(Theme.active.is_(True)).order_by(Theme.id).limit(2)).all()
+    wk = date(2026, 10, 5)
+    for tid, gap, scored, every in ((t1, 0.3, 9, 15), (t2, 0.5, 7, 12)):   # 0.3: fewer than expected, but not red
+        db.add(CellWeek(country_id=c.id, theme_id=tid, region_id=nat, week_start=wk, lens="audience", need=1000,
+                        coverage=every, gap=gap, insufficient=False, flags=[],
+                        breakdown={"articles_4w": scored, "scored_coverage": scored}))
+    db.commit()
+    login(client, "j@example.org", "journo-password-1")
+    gaps = client.get("/api/contribute").json()["gaps"]
+    assert [g["theme_id"] for g in gaps] == [t2]
+    assert gaps[0]["articles"] == 7 and gaps[0]["articles_all"] == 12 and gaps[0]["coverage"] == 12
+
+
 def test_methods_page_is_admin_only(client, users):
     login(client, "j@example.org", "journo-password-1")
     assert client.get("/api/admin/methods").status_code == 403

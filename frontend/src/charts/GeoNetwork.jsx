@@ -4,7 +4,7 @@
 // Libyan outlets with no known base sit in a strip at the bottom.
 import * as d3 from 'd3'
 import { useMemo, useRef, useState } from 'react'
-import { INFO_FLAGS, DIMENSIONS, categoryColor, categoryOf, covFill, flagText, fmt, gapFill, gapLabel } from './scales'
+import { GAP_STEPS, INFO_FLAGS, DIMENSIONS, categoryColor, categoryOf, covFill, flagText, fmt, gapFill, gapLabel } from './scales'
 import { HatchDefs, useSize, useTooltip } from './util'
 import { countryName } from './RegionalNetwork'
 import { isAr, pick, t, tn } from '../i18n'
@@ -14,7 +14,7 @@ const MARGIN_COL = 0.24
 const confText = (c) => ({ reported: t('reported'), likely: t('likely'), disputed: t('disputed'), unverified: t('unverified') })[c] || c
 
 export default function GeoNetwork({ geo, macroGeo, meta, network, cellsByRegion, colorBy, mode, lang = 'en',
-  selectedRegion, onSelectRegion, onSelectOutlet, svgRef, minEdge = 1 }) {
+  selectedRegion, onSelectRegion, onSelectOutlet, svgRef, minEdge = 1, red }) { // red: meta.red_from
   const wrap = useRef(null)
   const W = useSize(wrap, 900)
   const narrow = W < 640
@@ -93,7 +93,7 @@ export default function GeoNetwork({ geo, macroGeo, meta, network, cellsByRegion
     .flatMap((e) => [e.source, `r:${e.t.id}`])) : null
   const fillFor = (d) => {
     const cell = cellsByRegion.get(d.id)
-    if (mode === 'gap') return gapFill(cell) || 'url(#hatch)' // i18n-ok: SVG pattern reference, not shown
+    if (mode === 'gap') return gapFill(cell, red) || 'url(#hatch)' // i18n-ok: SVG pattern reference, not shown
     return covFill(cell?.coverage || 0, maxCov)
   }
   const districtTip = (evt, d) => {
@@ -106,7 +106,7 @@ export default function GeoNetwork({ geo, macroGeo, meta, network, cellsByRegion
           : <><b>{d.name_en}</b> <span className="ar" dir="rtl">{d.name_ar}</span></>}
         <div className="muted small">{pick(layout.regionById.get(d.parent_id))}</div>
         <div style={{ marginTop: 4 }}>{t('{count} articles name this district (4 weeks)', { count: fmt(cell?.coverage || 0) })}</div>
-        {mode === 'gap' && <div>{cell ? gapLabel(cell.insufficient ? null : cell.gap) : t('no need data')}</div>}
+        {mode === 'gap' && <div>{cell ? gapLabel(cell.insufficient ? null : cell.gap, red) : t('no need data')}</div>}
         <div>{inc ? tn(inc.n, '{n} outlet shown covering it', '{n} outlets shown covering it') : (cell?.coverage ? t('Links below the minimum are hidden') : t('No monitored outlet covers this district'))}</div>
         {(cell?.flags || []).map((f) => <div key={f} className={INFO_FLAGS.has(f) ? "pill" : "pill flag"} style={{ marginTop: 3 }}>{flagText(f)}</div>)}
       </div>), wrap.current)
@@ -202,7 +202,7 @@ export function GeoLegend({ mode, colorBy, present }) {
   return (
     <div className="legend" aria-label={t('Legend')}>
       {mode === 'gap' ? (
-        <span>{t('District: under-coverage')} <span className="ramp">{[1, 2, 3, 4, 5, 6].map((i) => <span key={i} style={{ background: `var(--gap-${i})` }} />)}</span>
+        <span>{t('District: under-coverage')} <span className="ramp">{GAP_STEPS.map((i) => <span key={i} style={{ background: `var(--gap-${i})` }} />)}</span>
           <span className="muted"> {t('more →')}</span></span>
       ) : (
         <span>{t('District: articles naming it')} <span className="ramp">{[1, 2, 3, 4, 5].map((i) => <span key={i} style={{ background: `var(--cov-${i})` }} />)}</span></span>

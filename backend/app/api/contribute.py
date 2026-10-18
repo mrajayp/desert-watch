@@ -6,24 +6,24 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import and_, exists, func, not_, select
 from sqlalchemy.orm import Session
 
-from .. import auth
+from .. import auth, settings
 from ..db import get_db
 from ..models import (ArticleAssessment, CellWeek, Comment, Event, GapClaim, GapVote, Item, ItemRegion, ItemTheme,
                       Outlet, OutletCategory, Suggestion, User, utcnow)
+from ..scoring import counted_items, scored_articles
 from .common import country_or_404, hydrate_items, outlet_categories
 
 router = APIRouter(prefix="/api")
 
 RECENT_DAYS = 14
-GAP_MIN = 0.15  # same threshold as the UI's "less coverage than expected" label (charts/scales.js gapLabel)
+GAP_MIN = settings.GAP_RED_FROM  # the one red threshold every page uses (/api/meta red_from)
 
 
 @router.get("/contribute")
 def contribute(country: str = "LY", s: Session = Depends(get_db), u: User = Depends(auth.current_user)):
     c = country_or_404(s, country)
     since = utcnow() - timedelta(days=RECENT_DAYS)
-    recent = and_(Item.country_id == c.id, Item.kind == "article", Item.relevant.is_(True), Item.duplicate_of.is_(None), Item.published_at >= since,
-                  Item.added_by.is_(None))
+    recent = and_(*counted_items(c.id), Item.kind == "article", Item.published_at >= since, Item.added_by.is_(None))
     # correlated EXISTS uses the (item_id, ...) primary keys; IN (subquery) scanned whole tables
     has_theme = exists().where(ItemTheme.item_id == Item.id, ItemTheme.active.is_(True))
     has_region = exists().where(ItemRegion.item_id == Item.id, ItemRegion.active.is_(True))
@@ -42,8 +42,11 @@ def contribute(country: str = "LY", s: Session = Depends(get_db), u: User = Depe
             if (cell.theme_id, cell.region_id, cell.week_start) in voted or any(
                     g["theme_id"] == cell.theme_id and g["region_id"] == cell.region_id for g in gaps):
                 continue
+            # articles: the scored count the gap used; articles_all: every monitored source (= coverage,
+            # kept for one release)
             gaps.append({"theme_id": cell.theme_id, "region_id": cell.region_id, "lens": cell.lens, "gap": cell.gap,
-                         "week": cell.week_start.isoformat(), "coverage": cell.coverage, "need": cell.need,
+                         "week": cell.week_start.isoformat(), "articles": scored_articles(cell),
+                         "articles_all": int(cell.coverage), "coverage": cell.coverage, "need": cell.need,
                          "flags": cell.flags})
             if len(gaps) == 6:
                 break

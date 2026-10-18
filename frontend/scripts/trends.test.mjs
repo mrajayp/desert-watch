@@ -3,8 +3,41 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import * as d3 from 'd3'
 import { LENS_NEED, SEARCH_FEW, lensNeed, trendGroups, levelLegend, needLine, noSearchData, reasonText, shortfall, stepPath, usualLine, verdict, weekEnd, weekRange, yScale } from '../src/charts/trendText.js'
+import { GAP_BINS, GAP_STEPS, RED_FROM, gapBins, gapFill, gapLabel } from '../src/charts/scales.js'
 
 const need = LENS_NEED.audience
+
+test('one red threshold: colour and label start at red_from on every page', () => {
+  // the fallback mirrors settings.GAP_RED_FROM; pages pass meta.red_from
+  assert.equal(RED_FROM, 0.4)
+  assert.equal(GAP_BINS[0], RED_FROM)
+  assert.deepEqual(gapBins(0.3), [0.3, 0.7, 1.0, 1.5, 2.2])
+  assert.equal(GAP_STEPS.length, gapBins().length)
+  // below red: neutral and "about as expected", so the old 0.15 band is no longer tinted
+  assert.equal(gapFill({ gap: 0.2 }), 'var(--gap-0)')
+  assert.equal(gapFill({ gap: 0.39 }, 0.4), 'var(--gap-0)')
+  assert.equal(gapLabel(0.39, 0.4), 'about as expected')
+  assert.equal(gapLabel(-0.5), 'about as expected')
+  // from red: the first red step and a multiple, like the Trends pill
+  assert.equal(gapFill({ gap: 0.4 }, 0.4), 'var(--gap-2)')
+  assert.equal(gapLabel(0.4, 0.4), 'about 1.5× less coverage than expected')
+  assert.equal(shortfall(0.4, 0.4), 'About 1.5 times fewer articles than usual')
+  // the threshold is the argument, not a constant
+  assert.equal(gapFill({ gap: 0.4 }, 0.5), 'var(--gap-0)')
+  assert.equal(gapLabel(0.4, 0.5), 'about as expected')
+  assert.equal(gapFill({ gap: 0.3 }, 0.25), 'var(--gap-2)')
+  // the steps above red keep their colours
+  assert.equal(gapFill({ gap: 0.7 }), 'var(--gap-3)')
+  assert.equal(gapFill({ gap: 1.0 }), 'var(--gap-4)')
+  assert.equal(gapFill({ gap: 1.5 }), 'var(--gap-5)')
+  assert.equal(gapFill({ gap: 2.2 }), 'var(--gap-6)')
+  assert.equal(gapLabel(2.5), 'about 12× less coverage than expected')
+  // not judged
+  assert.equal(gapFill({ gap: 0.9, insufficient: true }), null)
+  assert.equal(gapFill({ gap: null }), null)
+  assert.equal(gapFill(null), null)
+  assert.equal(gapLabel(null), 'insufficient evidence')
+})
 const row = (o) => ({ week: '2026-10-05', articles: 105, articles_all: 148, gap: 0.04, insufficient: false, in_progress: false,
   articles_4w: 238, expected_4w: 248.38, reason: null, ...o })
 

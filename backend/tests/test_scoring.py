@@ -5,7 +5,7 @@ from sqlalchemy import select
 
 from app.ingest import load_rules, store_article
 from app.models import CellWeek, Item, ItemTheme, Outlet, OutletCategory
-from app.scoring import CoverageAgg, compute, coverage_flags, score_cell, week_start
+from app.scoring import CoverageAgg, compute, counted_in, coverage_flags, score_cell, week_start
 from tests.conftest import ids
 
 
@@ -29,6 +29,17 @@ def test_shrinkage_pulls_small_cells_to_reference():
     small = score_cell(coverage=0, need=10, ref_ratio=0.5)
     big = score_cell(coverage=0, need=500, ref_ratio=0.5)
     assert 0 < small.gap < big.gap
+
+
+def test_stories_count_once_when_any_copy_is_comparable():
+    """CoverageAgg.pairs is keyed by the set of (source, outlet) pairs across a story's copies."""
+    pairs = Counter({(frozenset({("gnews", 1)}), "ar"): 3,                       # Google News only
+                     (frozenset({("rss", 1), ("gnews", 1)}), "ar"): 2,           # found by both routes
+                     (frozenset({("rss", 2)}), "en"): 4})                        # a feed that started this month
+    assert counted_in(pairs, {("gnews", 1)}) == 5                                # the two-route stories count once
+    assert counted_in(pairs, {("rss", 1)}) == 2
+    assert counted_in(pairs, {("rss", 2), ("gnews", 1)}) == 9
+    assert counted_in(pairs, set()) == 0 and counted_in(pairs, None) == 9        # None: nothing qualifies, count every story
 
 
 def test_flags():
@@ -80,6 +91,11 @@ def test_compute_end_to_end_audience_and_partisan(db):
     assert last.gap is not None and last.gap > 0.5          # coverage collapsed vs its own history
     assert mid.gap is not None and abs(mid.gap) < 0.3        # steady state
     assert "coverage_drop" in last.flags
+    # the previous window on the same comparable pairs, and the scored stories by language
+    assert mid.breakdown["articles_4w"] == 20 and mid.breakdown["prev_scored_coverage"] == 20
+    assert mid.breakdown["scored_lang"] == {"en": 20} and mid.breakdown["lang"] == {"en": 20}
+    assert last.breakdown["articles_4w"] == 0 and last.breakdown["prev_scored_coverage"] == 20
+    assert last.breakdown["scored_lang"] == {}
     # 'Sabha' in titles puts coverage on the district, but no lens has regional need data yet,
     # and the audience lens is national-only: so regional cells exist but are all insufficient.
     sabha_cells = db.scalars(select(CellWeek).where(CellWeek.region_id == regions["sabha"])).all()

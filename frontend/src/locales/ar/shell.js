@@ -127,7 +127,7 @@ export default {
 
   // charts/scales.js: gap wording
   'insufficient evidence': 'بيانات غير كافية',
-  'covered about as expected or more': 'تغطية بالقدر المتوقع تقريبًا أو أكثر',
+  'about as expected': 'في حدود المتوقع',
   'about {x}× less coverage than expected': 'تغطية أقل من المتوقع بنحو {x} مرة',
 
   // charts/scales.js: outlet dimensions (adjectives agree with وسيلة إعلامية)

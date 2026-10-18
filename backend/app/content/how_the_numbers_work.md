@@ -8,7 +8,7 @@ An article counts as coverage when it mentions Libya or a Libyan place, or comes
 
 Articles come from Google News searches, outlet news feeds, Google Alerts, YouTube channels, social media posts that Google indexes and the historical backfill. People can also add them. Every article counts once, whatever its source.
 
-The same story often reaches us twice. Google News gives us its own link, and the outlet's feed or the backfill gives the real one. So we look for articles from the same outlet, published within a day of each other, with almost the same headline. We count one copy and keep the outlet's own link. The others are kept but left out of every number. A Facebook page or YouTube channel that the outlet's website links to counts as the same outlet here, and we keep the website's copy.
+The same story often reaches us twice. Google News gives us its own link, and the outlet's feed or the backfill gives the real one. So we look for articles from the same outlet, published within a day of each other, with almost the same headline. We count one copy and keep the outlet's own link. The others are kept but left out of every number. A story found by two routes, say Google News and the outlet's feed, counts once, and it counts in the comparisons over time when either route is one we compare. A Facebook page or YouTube channel that the outlet's website links to counts as the same outlet here, and we keep the website's copy.
 
 Coverage also goes up whenever we add a source. The Trends charts and every gap score allow for this. The monthly bars don't.
 
@@ -147,7 +147,7 @@ The Ask an AI assistant task gives this week's questions for the AI answers audi
 
 ## Weekly digest
 
-Once a week we work out the facts here first. These are the biggest gaps with their flags, plus a few headlines. Only those facts go to the AI model, and it is told to use no number that is not in them. The facts are saved with the text so any claim can be checked. It needs the Anthropic key to run. The digest covers the week that ended on Sunday. Wikipedia gives us Sunday's page views a day or two late. If they are not in on Monday morning, that run covers the latest complete week instead, which usually has its digest already. The digest then tries again each morning up to Thursday, and on Thursday it goes ahead with what it has.
+Once a week we work out the facts here first. These are the biggest gaps with their flags, and the article count for each theme in this window and the one before it, counted the way the gaps count (the outlets and routes we monitored across the whole compared period) beside the count from every source. No headlines go to the model. Only those facts go to the AI model, and it is told to use no number that is not in them. The facts are saved with the text so any claim can be checked. It needs the Anthropic key to run. The digest covers the week that ended on Sunday. Wikipedia gives us Sunday's page views a day or two late. If they are not in on Monday morning, that run covers the latest complete week instead, which usually has its digest already. The digest then tries again each morning up to Thursday, and on Thursday it goes ahead with what it has.
 
 ## Engagement
 

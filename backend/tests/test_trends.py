@@ -457,6 +457,50 @@ def test_trends_payload_matches_scores_and_article_lists(client, users, db):
     assert client.get("/api/cells", params={"lens": "audience"}).json()["week"] == rows[-2]["week"]
 
 
+def test_a_story_whose_other_copy_came_through_a_new_route_is_not_counted_twice(client, users, db):
+    """The reverse of the dedupe->scoring twin in test_dedupe_stable: the kept feed copy's pair is the
+    comparable one and Google News (new this month, not comparable) finds the same stories. The bars,
+    the 4-week count and the bar's article list all count each story once."""
+    from app.dedupe import mark_duplicates
+    themes, regions = ids(db)
+    cid = _country(db)
+    rules = load_rules(db, cid)
+    today = date(2026, 10, 12)
+    vary = ("worsen", "ease", "persist", "return", "spread", "continue", "deepen")
+    for w in range(60):
+        mon = week_start(today) - timedelta(weeks=w)
+        _pageviews(db, cid, themes["health"], mon, 2000)
+        store_article(db, cid, rules, url=f"https://old.ly/s/{w}", title=f"Hospital shortages in Sabha leave patients waiting as they {vary[w % 7]}",
+                      published_at=_at(mon), source_key="rss")
+        if w < 3:
+            store_article(db, cid, rules, url=f"https://news.google.com/rss/articles/s{w}", outlet_domain="old.ly",
+                          title=f"Hospital shortages in Sabha leave patients waiting as they {vary[w % 7]} - Old",
+                          published_at=_at(mon, 11), source_key="gnews")
+    db.commit()
+    assert mark_duplicates(db) == 3
+    compute(db, cid, weeks=56, today=today + timedelta(days=7))
+    cell = db.scalar(select(CellWeek).where(CellWeek.theme_id == themes["health"], CellWeek.region_id == regions["national"],
+                                            CellWeek.lens == "audience", CellWeek.week_start == week_start(today)))
+    assert cell.coverage == 4 and cell.breakdown["articles_4w"] == 4 and cell.breakdown["scored_sources"] == ["rss"]
+    assert abs(cell.gap) < 0.2
+    login(client, "admin@example.org", "admin-password-1")
+    r = client.get("/api/cells/trends", params={"lens": "audience"}).json()
+    assert r["basis"]["sources"] == ["rss"] and r["basis"]["outlets"] == 1
+    rows = r["themes"][str(themes["health"])]["rows"]
+    for x in rows[-4:-1]:
+        assert x["articles"] == 1 and x["articles_all"] == 1
+        wk = date.fromisoformat(x["week"])
+        params = {"theme_id": themes["health"], "start": wk.isoformat(), "end": (wk + timedelta(days=6)).isoformat()}
+        assert client.get("/api/items", params={**params, "basis": "trend"}).json()["total"] == 1
+    # the comparable set still reads the copies: the Google News pair spans only its three weeks
+    spans = pair_spans(db, cid)
+    assert spans[("gnews", cell_outlet(db, "old.ly"))][0] == week_start(today) - timedelta(weeks=2)
+
+
+def cell_outlet(db, domain):
+    return db.scalar(select(Outlet.id).where(Outlet.domain == domain))
+
+
 def test_coverage_monthly_by_source_and_partial_month(client, users, db):
     themes, _ = ids(db)
     cid = _country(db)

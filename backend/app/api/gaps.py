@@ -12,7 +12,8 @@ from ..db import get_db
 from ..ingest import load_rules, store_article
 from ..models import (CellWeek, Comment, CoverageSeries, GapClaim, GapVote, Item, ItemRegion, ItemTheme, Region,
                       SourceRun, Suggestion, Theme, User, utcnow)
-from ..scoring import LENSES, TREND_WEEKS, latest_complete_week, need_floor, trend_basis, week_start
+from ..scoring import (LENSES, TREND_WEEKS, latest_complete_week, load_stories, need_floor, scored_articles, trend_basis,
+                       week_start)
 from .social import counted
 from .common import (country_or_404, descendants, hydrate_items, items_query, region_or_404, theme_or_404,
                      window_bounds)
@@ -136,8 +137,11 @@ def sources_health(s: Session = Depends(get_db), _: User = Depends(auth.current_
 
 def _cell_json(c: CellWeek) -> dict:
     b = c.breakdown or {}
+    # articles: the scored count (what the gap used); articles_all: every monitored source. `coverage`
+    # is articles_all, kept for one release while the pages move to the two names.
     return {"theme_id": c.theme_id, "region_id": c.region_id, "week": c.week_start.isoformat(), "lens": c.lens,
-            "need": c.need, "coverage": c.coverage, "ratio": c.ratio, "ref_ratio": c.ref_ratio, "gap": c.gap,
+            "need": c.need, "articles": scored_articles(c), "articles_all": int(c.coverage), "coverage": c.coverage,
+            "ratio": c.ratio, "ref_ratio": c.ref_ratio, "gap": c.gap,
             "insufficient": c.insufficient, "flags": c.flags, "breakdown": c.breakdown,
             "reason": b.get("reason"), "in_progress": bool(b.get("in_progress"))}
 
@@ -208,24 +212,18 @@ def all_series(country: str = "LY", lens: str = "audience", region_id: int | Non
         return out
     (first, end, span_start), pairs = trend_basis(s, c.id, current)
     weeks = [first + timedelta(weeks=i) for i in range((current - first).days // 7 + 1)]
-    # weekly article counts per theme in one query: every source, and the comparable pairs
-    wk = func.date(Item.published_at, "-6 days", "weekday 1")
-    q = (select(ItemTheme.theme_id, wk, Item.source_key, Item.outlet_id, func.count(Item.id))
-         .join(ItemTheme, and_(ItemTheme.item_id == Item.id, ItemTheme.active.is_(True)))
-         .where(Item.country_id == c.id, Item.kind == "article", Item.relevant.is_(True), Item.duplicate_of.is_(None),
-                Item.published_at >= datetime.combine(first - timedelta(weeks=settings.WINDOW_WEEKS - 1),
-                                                      datetime.min.time()),
-                Item.published_at < datetime.combine(current + timedelta(days=7), datetime.min.time()))
-         .group_by(ItemTheme.theme_id, wk, Item.source_key, Item.outlet_id))
-    if region.level != "national":
-        q = q.where(Item.id.in_(select(ItemRegion.item_id).where(
-            ItemRegion.region_id.in_(descendants(s, region)), ItemRegion.active.is_(True))))
+    # weekly story counts per theme: every source, and the comparable pairs. The same grouping as the
+    # scores (scoring.load_stories): a story counts once, and in the comparable count when any of
+    # its copies' source|outlet pairs is in the basis
+    stories = load_stories(s, c.id, first - timedelta(weeks=settings.WINDOW_WEEKS - 1), current + timedelta(days=7),
+                           kinds=("article",), region_ids=None if region.level == "national" else descendants(s, region))
     comp, every = Counter(), Counter()
-    for tid, w, src, oid, n in s.execute(q):
-        key = (tid, date.fromisoformat(w))
-        every[key] += n
-        if not pairs or (src, oid) in pairs:
-            comp[key] += n
+    for st in stories:
+        w = week_start(st.published_at.date())
+        for tid in st.themes:
+            every[(tid, w)] += 1
+            if not pairs or not pairs.isdisjoint(st.pairs):
+                comp[(tid, w)] += 1
     cells = s.scalars(select(CellWeek).where(CellWeek.country_id == c.id, CellWeek.region_id == region.id,
                                              CellWeek.lens == lens, CellWeek.week_start >= span_start)).all()
     by_cell = {(x.theme_id, x.week_start): x for x in cells}

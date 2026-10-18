@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 from . import settings
 from .models import (CellWeek, Comment, Country, Digest, GapClaim, GapVote, Item, ItemRegion, ItemTheme, Region,
                      Theme, utcnow)
-from .scoring import LENSES, latest_complete_week, week_start
+from .scoring import LENSES, counted_items, latest_complete_week, scored_articles, week_start
 
 log = logging.getLogger("desert_watch.digest")
 
@@ -75,6 +75,15 @@ SEARCH_LIMIT = ("search lens: need is a Google Trends index of searches from Lib
                 "It does not show that nobody reported the subject")
 
 
+# What the article counts are, so a new route into the data is never read as a rise in coverage.
+COUNTS_LIMIT = ("articles and previous_window count stories from the outlets and routes monitored across the whole "
+                "compared period (the counts the gaps use); articles_all and previous_window_all count every monitored "
+                "source, so they rise whenever a feed or social route is added. A story found by two routes counts once. "
+                "Recurring posts (daily rates, weather) are left out")
+UNSCORED_LIMIT = ("this week has no scores, so articles and previous_window count every monitored source and rise "
+                  "whenever a feed or social route is added")
+
+
 def build_facts(s: Session, country: Country, week: date) -> dict:
     themes = {t.id: t for t in s.scalars(select(Theme).where(Theme.active.is_(True)))}
     regions = {r.id: r for r in s.scalars(select(Region).where(Region.country_id == country.id))}
@@ -83,25 +92,46 @@ def build_facts(s: Session, country: Country, week: date) -> dict:
     win_start = win_end - timedelta(weeks=settings.WINDOW_WEEKS)
     prev_start = win_start - timedelta(weeks=settings.WINDOW_WEEKS)
 
+    # coverage per theme: the scored counts (stories from comparable source|outlet pairs, the ones the
+    # gaps use) from the week's national cells, beside the all-source counts, and the previous window
+    # on the same pairs. Both windows then count the same outlets, so a new feed or social route does
+    # not read as a rise. A week that was never scored falls back to all-source counts and says so.
+    nat_cells = s.scalars(select(CellWeek).where(CellWeek.country_id == country.id, CellWeek.week_start == week,
+                                                 CellWeek.region_id == national.id)).all()
+    by_theme: dict[int, CellWeek] = {}
+    for cell in nat_cells:   # prefer a lens that counts the whole week (a daily lens cuts coverage at its last need day)
+        cur = by_theme.get(cell.theme_id)
+        if cur is None or (LENSES[cur.lens].get("daily") and not LENSES[cell.lens].get("daily")):
+            by_theme[cell.theme_id] = cell
+    scored = bool(by_theme)
+
     def counts(start, end):
         rows = s.execute(select(ItemTheme.theme_id, Item.lang, func.count(Item.id))
                          .join(Item, Item.id == ItemTheme.item_id)
-                         .where(Item.country_id == country.id, Item.kind == "article", Item.relevant.is_(True), Item.duplicate_of.is_(None),
-                                ItemTheme.active.is_(True), Item.published_at >= start, Item.published_at < end)
+                         .where(*counted_items(country.id), Item.kind == "article", ItemTheme.active.is_(True),
+                                Item.published_at >= start, Item.published_at < end)
                          .group_by(ItemTheme.theme_id, Item.lang)).all()
         out = defaultdict(Counter)
         for tid, lang, n in rows:
             out[tid][lang or "und"] += n
         return out
 
-    now, prev = counts(win_start, win_end), counts(prev_start, win_start)
+    now, prev = (counts(win_start, win_end), counts(prev_start, win_start)) if not scored else ({}, {})
     coverage = []
     for tid, t in themes.items():
-        c, p = now.get(tid, Counter()), prev.get(tid, Counter())
-        total = sum(c.values())
-        coverage.append({"theme": t.name_en, "group": t.group or "general", "articles": total,
-                         "arabic": c.get("ar", 0), "english": c.get("en", 0),
-                         "previous_window": sum(p.values())})
+        cell = by_theme.get(tid)
+        if cell is not None:
+            b = cell.breakdown or {}
+            langs = b.get("scored_lang") or {}
+            coverage.append({"theme": t.name_en, "group": t.group or "general", "articles": scored_articles(cell),
+                             "articles_all": int(cell.coverage), "arabic": langs.get("ar", 0), "english": langs.get("en", 0),
+                             "previous_window": b.get("prev_scored_coverage"), "previous_window_all": b.get("prev_coverage")})
+        else:
+            c, p = now.get(tid, Counter()), prev.get(tid, Counter())
+            total = sum(c.values())
+            coverage.append({"theme": t.name_en, "group": t.group or "general", "articles": total, "articles_all": total,
+                             "arabic": c.get("ar", 0), "english": c.get("en", 0),
+                             "previous_window": sum(p.values()), "previous_window_all": sum(p.values())})
 
     # scored gaps for every lens that has data this week
     gaps = []
@@ -112,7 +142,8 @@ def build_facts(s: Session, country: Country, week: date) -> dict:
             gaps.append({"theme": themes[cell.theme_id].name_en if cell.theme_id in themes else "?",
                          "region": regions[cell.region_id].name_en, "lens": lens, "gap": round(cell.gap, 2),
                          "times_less_coverage_than_expected": round(2.718281828 ** cell.gap, 1),
-                         "articles": int(cell.coverage), "need": round(cell.need), "flags": cell.flags})
+                         "articles": scored_articles(cell), "articles_all": int(cell.coverage),
+                         "need": round(cell.need), "flags": cell.flags})
     gaps.sort(key=lambda g: -g["gap"])
 
     # districts: articles naming each one in the window (all themes, and gender only)
@@ -120,7 +151,7 @@ def build_facts(s: Session, country: Country, week: date) -> dict:
     rows = s.execute(select(ItemRegion.region_id, ItemTheme.theme_id, func.count(func.distinct(Item.id)))
                      .join(Item, Item.id == ItemRegion.item_id)
                      .join(ItemTheme, and_(ItemTheme.item_id == Item.id, ItemTheme.active.is_(True)))
-                     .where(Item.country_id == country.id, Item.kind == "article", Item.relevant.is_(True), Item.duplicate_of.is_(None),
+                     .where(*counted_items(country.id), Item.kind == "article",
                             ItemRegion.active.is_(True), Item.published_at >= win_start, Item.published_at < win_end)
                      .group_by(ItemRegion.region_id, ItemTheme.theme_id)).all()
     by_district, gender_by_district = Counter(), Counter()
@@ -157,6 +188,7 @@ def build_facts(s: Session, country: Country, week: date) -> dict:
         "flags_this_week": dict(flags),
         "team_activity_this_week": {"gap_votes": dict(votes), "claims": dict(claims), "comments": comments or 0},
         "known_limits": ["monitored coverage only (Facebook only as the sample of posts Google indexes, no Telegram)",
+                         COUNTS_LIMIT if scored else UNSCORED_LIMIT,
                          "event and humanitarian need data are pending source keys" if not
                          {"events", "humanitarian"} & {g["lens"] for g in gaps} else "",
                          "most articles name no district",
