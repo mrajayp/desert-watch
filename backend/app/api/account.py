@@ -249,4 +249,9 @@ def delete_me(response: Response, u: User = Depends(auth.current_user), s: Sessi
 
 @router.post("/events")
 def post_events(body: EventsIn, u: User = Depends(auth.current_user), s: Session = Depends(get_db)):
+    """Implicit events (views, clicks, dwell) are kept only once the person has acknowledged the
+    tracking notice (PATCH /api/me ack_tracking_notice); before that they are dropped, whatever the
+    client sends. Explicit actions are logged by their own endpoints and are not affected."""
+    if u.tracking_notice_ack_at is None:
+        return {"stored": 0}
     return {"stored": record_events(s, u, body.session_id, body.events)}

@@ -77,9 +77,10 @@ def test_vote_and_labels(client, users, db):
 
 
 def test_implicit_events_recorded_and_filtered(client, users, db):
-    """Opt-out removed 2026-10-13 (owner decision): implicit events are always stored; unknown
-    event types are still dropped."""
+    """Opt-out removed 2026-10-13 (owner decision): implicit events are stored once the tracking
+    notice has been acknowledged; unknown event types are still dropped."""
     login(client, "j@example.org", "journo-password-1")
+    assert client.patch("/api/me", json={"ack_tracking_notice": True}).json()["tracking_notice_ack"] is True
     evs = [{"type": "impression", "object_type": "gap", "object_key": "1:1", "context": {"position": 3}},
            {"type": "dwell", "object_type": "gap", "object_key": "1:1", "context": {"seconds": 30}},
            {"type": "evil", "object_key": "x"}]
@@ -87,6 +88,23 @@ def test_implicit_events_recorded_and_filtered(client, users, db):
     assert "tracking_opt_out" not in client.patch("/api/me", json={"tracking_opt_out": True}).json()  # field gone
     assert client.post("/api/events", json={"events": evs}).json()["stored"] == 2
     assert client.post("/api/events", json={"events": [{"type": "comment"}]}).json()["stored"] == 1
+
+
+def test_events_dropped_until_the_tracking_notice_is_acknowledged(client, users, db):
+    """Tracking starts only after the notice (B-R1.10): before the ack, /api/events keeps nothing,
+    whatever the client sends; explicit actions (a vote) are still logged by their own endpoint."""
+    themes, regions = ids(db)
+    login(client, "j@example.org", "journo-password-1")
+    assert client.get("/api/me").json()["tracking_notice_ack"] is False
+    evs = [{"type": "view", "object_type": "page", "object_key": "/"},
+           {"type": "click", "object_type": "gap", "object_key": "1:1"}]
+    assert client.post("/api/events", json={"events": evs}).json()["stored"] == 0
+    assert db.scalar(select(Event).where(Event.type.in_(("view", "click")))) is None
+    body = {"theme_id": themes["health"], "region_id": regions["fezzan"], "week": "2026-10-05", "lens": "events", "vote": "real"}
+    assert client.post("/api/gap/vote", json=body).status_code == 200
+    assert client.patch("/api/me", json={"ack_tracking_notice": True}).json()["tracking_notice_ack"] is True
+    assert client.post("/api/events", json={"events": evs}).json()["stored"] == 2
+    assert db.scalar(select(Event).where(Event.type == "view")) is not None
 
 
 def test_correction_and_comment(client, users, db):
@@ -133,7 +151,8 @@ def test_category_requires_evidence_and_keeps_history(client, users, db):
 
 def test_delete_account(client, users, db):
     login(client, "j@example.org", "journo-password-1")
-    client.post("/api/events", json={"events": [{"type": "click", "object_key": "x"}]})
+    client.patch("/api/me", json={"ack_tracking_notice": True})
+    assert client.post("/api/events", json={"events": [{"type": "click", "object_key": "x"}]}).json()["stored"] == 1
     assert client.delete("/api/me").status_code == 200
     assert client.get("/api/me").status_code == 401
     assert db.scalar(select(Event)) is None
