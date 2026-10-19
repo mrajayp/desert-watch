@@ -182,6 +182,14 @@ with the scheduler paused.
    convoy activists as gender themes. Replacing it with "women activists" (already a gender_pp term) is a
    term-list change, so an owner decision. The theme model's veto gates still apply where open.
 
+Production run, 2026-10-19 (Fly v45, scheduler paused 07:19-08:03 UTC, steps from
+`/data/imports/a_r2_9_2026-10-19/`): retag-all 07:22-07:37, 78,214 articles, 884 links added or changed,
+relevance flipped on 13; classify-items --all 07:37-07:46, 57,782 items scored by theme-20261018-103335,
+6 links changed (economy -1, health -2, governance -2 +1); recompute 07:46-08:01, 51,756 cells written;
+ANALYZE 08:01. The GDELT history line was refreshed right after (`collect gdelt_timeline`, log in the same
+folder). The register run of the same morning (`label-scopes --apply`, `discover-feeds --limit 60`) is
+under the previous section.
+
 ## Backups
 
 Every night at 01:15 UTC the app writes a compact copy of the database with `VACUUM INTO`, checks it
