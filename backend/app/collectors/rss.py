@@ -2,7 +2,7 @@
 theme are kept."""
 import calendar
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 
 import feedparser
 from sqlalchemy import select
@@ -20,6 +20,11 @@ YOUTUBE_FEED = "youtube.com/feeds/videos.xml"
 YOUTUBE_TRIES = 3
 YOUTUBE_BACKOFF = 3.0       # seconds, doubled after each failed try
 YOUTUBE_FAILED_RUNS = 3     # a channel feed counts as an error only after this many failed runs in a row
+# An outlet feed that fails this many runs in a row is paused (external.feed_paused): the hourly run
+# skips it, so a dead feed no longer costs a request and an error line every hour. The nightly feed
+# discovery (feeds.py) tries a paused feed again after a fortnight and unpauses it when it reads
+# cleanly; an admin who sets a new address clears the pause (api/outlets.py).
+FEED_PAUSE_AFTER = 10
 
 
 def _youtube_feed(client, url: str, tries: int = YOUTUBE_TRIES):
@@ -62,23 +67,43 @@ def _feed_outlets(s: Session, youtube: bool) -> list[Outlet]:
 
 def collect(s: Session) -> RunResult:
     """Outlet websites' own feeds. YouTube channels run as their own collector (collect_youtube),
-    so a YouTube outage shows on its own line in source health."""
+    so a YouTube outage shows on its own line in source health. A feed that fails FEED_PAUSE_AFTER
+    runs in a row is paused and skipped from then on (see FEED_PAUSE_AFTER)."""
     res = RunResult()
     errors = []
     rules_by_country = {}
+    paused = 0
     with http_client() as client:
         for o in _feed_outlets(s, youtube=False):
+            ext = o.external or {}
+            if ext.get("feed_paused"):
+                paused += 1
+                continue
             rules = rules_by_country.setdefault(o.country_id, load_rules(s, o.country_id))
+            streak = ext.get("feed_failed_runs", 0)
             try:
                 r = polite_get(client, o.rss_url, min_interval=0.5)
                 r.raise_for_status()
                 feed = feedparser.parse(r.content)
             except Exception as e:  # noqa: BLE001
                 res.errors += 1
-                errors.append(f"{o.domain}: {e}")
+                streak += 1
+                ext = {**ext, "feed_failed_runs": streak}
+                if streak >= FEED_PAUSE_AFTER:
+                    ext["feed_paused"] = {"since": datetime.now(timezone.utc).date().isoformat(), "failures": streak,
+                                          "error": str(e)[:200]}
+                    errors.append(f"{o.domain}: paused after {streak} failed runs in a row, last {e}")
+                else:
+                    errors.append(f"{o.domain}: {e} ({streak} in a row)")
+                o.external = ext
+                s.commit()
                 continue
+            if streak:
+                o.external = {k: v for k, v in ext.items() if k != "feed_failed_runs"}
             res.rows += _store_entries(s, o, rules, feed, "rss")
     res.detail = "; ".join(errors)[:1000]
+    if paused:
+        res.detail = (f"{paused} paused feed{'s' if paused != 1 else ''} skipped" + ("; " + res.detail if res.detail else ""))[:1000]
     return res
 
 

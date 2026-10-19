@@ -124,5 +124,10 @@
   "Too many failed sign-in attempts. Try again in {n} min.": "محاولات تسجيل دخول فاشلة كثيرة. يمكن المحاولة مجددًا بعد {n} دقيقة.",
   "The current password is wrong.": "كلمة المرور الحالية غير صحيحة.",
   "Google News searched again for the weeks aged 2 to 4 weeks (Sundays)": "إعادة البحث في أخبار غوغل عن الأسابيع التي مضى عليها من أسبوعين إلى 4 أسابيع (كل يوم أحد)",
-  "The closing date cannot be in the future.": "لا يمكن أن يكون تاريخ الإغلاق في المستقبل."
+  "The closing date cannot be in the future.": "لا يمكن أن يكون تاريخ الإغلاق في المستقبل.",
+  "Outlet web rank (Tranco, monthly)": "الترتيب على الويب لوسائل الإعلام (Tranco، شهريًا)",
+  "Feed discovery (50 outlets a night)": "البحث عن الخلاصات (50 وسيلة إعلامية كل ليلة)",
+  "Unknown edge kind: {kinds}": "نوع روابط غير معروف: {kinds}",
+  "Gaps are listed only for the lenses the site offers now. A lens with too few judged topics is left out.": "تُعرض الفجوات للعدسات المتاحة في الموقع حاليًا فقط. أما العدسة التي لا تكفي فيها المواضيع المحكوم عليها فلا تُدرج.",
+  "No lens has enough judged topics yet, so no gaps are listed.": "لا توجد عدسة فيها ما يكفي من المواضيع المحكوم عليها حتى الآن، لذلك لا تُعرض أي فجوات."
 }

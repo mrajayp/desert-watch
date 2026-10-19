@@ -229,7 +229,9 @@ def test_admin_sets_and_clears_closed_on(client, users, db):
         "لا يمكن أن يكون تاريخ الإغلاق في المستقبل."
     assert client.patch(f"/api/outlets/{o.id}", json={"closed_on": "2026-09-30"}).status_code == 200
     assert client.get(f"/api/outlets/{o.id}").json()["closed_on"] == "2026-09-30"
-    assert next(x for x in client.get("/api/outlets").json() if x["id"] == o.id)["closed_on"] == "2026-09-30"
+    # an outlet with no counted article in a year is dormant and left out of the list unless asked for
+    assert not any(x["id"] == o.id for x in client.get("/api/outlets").json())
+    assert next(x for x in client.get("/api/outlets", params={"show_dormant": 1}).json() if x["id"] == o.id)["closed_on"] == "2026-09-30"
     assert client.patch(f"/api/outlets/{o.id}", json={"closed_on": None}).status_code == 200
     assert client.get(f"/api/outlets/{o.id}").json()["closed_on"] is None
     assert client.patch(f"/api/outlets/{o.id}", json={"base_country": "Tunisia"}).status_code == 200   # other fields untouched

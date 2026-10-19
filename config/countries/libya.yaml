@@ -10,10 +10,31 @@ gdelt:
 gnews:
   country_term_ar: ليبيا
   # Google News has no Libya edition. gl=LY answers with a redirect to the Egypt-Arabic edition
-  # (checked 2026-10-16), so we ask for that edition by name.
+  # (checked 2026-10-16), so we ask for that edition by name. hl/gl/ceid are the first Arabic edition,
+  # read by the official-statements collector; `editions` is the full list the theme searches
+  # (collectors/gnews.py) run, per language. A second Arabic entry doubles the Arabic requests: the
+  # edition experiment (docs/research/gnews_editions_2026-10-19.md, scripts/compare_gnews_editions.py)
+  # measured what each edition adds before any is added here.
   hl: ar
   gl: EG
   ceid: "EG:ar"
+  editions:
+    - {lang: ar, hl: ar, gl: EG, ceid: "EG:ar"}
+    - {lang: en, hl: en-GB, gl: GB, ceid: "GB:en"}
+  # The editions the social-post search (collectors/gnews_social.py) asks, one per language: Google
+  # News keeps to the edition's language, and the English one that returned x.com posts was en-US.
+  social_editions:
+    ar: {hl: ar, gl: EG, ceid: "EG:ar"}
+    en: {hl: en-US, gl: US, ceid: "US:en"}
+  # Daily site: searches for the Libyan majors that offer no feed (403/404 from Fly), run by the gnews
+  # collector with the theme searches (same windows, same re-query at the settle ages). Results are
+  # stored only when a theme rule matches, as feed items are; they fill the gnews|outlet pair the theme
+  # searches already feed. kind: article (the official_queries machinery, for news rather than statements).
+  outlet_queries:
+    - {label: LANA, domain: lana.gov.ly, lang: ar, query: 'site:lana.gov.ly'}
+    - {label: Al Wasat, domain: alwasat.ly, lang: ar, query: 'site:alwasat.ly'}
+    - {label: Libya Observer, domain: libyaobserver.ly, lang: en, query: 'site:libyaobserver.ly'}
+    - {label: Al Marsad, domain: almarsad.co, lang: ar, query: 'site:almarsad.co'}
 acled: {country: Libya}
 ucdp: {country_id: 620}
 reliefweb: {country_iso3: lby}
@@ -182,6 +203,15 @@ outlets:
   - {name: Al Wasat, domain: alwasat.ly, languages: [ar, en], medium: website, scope: libyan}
   - {name: Al Marsad, domain: almarsad.co, languages: [ar], medium: website, scope: libyan}
   - {name: LANA, domain: lana.gov.ly, languages: [ar, en], medium: website, scope: libyan, type: state}
+  # Libyan outlets that were only in scope_overrides until 2026-10-19 (never seeded, so a fresh
+  # database had no row for them). Feeds: what the discovery probe found from this PC on 2026-10-19
+  # (collectors/feeds.py); an outlet with no `rss` answered no feed address and is searched again by
+  # the nightly discovery. On a database that already holds these domains the row is kept as it is and
+  # the feed must be set by hand or found by the nightly discovery (seed never changes an existing outlet).
+  - {name: Ean Libya, domain: eanlibya.com, languages: [ar], medium: website, scope: libyan, rss: "https://www.eanlibya.com/feed/"}
+  - {name: Al Saaa 24, domain: alsaaa24.com, languages: [ar], medium: website, scope: libyan, rss: "https://www.alsaaa24.com/feed/"}
+  - {name: Libyan Express, domain: libyanexpress.com, languages: [en], medium: website, scope: libyan, rss: "https://www.libyanexpress.com/feed/"}
+  - {name: 218 TV, domain: 218tv.net, languages: [ar], medium: tv, scope: libyan}   # the site refused the connection on 2026-10-19
   # Cited daily in a professional Libya media-monitoring review (2026) but missing here; feeds verified from Fly 2026-10-14
   - {name: Al Menassa, domain: almenassa.ly, languages: [ar], medium: website, scope: libyan, rss: "https://almenassa.ly/feed/"}
   - {name: RNA (Reportage), domain: reportage.ly, languages: [ar], medium: website, scope: libyan, rss: "https://reportage.ly/feed/"}
@@ -243,6 +273,13 @@ events:
   - {date: 2024-11-16, theme: gender_political_participation, label: "Municipal elections phase 1 (29% women voters)", label_ar: "المرحلة الأولى من الانتخابات البلدية (29% من الناخبين نساء)", source: "https://www.idea.int/democracytracker/report/libya/november-2024"}
   # no names of private individuals in labels (docs/research/female_journalists_tools.md); the source names her
   - {date: 2025-11-21, theme: gender_violence, label: "Blogger killed (Janzour)", label_ar: "مقتل مدوّنة (جنزور)", source: "https://aawsat.com/node/5211624"}
+
+# .ly domains that are never Libyan outlets: link shorteners and vanity names on Libya's country code
+# (register.py). They get no Libyan scope from the .ly rule, and a Libyan label a rule gave one earlier
+# is closed by `label-scopes --apply`. Add to the list, never remove a real outlet into it.
+vanity_domains: [bit.ly, ow.ly, fast.ly, rebrand.ly, ad.ly, cutt.ly, buff.ly, adf.ly, gg.ly, musical.ly, snip.ly, t.ly,
+  s.ly, l.ly, trib.ly, url.ly, app.ly, short.ly, wp.ly, fb.ly, goo.ly, youtu.ly, visual.ly, embed.ly, bitly.ly,
+  tinyurl.ly, shorturl.ly, flic.ly, viral.ly, friend.ly, secure.ly, quick.ly, local.ly, social.ly]
 
 # Scope for outlets auto-discovered via search (uncontested: where the outlet is based/focused).
 # Applied with confidence "likely" and the homepage as evidence; never overrides an existing

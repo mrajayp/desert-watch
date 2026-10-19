@@ -26,18 +26,27 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..ingest import SOCIAL, labelled_outlets, load_rules, register_kind, store_article
-from ..models import Outlet
+from ..models import Country, Outlet
 from ..textnorm import detect_lang
 from .base import RunResult, http_client, polite_get
 from .gnews import ENDPOINT
 
 PLATFORMS = ("facebook.com/", "x.com/", "instagram.com/", "tiktok.com/@")
+# The editions asked per language when a country's config names none (gnews.social_editions in
+# config/countries/<country>.yaml names them for Libya). Google News has no Libya edition: gl=LY /
+# ceid=LY:ar answers 302 to the Egypt-Arabic edition (checked 2026-10-16), so Libya asks for that
+# edition by name.
 EDITIONS = {
-    # Google News has no Libya edition: gl=LY / ceid=LY:ar answers 302 to the Egypt-Arabic edition
-    # (checked 2026-10-16), so we ask for that edition by name.
     "ar": {"hl": "ar", "gl": "EG", "ceid": "EG:ar"},
     "en": {"hl": "en-US", "gl": "US", "ceid": "US:en"},
 }
+
+
+def social_editions(cfg: dict | None) -> dict[str, dict]:
+    """lang -> {hl, gl, ceid} for a country: its config's gnews.social_editions, else EDITIONS."""
+    listed = ((cfg or {}).get("gnews") or {}).get("social_editions") or {}
+    return {lang: {k: listed[lang][k] for k in ("hl", "gl", "ceid")} if lang in listed else dict(ed)
+            for lang, ed in EDITIONS.items()}
 # At most 100 results per query. A page with 100 in one day is cut short by Google, and nothing
 # smaller than a day can be asked for (libyaakhbar hits it most days).
 CAP = 100
@@ -134,6 +143,7 @@ def collect(s: Session, *, days: int | None = None, today: date | None = None,
     rules_by_country: dict = {}
     platform_ids = set(s.scalars(select(Outlet.id).where(Outlet.domain.in_(list(SOCIAL)))))
     by_domain = {o.domain: o for o in s.scalars(select(Outlet))}
+    editions_of = {c.id: social_editions(c.config) for c in s.scalars(select(Country))}
     social = [d for d in by_domain if d.lower().startswith(PLATFORMS)]
     plan = [(o, editions(o, by_domain.get((o.external or {}).get("parent")))) for o in accounts(s)]
     if plan and sum(len(e) for _, e in plan) * len(windows) > max_queries:
@@ -148,12 +158,13 @@ def collect(s: Session, *, days: int | None = None, today: date | None = None,
             names = set(counts)
             exclude = longer_accounts(o.domain, social)
             stats["accounts"] += 1
+            edition = editions_of.get(o.country_id) or social_editions(None)
             for ed in eds:
                 for day in windows:
                     if failures >= STOP_AFTER or stats["queries"] >= max_queries:
                         break
                     try:
-                        r = polite_get(client, ENDPOINT, params={"q": window_query(o.domain, day, exclude), **EDITIONS[ed]},
+                        r = polite_get(client, ENDPOINT, params={"q": window_query(o.domain, day, exclude), **edition[ed]},
                                        min_interval=MIN_INTERVAL, retries=0)
                     except Exception as e:  # noqa: BLE001
                         res.errors += 1
@@ -199,7 +210,7 @@ def collect(s: Session, *, days: int | None = None, today: date | None = None,
                             s, o.country_id, rules, url=e.link, title=text,
                             published_at=datetime.utcfromtimestamp(calendar.timegm(when)), source_key="gnews_social",
                             lang=detect_lang(text), outlet_domain=o.domain, outlet_name=o.name, require_theme=True,
-                            outlet_cache={o.domain: o}, extra={"window": day.isoformat(), "edition": EDITIONS[ed]["ceid"]})
+                            outlet_cache={o.domain: o}, extra={"window": day.isoformat(), "edition": edition[ed]["ceid"]})
                         res.rows += created
                         if item is None:
                             stats["no_theme"] += 1

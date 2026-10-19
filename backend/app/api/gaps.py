@@ -22,6 +22,9 @@ from ..i18n import lang, tr
 router = APIRouter(prefix="/api")
 
 VOTES = {"real", "covered", "not_newsworthy"}
+# /api/gap carries the newest articles and need items of the window with their totals; the full lists
+# are on /articles (the panel links there). Kept small so a gap opens fast on a phone.
+GAP_ARTICLES, GAP_NEED_ITEMS = 30, 20
 
 
 def gap_key(theme_id: int, region_id: int) -> str:
@@ -113,15 +116,32 @@ def _lens_status(s: Session, country_id: int, latest: date | None, themes: list[
     return available, {k: sorted(v) for k, v in with_need.items()}
 
 
+def available_lenses(s: Session, country_id: int) -> set:
+    """The lenses the site offers now, as /api/meta reports them (_lens_status). The weekly digest and
+    the Contribute gap list leave out cells on the other lenses: one judged theme is not a lens."""
+    themes = s.scalars(select(Theme).where(Theme.active.is_(True))).all()
+    latest = s.scalar(select(func.max(CellWeek.week_start)).where(CellWeek.country_id == country_id))
+    return _lens_status(s, country_id, latest, themes)[0]
+
+
 @router.get("/sources/health")
 def sources_health(s: Session = Depends(get_db), _: User = Depends(auth.current_user)):
-    from ..collectors import COLLECTORS, EXTRA_HEALTH, STALE_HOURS
+    """One line per source. expected_hours: how often it is scheduled (None when run by hand), so the
+    interface can say "runs every N hours"; manual: run by hand, shown as "manual, last run ..." and
+    never stale (except the weekly search import, stale after 10 days: a missed week empties the search
+    lens); stale: the last good run is older than collectors.stale_hours (twice the schedule unless
+    the source is allowed to run late)."""
+    from ..collectors import COLLECTORS, EXTRA_HEALTH, MANUAL, SCHEDULE_HOURS, stale_hours
     out = []
     for key, label in [*((k, v[1]) for k, v in COLLECTORS.items()), *EXTRA_HEALTH.items()]:
         last = s.scalar(select(SourceRun).where(SourceRun.source_key == key).order_by(SourceRun.id.desc()).limit(1))
         last_ok = s.scalar(select(SourceRun).where(SourceRun.source_key == key, SourceRun.status.in_(("ok", "partial")))
                            .order_by(SourceRun.id.desc()).limit(1))
-        stale = last_ok is None or (utcnow() - (last_ok.finished_at or last_ok.started_at)).total_seconds() > STALE_HOURS.get(key, 48) * 3600
+        limit = stale_hours(key)
+        if limit is None:   # run by hand, no cadence: never a fault
+            stale = False
+        else:
+            stale = last_ok is None or (utcnow() - (last_ok.finished_at or last_ok.started_at)).total_seconds() > limit * 3600
         if last is None and key.startswith("ai_audit_"):
             stale = False   # a weekly job that has not had its first Monday yet is not a fault
         error = (last.error or "")[:300] if last else None
@@ -135,7 +155,8 @@ def sources_health(s: Session = Depends(get_db), _: User = Depends(auth.current_
                     "last_run": last.started_at.isoformat() if last else None,
                     "last_ok": (last_ok.finished_at or last_ok.started_at).isoformat() if last_ok else None,
                     "rows": last.rows if last else 0, "error": error,
-                    "stale": stale})
+                    "stale": stale, "expected_hours": SCHEDULE_HOURS.get(key), "manual": key in MANUAL,
+                    "stale_after_hours": limit})
     return out
 
 
@@ -300,18 +321,20 @@ def gap_detail(theme_id: int, region_id: int, lens: str = "audience", week: date
     cell = s.scalar(select(CellWeek).where(CellWeek.theme_id == theme_id, CellWeek.region_id == region_id,
                                            CellWeek.lens == lens, CellWeek.week_start == week)) if week else None
     start, end = window_bounds(week or week_start(date.today()), settings.WINDOW_WEEKS)
+    # the newest GAP_ARTICLES articles with the window's total; the full list is /articles (B-R4.2)
     total, arts, by_source = items_query(s, country_id=region.country_id, theme_id=theme_id, region=region,
-                                         start=start, end=end, limit=150, source=source, with_sources=True)
+                                         start=start, end=end, limit=GAP_ARTICLES, source=source, with_sources=True)
     need_kinds = LENSES[lens]["kinds"]
     need_total, need_items = items_query(s, country_id=region.country_id, theme_id=theme_id, region=region,
-                                         start=start, end=end, kinds=need_kinds, limit=100)
+                                         start=start, end=end, kinds=need_kinds, limit=GAP_NEED_ITEMS)
     st_total, statements = items_query(s, country_id=region.country_id, theme_id=theme_id, region=region,
                                        start=start, end=end, kinds=("statement",), limit=30)
     k = gap_key(theme_id, region_id)
     votes = s.scalars(select(GapVote).where(GapVote.theme_id == theme_id, GapVote.region_id == region_id)
                       .order_by(GapVote.created_at.desc())).all()
-    names = auth.team_names(s, u)  # empty for a viewer: votes and claims come back without names
     claims = s.scalars(select(GapClaim).where(GapClaim.theme_id == theme_id, GapClaim.region_id == region_id)).all()
+    # names only for the accounts the votes and claims refer to; empty for a viewer (no names at all)
+    names = auth.team_names(s, u, only={v.user_id for v in votes} | {c.user_id for c in claims})
     return {
         "theme": {"id": theme.id, "name_en": theme.name_en, "name_ar": theme.name_ar, "slug": theme.slug},
         "region": {"id": region.id, "name_en": region.name_en, "name_ar": region.name_ar, "level": region.level},

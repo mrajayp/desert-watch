@@ -32,9 +32,44 @@ EXTRA_HEALTH = {
     "backup": N_("Nightly database backup (off-site)"),
     # the Sunday re-query of Google News for the weeks aged 2 to 4 weeks (gnews.settle), 05:00 UTC
     "gnews_settle": N_("Google News searched again for the weeks aged 2 to 4 weeks (Sundays)"),
+    # the monthly web-rank snapshot of the outlets (reach.py), the 1st at 04:40 UTC
+    "reach": N_("Outlet web rank (Tranco, monthly)"),
+    # the nightly search for outlet feeds (collectors/feeds.py), 50 outlets a night after the social posts
+    "discover_feeds": N_("Feed discovery (50 outlets a night)"),
 }
-# Hours before a source counts as stale (48 unless listed). Search data is imported by hand each week;
-# the AI answers audit runs once a week (Monday 04:20 UTC), so it is stale after 8 days, as is the
-# Sunday re-query of Google News; the backup runs nightly, so a missed night shows after 30 hours.
+# How often each source is scheduled to run, in hours (jobs.start_scheduler). None = run by hand with
+# no cadence (gdelt_timeline, the backfills): such a source is never stale, the strip says "manual,
+# last run ...". The weekly search import (gtrends) is also by hand, but it has a cadence: the search
+# lens silently loses its data when a week is missed, so it keeps its 10-day stale rule below. The API
+# sends the schedule as expected_hours so the interface can say "runs every N hours" beside the last run.
+SCHEDULE_HOURS = {
+    "rss": 1, "youtube": 1, "galerts": 1,                                   # hourly, :07
+    "official": 6, "gnews": 6, "gdelt": 6, "fb_url": 6, "wikireading": 6, "fxrate": 6,   # six-hourly, :17
+    "gnews_social": 24, "wikipedia": 24, "acled": 24, "ucdp": 24, "reliefweb": 24,       # nightly, 02:05
+    "resolve": 24, "discover_feeds": 24, "backup": 24,
+    "digest": 7 * 24, "ai_audit_anthropic": 7 * 24, "ai_audit_openai": 7 * 24, "ai_audit_perplexity": 7 * 24,
+    "gnews_settle": 7 * 24, "gtrends": 7 * 24,
+    "reach": 30 * 24,
+    "gdelt_timeline": None, "backfill": None, "rss_backfill": None,
+}
+# Sources run by hand: never stale (no cadence), or stale only by their own rule (gtrends).
+MANUAL = frozenset({"gdelt_timeline", "backfill", "rss_backfill", "gtrends"})
+# Hours before a source counts as stale: twice its schedule, except where a job is allowed to run late
+# (the weekly digest waits for Sunday's page views and may write on Thursday: 8 days; the monthly web
+# rank: 35 days; the nightly backup must not miss a night: 30 hours), the weekly audit and re-query
+# (8 days) and the weekly search import (10 days: a missed week). A source not scheduled at all is
+# stale after 48 hours; one run by hand with no cadence is never stale (stale_hours()).
 STALE_HOURS = {"gtrends": 10 * 24, "ai_audit_anthropic": 8 * 24, "ai_audit_openai": 8 * 24,
-               "ai_audit_perplexity": 8 * 24, "backup": 30, "gnews_settle": 8 * 24}
+               "ai_audit_perplexity": 8 * 24, "backup": 30, "gnews_settle": 8 * 24, "digest": 8 * 24,
+               "reach": 35 * 24}
+
+
+def stale_hours(key: str) -> int | None:
+    """Hours after the last good run before `key` is stale: STALE_HOURS, else twice SCHEDULE_HOURS, else
+    48. None for a source run by hand with no cadence (SCHEDULE_HOURS None): it is never stale."""
+    if key in STALE_HOURS:
+        return STALE_HOURS[key]
+    if key in SCHEDULE_HOURS and SCHEDULE_HOURS[key] is None:
+        return None
+    sched = SCHEDULE_HOURS.get(key)
+    return 2 * sched if sched else 48

@@ -22,6 +22,21 @@ from .base import RunResult, http_client, polite_get
 
 ENDPOINT = "https://news.google.com/rss/search"
 MAX_TERMS = 7  # keep queries short; Google truncates long OR lists
+# The editions a country's config does not name: English through the UK edition, Arabic through the
+# legacy hl/gl/ceid keys (the Egypt-Arabic edition for Libya, which has no edition of its own).
+DEFAULT_EN_EDITION = {"lang": "en", "hl": "en-GB", "gl": "GB", "ceid": "GB:en"}
+
+
+def editions(g: dict, lang: str, iso2: str) -> list[dict]:
+    """The Google News editions to ask for one language: config `gnews.editions` entries with that
+    lang; without any, the legacy keys for Arabic (hl, gl, ceid) and the UK edition for English. Each
+    is {lang, hl, gl, ceid}."""
+    listed = [e for e in (g.get("editions") or []) if e.get("lang") == lang]
+    if listed:
+        return [{"lang": lang, "hl": e["hl"], "gl": e["gl"], "ceid": e["ceid"]} for e in listed]
+    if lang == "ar":
+        return [{"lang": "ar", "hl": g.get("hl", "ar"), "gl": g.get("gl", iso2), "ceid": g.get("ceid", f"{iso2}:ar")}]
+    return [dict(DEFAULT_EN_EDITION)]
 
 
 def build_query(country_term: str, terms: list[str], start, end) -> str:
@@ -72,10 +87,11 @@ def collect(s: Session, *, weeks: int = 1, end: date | None = None, start: date 
             cache: dict = {}
             theme_rows = [t for t in s.scalars(select(Theme).where(Theme.active.is_(True)))
                           if not themes or any(t.slug == x or t.slug.startswith(x) for x in themes)]
-            variants = [
-                ("ar", g["country_term_ar"], g.get("hl", "ar"), g.get("gl", country.iso2), g.get("ceid", f"{country.iso2}:ar"), "ar_terms"),
-                ("en", country.config.get("gdelt", {}).get("country_term", country.name_en), "en-GB", "GB", "GB:en", "en_terms"),
-            ]
+            # one variant per language and edition (config gnews.editions; one Arabic and one English
+            # edition unless the owner adds more): (lang, country term, hl, gl, ceid, term field)
+            cterms = {"ar": g["country_term_ar"], "en": country.config.get("gdelt", {}).get("country_term", country.name_en)}
+            variants = [(lang, cterms[lang], e["hl"], e["gl"], e["ceid"], f"{lang}_terms")
+                        for lang in ("ar", "en") for e in editions(g, lang, country.iso2)]
             if windows is None:
                 windows = []
                 if start:
@@ -117,9 +133,51 @@ def collect(s: Session, *, weeks: int = 1, end: date | None = None, start: date 
                                 res.rows += created
                                 stats["seen"] += not created
                             s.commit()
+                # the outlet searches (config gnews.outlet_queries): everything one outlet published in
+                # the window, kept when a theme rule matches, as a feed's items are
+                if not themes:
+                    res.rows += _outlet_queries(s, client, country, g, rules, cache, w_start, w_end, stats, res)
     if stats["capped"]:
         res.detail = (res.detail + "; " if res.detail else "") + f"{stats['capped']} one-day windows still hit the 100-result cap"
     return res
+
+
+def _outlet_queries(s: Session, client, country: Country, g: dict, rules, cache: dict, w_start, w_end, stats: dict,
+                    res: RunResult) -> int:
+    """One `site:` search per outlet query (config gnews.outlet_queries) and window: the Libyan majors
+    with no feed. The first edition of the query's language is used; results are filed on the outlet
+    named by `domain` (Google's own source link is kept as a check), stored as source gnews with no
+    theme prior (require_theme: a rule must match, as for feed items), and recorded in extra.outlet_query."""
+    rows = 0
+    for q in g.get("outlet_queries") or []:
+        lang = q.get("lang", "ar")
+        ed = editions(g, lang, country.iso2)[0]
+        try:
+            entries = _fetch_window(client, q["query"], [], w_start, w_end, ed["hl"], ed["gl"], ed["ceid"], stats)
+            stats["queries"] += 1
+        except Exception as e:  # noqa: BLE001
+            res.errors += 1
+            res.detail = f"{q.get('label') or q['query']}: {e}"[:500]
+            continue
+        for e in entries:
+            src = e.get("source") or {}
+            src_url = src.get("href") or src.get("url")
+            if not e.get("published_parsed") or not e.get("link"):
+                continue
+            title = e.get("title", "")
+            outlet_name = src.get("title")
+            if outlet_name and title.endswith(" - " + outlet_name):
+                title = title[: -len(outlet_name) - 3]
+            domain = q.get("domain") or (domain_of(src_url) if src_url else None)
+            _, created = store_article(
+                s, country.id, rules, url=e.link, title=title,
+                published_at=datetime.utcfromtimestamp(calendar.timegm(e.published_parsed)), source_key="gnews",
+                lang=lang, outlet_name=outlet_name, outlet_domain=domain, require_theme=True,
+                extra={"outlet_query": q.get("label") or q["query"]}, outlet_cache=cache, query=f"gnews:site:{domain}")
+            rows += created
+            stats["seen"] += not created
+        s.commit()
+    return rows
 
 
 def settle_windows(today: date, weeks_ago=None) -> list[tuple[date, date]]:

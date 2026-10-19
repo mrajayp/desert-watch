@@ -34,10 +34,18 @@ def test_contribute_gaps_start_at_the_red_threshold_and_carry_the_scored_count(c
     from app.api.contribute import GAP_MIN
     from app.models import CellWeek, Region, Theme
     assert GAP_MIN == settings.GAP_RED_FROM == 0.4
+    from datetime import timedelta
     c = db.scalar(select(Country))
     nat = db.scalar(select(Region.id).where(Region.country_id == c.id, Region.level == "national"))
-    t1, t2, t3, t4 = db.scalars(select(Theme.id).where(Theme.active.is_(True)).order_by(Theme.id).limit(4)).all()
+    active = db.scalars(select(Theme.id).where(Theme.active.is_(True)).order_by(Theme.id)).all()
+    t1, t2, t3, t4 = active[:4]
     wk = date(2026, 10, 5)
+    # the audience lens is offered only when enough themes were judged in 4 of the last 12 weeks
+    # (api.gaps.available_lenses); the Contribute list leaves out lenses the site does not offer
+    for tid in active:
+        for w in range(1, 5):
+            db.add(CellWeek(country_id=c.id, theme_id=tid, region_id=nat, week_start=wk - timedelta(weeks=w), lens="audience",
+                            need=100, coverage=50, gap=0.0, insufficient=False, flags=[], verdict="usual", breakdown={}))
     # t1 0.3: fewer than expected, but not red. t2 0.5 with no verdict (scored before verdicts existed):
     # red by the threshold. t3 0.6 judged usual (a shortfall chance would explain): not red. t4 0.45
     # judged short: red, with the evidence its sentence is built from.

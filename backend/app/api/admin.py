@@ -1,7 +1,7 @@
 from collections import Counter
 from datetime import timedelta
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -157,6 +157,13 @@ def users(s: Session = Depends(get_db), _: User = Depends(auth.require_admin)):
     rows = s.scalars(select(User).order_by(User.created_at.desc())).all()
     names = {x.id: x.display_name for x in rows}
     return [_user_json(x, names) for x in rows if not x.email.startswith("deleted-")]
+
+
+@router.get("/admin/pending-count")
+def pending_count(s: Session = Depends(get_db), _: User = Depends(auth.require_admin)):
+    """How many access requests wait for an admin: the badge in the navigation asks this instead of
+    downloading the whole user list."""
+    return {"pending": s.scalar(select(func.count(User.id)).where(User.status == "pending")) or 0}
 
 
 class UserPatch(BaseModel):
@@ -336,6 +343,58 @@ def answer_feedback(fid: int, body: FeedbackReply, s: Session = Depends(get_db),
     return {"ok": True}
 
 
+# ---------------------------------------------------------------- outlet feeds (collectors/feeds.py)
+@router.get("/admin/feeds")
+def admin_feeds(s: Session = Depends(get_db), _: User = Depends(auth.require_admin)):
+    """Feeds on record: the paused ones (failed FEED_PAUSE_AFTER runs in a row), the ones the nightly
+    discovery found (found_at, how), how far the search has got and how many outlets are left to try."""
+    from ..collectors.feeds import admin_list
+    return admin_list(s)
+
+
+# ---------------------------------------------------------------- content security policy reports
+# Violations the browser reports under the report-only policy (main.py CSP), counted per directive in
+# this process (reset by a restart; nothing is stored). The counts are on /api/admin/health as
+# csp_violations and decide when the policy can be enforced. The endpoint is open: browsers post reports
+# without credentials. Reports are never stored or logged, only counted, and the body is capped.
+CSP_VIOLATIONS: Counter = Counter()
+CSP_REPORT_MAX_BYTES = 8192
+CSP_MAX_DIRECTIVES = 50
+
+
+def _csp_directives(data) -> list[str]:
+    """The violated directives in a report: the legacy report-uri body {"csp-report": {...}} or the
+    Reporting API list [{"type": "csp-violation", "body": {...}}]. Unknown shapes count as "unknown"."""
+    out = []
+    reports = data if isinstance(data, list) else [data]
+    for r in reports:
+        if not isinstance(r, dict):
+            continue
+        body = r.get("csp-report") if "csp-report" in r else r.get("body", r)
+        if not isinstance(body, dict):
+            continue
+        d = body.get("effective-directive") or body.get("effectiveDirective") or body.get("violated-directive") \
+            or body.get("violatedDirective") or "unknown"
+        out.append(str(d).split()[0][:40])
+    return out or ["unknown"]
+
+
+@router.post("/csp-report", status_code=204)
+async def csp_report(request: Request):
+    import json
+    raw = await request.body()
+    if len(raw) > CSP_REPORT_MAX_BYTES:
+        return Response(status_code=204)
+    try:
+        data = json.loads(raw or b"{}")
+    except ValueError:
+        data = {}
+    for d in _csp_directives(data):
+        if d in CSP_VIOLATIONS or len(CSP_VIOLATIONS) < CSP_MAX_DIRECTIVES:
+            CSP_VIOLATIONS[d] += 1
+    return Response(status_code=204)
+
+
 # ---------------------------------------------------------------- service health (the public /health says only ok + scheduler)
 def _proc_memory() -> dict:
     """RSS of this process and the machine's MemAvailable and SwapFree, in MB, from /proc (Linux); the
@@ -412,7 +471,10 @@ def service_health(s: Session = Depends(get_db), _: User = Depends(auth.require_
                    "wal_mb": _file_mb(Path(str(db_path) + "-wal")) if db_path else None},
             "last_backup": last("backup"), "last_backup_ok": last("backup", ok_only=True),
             "last_digest": last("digest", ok_only=True),
-            "last_recompute": last("recompute")}
+            "last_recompute": last("recompute"),
+            # what the browser would have blocked under the report-only content security policy
+            # (main.py), per directive, since this process started
+            "csp_violations": dict(CSP_VIOLATIONS)}
 
 
 @router.get("/admin/methods", include_in_schema=False)

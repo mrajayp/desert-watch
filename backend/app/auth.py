@@ -13,9 +13,22 @@ from .db import get_db
 from .models import AuthSession, Invite, User, utcnow
 from .i18n import tr
 
-COOKIE = "dw_session"
+# The session cookie. Over HTTPS (settings.COOKIE_SECURE) it carries the __Host- prefix, which the
+# browser only accepts with Secure, Path=/ and no Domain, so a cookie set by a sibling host or over
+# plain HTTP can never replace it. The old name is still read for one release (a browser signed in
+# before the deploy keeps its session) and cleared at sign-out.
+LEGACY_COOKIE = "dw_session"
+HOST_COOKIE = "__Host-dw_session"
 SESSION_DAYS = 14
 MIN_PASSWORD = 10
+
+
+def cookie_name() -> str:
+    """The name the session cookie is set under now."""
+    return HOST_COOKIE if settings.COOKIE_SECURE else LEGACY_COOKIE
+
+
+COOKIE = cookie_name()   # the name at start-up, for callers that only delete the cookie
 
 
 def hash_password(pw: str) -> str:
@@ -76,8 +89,15 @@ def start_session(s: Session, user: User, response: Response) -> None:
     token = secrets.token_urlsafe(32)
     s.add(AuthSession(token_hash=sha(token), user_id=user.id, expires_at=utcnow() + timedelta(days=SESSION_DAYS)))
     s.commit()
-    response.set_cookie(COOKIE, token, httponly=True, samesite="lax", secure=settings.COOKIE_SECURE,
+    # __Host- needs Secure, Path=/ and no Domain: exactly what is set here when COOKIE_SECURE is on
+    response.set_cookie(cookie_name(), token, httponly=True, samesite="lax", secure=settings.COOKIE_SECURE,
                         max_age=SESSION_DAYS * 86400, path="/")
+
+
+def clear_cookies(response: Response) -> None:
+    """Delete the session cookie under its current name and under the old one (one release)."""
+    for name in {cookie_name(), LEGACY_COOKIE}:
+        response.delete_cookie(name, path="/")
 
 
 def end_session(s: Session, token: str | None, response: Response) -> None:
@@ -86,7 +106,7 @@ def end_session(s: Session, token: str | None, response: Response) -> None:
         if sess:
             s.delete(sess)
             s.commit()
-    response.delete_cookie(COOKIE, path="/")
+    clear_cookies(response)
 
 
 def end_sessions(s: Session, user_id: int, keep_token: str | None = None) -> int:
@@ -99,7 +119,14 @@ def end_sessions(s: Session, user_id: int, keep_token: str | None = None) -> int
     return s.execute(q).rowcount
 
 
-def current_user(dw_session: str | None = Cookie(default=None), s: Session = Depends(get_db)) -> User:
+def session_token(host_cookie: str | None = Cookie(default=None, alias=HOST_COOKIE),
+                  dw_session: str | None = Cookie(default=None, alias=LEGACY_COOKIE)) -> str | None:
+    """The session token the browser sent: the __Host- cookie first, else the old name (read for one
+    release after the rename, so nobody is signed out by the deploy)."""
+    return host_cookie or dw_session
+
+
+def current_user(dw_session: str | None = Depends(session_token), s: Session = Depends(get_db)) -> User:
     if not dw_session:
         raise HTTPException(401, tr("Not signed in"))
     sess = s.get(AuthSession, sha(dw_session))
@@ -126,13 +153,20 @@ def require_admin(u: User = Depends(current_user)) -> User:
     return u
 
 
-def team_names(s: Session, u: User) -> dict[int, str]:
+def team_names(s: Session, u: User, only: set[int] | None = None) -> dict[int, str]:
     """id -> display name of every account, for saying who voted, claimed, commented or labelled.
     A viewer (read-only account) sees no names: the map is empty, so every lookup gives None and the
-    interface says "a team member" instead."""
+    interface says "a team member" instead. `only` limits the lookup to the accounts a response refers
+    to, so a gap panel does not load the whole user list."""
     if u.role == "viewer":
         return {}
-    return {x.id: x.display_name for x in s.scalars(select(User))}
+    q = select(User)
+    if only is not None:
+        ids = {i for i in only if i is not None}
+        if not ids:
+            return {}
+        q = q.where(User.id.in_(ids))
+    return {x.id: x.display_name for x in s.scalars(q)}
 
 
 def accept_invite(s: Session, token: str, password: str, display_name: str) -> User:

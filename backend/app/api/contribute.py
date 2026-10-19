@@ -6,22 +6,32 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import and_, exists, func, not_, or_, select
 from sqlalchemy.orm import Session
 
-from .. import auth, settings
+from .. import auth, register, settings
 from ..db import get_db
+from ..i18n import N_, tr
 from ..models import (ArticleAssessment, CellWeek, Comment, Event, GapClaim, GapVote, Item, ItemRegion, ItemTheme,
-                      Outlet, OutletCategory, Suggestion, User, utcnow)
+                      Outlet, Suggestion, User, utcnow)
 from ..scoring import counted_items, scored_articles
 from .common import country_or_404, hydrate_items, outlet_categories
+from .gaps import available_lenses
 
 router = APIRouter(prefix="/api")
 
 RECENT_DAYS = 14
 GAP_MIN = settings.GAP_RED_FROM  # the one red threshold every page uses (/api/meta red_from)
+OUTLET_MIN_ARTICLES = 5          # counted articles in the last year before an outlet is worth a person's minute
+OUTLET_PAGE_MAX = 100
+LENSES_NOTE = N_("Gaps are listed only for the lenses the site offers now. A lens with too few judged topics is left out.")
+NO_LENS_NOTE = N_("No lens has enough judged topics yet, so no gaps are listed.")
 
 
 @router.get("/contribute")
-def contribute(country: str = "LY", s: Session = Depends(get_db), u: User = Depends(auth.current_user)):
+def contribute(country: str = "LY", outlets_page: int = 1, outlets_size: int = 25, s: Session = Depends(get_db),
+               u: User = Depends(auth.current_user)):
+    """The queues. outlets_page / outlets_size page the outlet review queue (at most OUTLET_PAGE_MAX a page)."""
     c = country_or_404(s, country)
+    outlets_size = max(1, min(outlets_size, OUTLET_PAGE_MAX))
+    outlets_page = max(1, outlets_page)
     since = utcnow() - timedelta(days=RECENT_DAYS)
     recent = and_(*counted_items(c.id), Item.kind == "article", Item.published_at >= since, Item.added_by.is_(None))
     # correlated EXISTS uses the (item_id, ...) primary keys; IN (subquery) scanned whole tables
@@ -29,19 +39,22 @@ def contribute(country: str = "LY", s: Session = Depends(get_db), u: User = Depe
     has_region = exists().where(ItemRegion.item_id == Item.id, ItemRegion.active.is_(True))
     assessed = exists().where(ArticleAssessment.item_id == Item.id)
 
-    # 1. Gaps nobody has judged yet: the biggest red gaps of the last 4 weeks, across lenses (a single
-    #    week is often empty: the current one is partial, and coverage surges hide gaps). Red is the
-    #    calibrated verdict `short` (the shortfall is larger than chance would explain); a cell scored
-    #    before verdicts existed (no verdict yet) still qualifies by the old threshold, GAP_MIN.
+    # 1. Gaps nobody has judged yet: the biggest red gaps of the last 4 weeks, across the lenses the site
+    #    offers now (available_lenses: one judged theme is not a lens; a single week is often empty: the
+    #    current one is partial, and coverage surges hide gaps). Red is the calibrated verdict `short`
+    #    (the shortfall is larger than chance would explain); a cell scored before verdicts existed (no
+    #    verdict yet) still qualifies by the old threshold, GAP_MIN.
     week = s.scalar(select(func.max(CellWeek.week_start)).where(CellWeek.country_id == c.id))
+    offered = available_lenses(s, c.id)
     gaps = []
-    if week:
+    if week and offered:
         first = week - timedelta(weeks=3)
         voted = {(v.theme_id, v.region_id, v.week_start) for v in s.scalars(select(GapVote).where(GapVote.week_start >= first))}
         red = or_(CellWeek.verdict == "short", and_(CellWeek.verdict.is_(None), CellWeek.gap >= GAP_MIN))
         for cell in s.scalars(select(CellWeek).where(
                 CellWeek.country_id == c.id, CellWeek.week_start >= first, CellWeek.insufficient.is_(False),
-                CellWeek.gap.is_not(None), red).order_by(CellWeek.gap.desc()).limit(200)):
+                CellWeek.lens.in_(sorted(offered)), CellWeek.gap.is_not(None), red)
+                .order_by(CellWeek.gap.desc()).limit(200)):
             if (cell.theme_id, cell.region_id, cell.week_start) in voted or any(
                     g["theme_id"] == cell.theme_id and g["region_id"] == cell.region_id for g in gaps):
                 continue
@@ -76,17 +89,12 @@ def contribute(country: str = "LY", s: Session = Depends(get_db), u: User = Depe
         if len(picked) == 5:
             break
 
-    # 4. Outlets with real volume but no scope or alignment on record
-    vol = dict(s.execute(select(Item.outlet_id, func.count()).where(
-        Item.country_id == c.id, Item.kind == "article", Item.published_at >= utcnow() - timedelta(days=84))
-        .group_by(Item.outlet_id).having(func.count() >= 5)).all())
-    cats = outlet_categories(s, list(vol))
-    need_cat = [oid for oid in vol if not {"scope", "alignment"} <= set(cats.get(oid, {}))]
-    need_cat.sort(key=lambda oid: -vol[oid])
-    outlets = {o.id: o for o in s.scalars(select(Outlet).where(Outlet.id.in_(need_cat[:8])))}
-    outlet_rows = [{"id": oid, "name": outlets[oid].name, "domain": outlets[oid].domain, "articles": vol[oid],
-                    "missing": [d for d in ("scope", "alignment") if d not in cats.get(oid, {})]}
-                   for oid in need_cat[:8] if oid in outlets]
+    # 4. Outlets with real volume but no scope or alignment on record: a paged review queue, busiest
+    #    first by counted articles in the last year (OUTLET_MIN_ARTICLES at least), each with the
+    #    register programme's suggestion prefilled (register.suggestion_for: a foreign country-code
+    #    domain, GDELT's source country, or what the feed crawl saw on the homepage). Admins apply it,
+    #    journalists propose it, through POST /api/outlets/{id}/categories as before.
+    outlet_rows, outlet_total, pages = _outlet_queue(s, c, outlets_page, outlets_size)
 
     # 5. Your tally, and the team's over the last 30 days
     month = utcnow() - timedelta(days=30)
@@ -117,9 +125,42 @@ def contribute(country: str = "LY", s: Session = Depends(get_db), u: User = Depe
         "can_contribute": u.role != "viewer",
         "week": week.isoformat() if week else None,
         "gaps": gaps,
+        # the lenses the gaps come from, and the sentence that says so (the other lenses have too few
+        # judged topics to compare; /api/meta says which are offered)
+        "lenses": {"offered": sorted(offered), "note": tr(LENSES_NOTE if offered else NO_LENS_NOTE)},
         "untagged": {"total": count(untagged_q), "items": hydrate_items(s, untagged)},
         "unplaced": {"total": count(unplaced_q), "items": hydrate_items(s, unplaced)},
         "to_assess": hydrate_items(s, picked),
-        "outlets": {"total": len(need_cat), "items": outlet_rows},
+        "outlets": {"total": outlet_total, "page": outlets_page, "size": outlets_size, "pages": pages,
+                    "items": outlet_rows},
         "mine": mine, "team": team, "my_suggestions": my_suggestions,
     }
+
+
+def _outlet_queue(s: Session, c, page: int, size: int) -> tuple[list[dict], int, int]:
+    """The outlets needing a category, one page of them with suggestions. (rows, total, pages)."""
+    vol = {oid: n for oid, n in register.counted_articles(s, c.id, register.DORMANT_DAYS).items()
+           if n >= OUTLET_MIN_ARTICLES}
+    cats = outlet_categories(s, list(vol))
+    need_cat = [oid for oid in vol if not {"scope", "alignment"} <= set(cats.get(oid, {}))]
+    need_cat.sort(key=lambda oid: (-vol[oid], oid))
+    total = len(need_cat)
+    pages = max(1, -(-total // size))
+    page = min(max(1, page), pages)
+    ids = need_cat[(page - 1) * size: page * size]
+    outlets = {o.id: o for o in s.scalars(select(Outlet).where(Outlet.id.in_(ids)))}
+    scoped = register.scoped_outlets(s)
+    votes = register.gdelt_votes(s, c.id) if any(oid not in scoped for oid in ids) else {}
+    rows = []
+    for oid in ids:
+        o = outlets.get(oid)
+        if o is None:
+            continue
+        sug = register.suggestion_for(o, c, votes.get(oid), has_scope=oid in scoped)
+        rows.append({"id": oid, "name": o.name, "domain": o.domain, "languages": o.languages, "articles": vol[oid],
+                     "missing": [d for d in ("scope", "alignment") if d not in cats.get(oid, {})],
+                     "categories": {k: v["value"] for k, v in cats.get(oid, {}).items()},
+                     "base_country": o.base_country,
+                     "suggestion": {k: sug.get(k) for k in ("scope", "base_country", "confidence", "evidence", "rule", "note")}
+                     if sug else None})
+    return rows, total, pages

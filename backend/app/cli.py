@@ -12,6 +12,11 @@
   basis-departures          list the source|outlet pairs that left the comparison in the last 4 weeks (nightly; the
                             admin health card and the digest read the list)
   backup                    the nightly off-site database backup now (VACUUM INTO, quick_check, gzip, upload, prune)
+  label-scopes [--apply]    the register programme (register.py): scope labels a machine can be honest about (foreign
+                            country-code domains, GDELT's source country, vanity .ly domains), printed as a plan; --apply
+                            writes them. Alignment is never set; homepage signals stay suggestions on Contribute
+  discover-feeds [--limit N]  look for the feeds of N outlets that have none (default 50, the nightly job's share):
+                            <link rel=alternate>, /feed/, /rss, /rss.xml, /feed.xml, /ar/feed/, the WordPress API
   dedupe                    mark every duplicate copy of a story (full pass)
   mark-recurring [--days 30] [--min 3] [--since YYYY-MM-DD]  flag recurring posts (daily rates, weather...) so no count
                             treats them as stories: the same headline minus digits and weekdays, 3+ times within 30 days at
@@ -381,6 +386,20 @@ def _run(cmd: str, args: list[str]):
     elif cmd == "backup":
         from .jobs import backup
         print(backup())
+    elif cmd == "label-scopes":
+        import json
+        from .register import run as run_register
+        with SessionLocal() as s:
+            res = run_register(s, apply_now="--apply" in args)
+        print(json.dumps(res, ensure_ascii=False))
+    elif cmd == "discover-feeds":
+        import json
+        from .collectors import feeds as feeds_mod
+        from .collectors.base import run_collector
+        opt = lambda k, d=None: args[args.index(k) + 1] if k in args else d  # noqa: E731
+        with SessionLocal() as s:
+            run = run_collector(s, "discover_feeds", lambda sess: feeds_mod.discover(sess, limit=int(opt("--limit", feeds_mod.NIGHTLY))))
+            print(json.dumps({"status": run.status, "changed": run.rows, "detail": run.error}, ensure_ascii=False))
     else:
         print(__doc__)
         return 1

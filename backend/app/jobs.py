@@ -145,6 +145,7 @@ def nightly():
     for key in ("wikipedia", "acled", "ucdp", "reliefweb"):
         collect(key)
     collect("gnews_social")   # yesterday and the day before, one fixed day each (Google indexes late)
+    _discover_feeds()         # the feeds of 50 outlets that have none (collectors/feeds.py)
     _resolve_links()
     _mark_recurring()
     _record_departures()
@@ -153,6 +154,20 @@ def nightly():
     if res and res.get("promoted"):
         model_job("theme_model", "classify-items", "--all")
     _checkpoint_wal()
+
+
+def _discover_feeds(limit: int | None = None) -> str:
+    """Feed discovery for the outlets that have none (collectors/feeds.py), recorded as "discover_feeds"
+    in source_run (the health strip, stale after 48 hours). rows = feeds found."""
+    from .collectors import feeds
+    with SessionLocal() as s:
+        kw = {"limit": limit} if limit else {}
+        return run_collector(s, "discover_feeds", lambda sess: feeds.discover(sess, **kw)).status
+
+
+@_locked
+def discover_feeds(limit: int | None = None) -> str:
+    return _discover_feeds(limit)
 
 
 def _record_departures() -> int:
@@ -326,6 +341,7 @@ JOBS = {
     "classify_all": lambda: _locked(model_job)("theme_model", "classify-items", "--all"),
     "gnews_settle": gnews_settle,
     "basis_departures": _locked(_record_departures),
+    "discover_feeds": discover_feeds,
 }
 
 

@@ -215,6 +215,9 @@ def infer_scope(s: Session, o: Outlet) -> bool:
     # facebook.com/almasartv.ly is a page name, not a .ly domain (and could be anyone's)
     if not c or not o.domain.endswith("." + c.iso2.lower()) or o.domain.split("/", 1)[0] in SOCIAL:
         return False
+    from .register import is_vanity   # bit.ly, ow.ly ...: a vanity .ly domain is never a Libyan outlet
+    if is_vanity(o.domain, c.config):
+        return False
     if s.scalar(select(OutletCategory.id).where(OutletCategory.outlet_id == o.id, OutletCategory.dimension == "scope")):
         return False
     s.add(OutletCategory(outlet_id=o.id, dimension="scope", value=c.name_en.lower() if c.iso2 != "LY" else "libyan",

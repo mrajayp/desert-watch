@@ -11,6 +11,7 @@ from .. import auth, settings
 from ..db import get_db
 from ..models import (ArticleAssessment, CellWeek, Event, Item, ItemTheme, NetworkEdgeWeek, NodeMetric, Outlet,
                       OutletCategory, Region, Theme, User, utcnow)
+from ..register import DORMANT_DAYS, active_outlet_ids
 from .common import country_or_404, outlet_categories
 from ..i18n import tr
 
@@ -35,33 +36,51 @@ def _quality(s: Session) -> dict[int, dict]:
             for o, a, d, l, n in rows}
 
 
-@router.get("/outlets")
-def list_outlets(country: str = "LY", days: int = 84, min_articles: int = 0, s: Session = Depends(get_db),
-                 _: User = Depends(auth.current_user)):
-    c = country_or_404(s, country)
+def _outlet_rows(s: Session, c, days: int, outlet_ids: list[int] | None = None) -> tuple[dict, dict, dict, Counter, dict]:
+    """The per-outlet figures a row carries: counted articles in `days`, the language mix, the active
+    categories, pending proposals and the quality averages. `outlet_ids` limits the queries to a few
+    outlets (one row for /api/outlets/{id})."""
     since = utcnow() - timedelta(days=days)
+    where = [Item.country_id == c.id, Item.kind == "article", Item.published_at >= since]
+    if outlet_ids is not None:
+        where.append(Item.outlet_id.in_(outlet_ids))
     counts = dict(s.execute(select(Item.outlet_id, func.count(Item.id)).where(
-        Item.country_id == c.id, Item.kind == "article", Item.relevant.is_(True), Item.duplicate_of.is_(None), Item.published_at >= since)
-        .group_by(Item.outlet_id)).all())
+        *where, Item.relevant.is_(True), Item.duplicate_of.is_(None)).group_by(Item.outlet_id)).all())
     langs = defaultdict(Counter)
-    for o, l, n in s.execute(select(Item.outlet_id, Item.lang, func.count(Item.id)).where(
-            Item.country_id == c.id, Item.kind == "article", Item.published_at >= since).group_by(Item.outlet_id, Item.lang)):
+    for o, l, n in s.execute(select(Item.outlet_id, Item.lang, func.count(Item.id)).where(*where)
+                             .group_by(Item.outlet_id, Item.lang)):
         langs[o][l or "und"] = n
-    cats = outlet_categories(s)
-    pending = Counter(o for (o,) in s.execute(select(OutletCategory.outlet_id).where(OutletCategory.status == "proposed")))
-    q = _quality(s)
+    cats = outlet_categories(s, outlet_ids)
+    pq = select(OutletCategory.outlet_id).where(OutletCategory.status == "proposed")
+    if outlet_ids is not None:
+        pq = pq.where(OutletCategory.outlet_id.in_(outlet_ids))
+    pending = Counter(o for (o,) in s.execute(pq))
+    return counts, langs, cats, pending, _quality(s)
+
+
+def _outlet_row(o: Outlet, counts, langs, cats, pending, quality) -> dict:
+    return {"id": o.id, "name": o.name, "domain": o.domain, "languages": o.languages, "rss": bool(o.rss_url),
+            "base_city": o.base_city, "base_country": o.base_country, "lat": o.lat, "lon": o.lon,
+            "created_via": o.created_via, "monitored": o.monitored is not False, "active": o.active,
+            "closed_on": o.closed_on.isoformat() if o.closed_on else None,
+            "external": o.external or {}, "articles": counts.get(o.id, 0), "lang_mix": dict(langs.get(o.id, {})),
+            "categories": cats.get(o.id, {}), "pending_changes": pending.get(o.id, 0),
+            "quality": quality.get(o.id)}
+
+
+@router.get("/outlets")
+def list_outlets(country: str = "LY", days: int = 84, min_articles: int = 0, show_dormant: int = 0,
+                 s: Session = Depends(get_db), _: User = Depends(auth.current_user)):
+    """The register, busiest first. An outlet with no counted article in DORMANT_DAYS days is dormant and
+    left out unless show_dormant=1: most are domains Google News returned once and never again."""
+    c = country_or_404(s, country)
+    counts, langs, cats, pending, q = _outlet_rows(s, c, days)
+    alive = None if show_dormant else active_outlet_ids(s, c.id, DORMANT_DAYS)
     out = []
     for o in s.scalars(select(Outlet).where(Outlet.active.is_(True))):
-        n = counts.get(o.id, 0)
-        if n < min_articles:
+        if counts.get(o.id, 0) < min_articles or (alive is not None and o.id not in alive):
             continue
-        out.append({"id": o.id, "name": o.name, "domain": o.domain, "languages": o.languages, "rss": bool(o.rss_url),
-                    "base_city": o.base_city, "base_country": o.base_country, "lat": o.lat, "lon": o.lon,
-                    "created_via": o.created_via, "monitored": o.monitored is not False,
-                    "closed_on": o.closed_on.isoformat() if o.closed_on else None,
-                    "external": o.external or {}, "articles": n, "lang_mix": dict(langs.get(o.id, {})),
-                    "categories": cats.get(o.id, {}), "pending_changes": pending.get(o.id, 0),
-                    "quality": q.get(o.id)})
+        out.append(_outlet_row(o, counts, langs, cats, pending, q))
     out.sort(key=lambda x: -x["articles"])
     return out
 
@@ -165,33 +184,65 @@ def patch_outlet(oid: int, body: OutletPatch, s: Session = Depends(get_db), u: U
             o.lat, o.lon = cities[data["base_city"]]
     for k, v in data.items():
         setattr(o, k, v)
+    if "rss_url" in data:
+        # a feed an admin set or changed starts afresh: the failure streak and the auto-pause
+        # (collectors/rss.py) belong to the old address
+        o.external = {k: v for k, v in (o.external or {}).items() if k not in ("feed_failed_runs", "feed_paused")}
     s.commit()
     return {"ok": True}
 
 
 # ---------------------------------------------------------------- network
+# Edge kinds a caller may ask for. "similarity" is the name the interface uses for the outlet-outlet
+# theme-specialisation edges, stored as kind "outlet_outlet" (network.py); both spellings are accepted.
+EDGE_KINDS = {"outlet_region": "outlet_region", "outlet_theme": "outlet_theme", "similarity": "outlet_outlet",
+              "outlet_outlet": "outlet_outlet", "syndication": "syndication"}
+WEEKLY_KINDS = ("outlet_region", "outlet_theme")
+STATIC_KINDS = ("outlet_outlet", "syndication")
+
+
 @router.get("/network")
 def network(country: str = "LY", theme_id: int | None = None, theme_group: str | None = None, week: date | None = None,
-            weeks: int = 4, min_weight: float = 1, s: Session = Depends(get_db), _: User = Depends(auth.current_user)):
+            weeks: int = 4, min_weight: float = 1, kinds: str | None = None, s: Session = Depends(get_db),
+            _: User = Depends(auth.current_user)):
+    """Outlet nodes with their region, theme, similarity and syndication edges. `kinds` (a comma list
+    among outlet_region, outlet_theme, similarity, syndication) limits the edges sent, and with them
+    the outlet nodes, which are only those an edge touches; the map asks for outlet_region alone.
+    Omitted, everything comes back as before. Region and theme nodes always come (small lists)."""
     c = country_or_404(s, country)
+    wanted = set(EDGE_KINDS.values())
+    if kinds:
+        asked = [k.strip() for k in kinds.split(",") if k.strip()]
+        unknown = [k for k in asked if k not in EDGE_KINDS]
+        if unknown:
+            raise HTTPException(400, tr("Unknown edge kind: {kinds}", kinds=", ".join(unknown)))
+        wanted = {EDGE_KINDS[k] for k in asked}
     week = week or s.scalar(select(func.max(NetworkEdgeWeek.week_start)).where(NetworkEdgeWeek.country_id == c.id))
     edges_q = select(NetworkEdgeWeek).where(NetworkEdgeWeek.country_id == c.id)
     weekly = []
-    if week:
+    static_kinds = tuple(k for k in STATIC_KINDS if k in wanted)
+    # the outlet_theme rows are always read: a node's `articles` (what sizes its bubble) is the sum of
+    # its theme edges in the window, whether or not those edges are sent
+    if week and (wanted & set(WEEKLY_KINDS)):
         start = week - timedelta(weeks=weeks - 1)
-        wq = edges_q.where(NetworkEdgeWeek.kind.in_(("outlet_region", "outlet_theme")),
+        wq = edges_q.where(NetworkEdgeWeek.kind.in_(tuple({*WEEKLY_KINDS} & (wanted | {"outlet_theme"}))),
                            NetworkEdgeWeek.week_start >= start, NetworkEdgeWeek.week_start <= week)
         if theme_id:
             wq = wq.where(NetworkEdgeWeek.theme_id == theme_id)
         elif theme_group:
             wq = wq.where(NetworkEdgeWeek.theme_id.in_(select(Theme.id).where(Theme.group == theme_group)))
         weekly = s.scalars(wq).all()
-    static = s.scalars(edges_q.where(NetworkEdgeWeek.kind.in_(("outlet_outlet", "syndication")))).all()
+    static = s.scalars(edges_q.where(NetworkEdgeWeek.kind.in_(static_kinds))).all() if static_kinds else []
 
     agg = Counter()
     for e in weekly:
         agg[(e.kind, e.source_node, e.target_node)] += e.weight
-    edges = [{"kind": k, "source": a, "target": b, "weight": w} for (k, a, b), w in agg.items() if w >= min_weight]
+    volume = Counter()
+    for (k, a, _b), w in agg.items():
+        if k == "outlet_theme" and w >= min_weight:
+            volume[a] += w
+    edges = [{"kind": k, "source": a, "target": b, "weight": w} for (k, a, b), w in agg.items()
+             if w >= min_weight and k in wanted]
     edges += [{"kind": e.kind, "source": e.source_node, "target": e.target_node, "weight": e.weight} for e in static]
 
     used = {e["source"] for e in edges} | {e["target"] for e in edges}
@@ -199,10 +250,6 @@ def network(country: str = "LY", theme_id: int | None = None, theme_group: str |
     outlets = {o.id: o for o in s.scalars(select(Outlet).where(Outlet.id.in_(outlet_ids)))}
     cats = outlet_categories(s, outlet_ids)
     metrics = {m.node: m for m in s.scalars(select(NodeMetric).where(NodeMetric.country_id == c.id))}
-    volume = Counter()
-    for e in edges:
-        if e["kind"] == "outlet_theme":
-            volume[e["source"]] += e["weight"]
     nodes = []
     for oid, o in outlets.items():
         key = f"o:{oid}"
@@ -373,14 +420,22 @@ def outlet_reach_api(oid: int, s: Session = Depends(get_db), _: User = Depends(a
 # ---------------------------------------------------------------- one outlet
 # Registered last: /outlets/taxonomy and /outlets/blind-spots above must match before {oid}.
 @router.get("/outlets/{oid}")
-def outlet_detail(oid: int, s: Session = Depends(get_db), u: User = Depends(auth.current_user)):
-    """One outlet. ai_cited_4w: citations by AI assistants in the last 4 weeks (the AI answers audit), or
-    None when the user may not see audit results yet."""
+def outlet_detail(oid: int, days: int = 84, s: Session = Depends(get_db), u: User = Depends(auth.current_user)):
+    """One outlet: the same row as GET /api/outlets gives (articles in `days` days, language mix,
+    categories, pending proposals, quality, closed_on), whether or not it is dormant, plus ai_cited_4w:
+    citations by AI assistants in the last 4 weeks (the AI answers audit), or None when the user may
+    not see audit results yet. The outlet panel reads this instead of the whole list."""
     from .ai_audit import ai_cited_4w
+    from ..models import Country
     o = s.get(Outlet, oid)
     if not o:
         raise HTTPException(404, tr("Unknown outlet"))
-    return {"id": o.id, "name": o.name, "domain": o.domain, "languages": o.languages, "base_city": o.base_city,
-            "base_country": o.base_country, "monitored": o.monitored is not False, "active": o.active,
-            "closed_on": o.closed_on.isoformat() if o.closed_on else None,
-            "categories": outlet_categories(s, [o.id]).get(o.id, {}), "ai_cited_4w": ai_cited_4w(s, u, o.id)}
+    c = s.get(Country, o.country_id) if o.country_id else s.scalar(select(Country))
+    row = _outlet_row(o, *_outlet_rows(s, c, days, [o.id])) if c else {
+        "id": o.id, "name": o.name, "domain": o.domain, "languages": o.languages, "rss": bool(o.rss_url),
+        "base_city": o.base_city, "base_country": o.base_country, "lat": o.lat, "lon": o.lon, "created_via": o.created_via,
+        "monitored": o.monitored is not False, "active": o.active, "closed_on": o.closed_on.isoformat() if o.closed_on else None,
+        "external": o.external or {}, "articles": 0, "lang_mix": {}, "categories": outlet_categories(s, [o.id]).get(o.id, {}),
+        "pending_changes": 0, "quality": None}
+    # articles_days: the window `articles` counts, so the panel can label the count ("12 weeks" / "12 months")
+    return {**row, "articles_days": days, "ai_cited_4w": ai_cited_4w(s, u, o.id)}
