@@ -16,8 +16,49 @@ export const isAbort = (e) => e?.name === 'AbortError'
 let onUnauthorised = null
 export function setUnauthorisedHandler(fn) { onUnauthorised = fn }
 
+// ---- the GET memo ------------------------------------------------------------------------------
+// /api/cells and /api/network answers are kept for 10 minutes, keyed by URL and interface language:
+// the past weeks they describe change only at the :45 recompute, and the week slider, "play" and a
+// page change ask for the same URLs again and again. An in-flight call is shared too. refresh()
+// (a vote, a claim, an added article) calls invalidateMemo() so the next GET goes to the server;
+// `fresh: true` on one call does the same for that call. Failures are never kept.
+export const MEMO_PATHS = [/^\/api\/cells(\?|$)/, /^\/api\/network(\?|$)/]
+export const MEMO_MS = 10 * 60 * 1000
+const memo = new Map() // key -> { at, promise }
+let now = () => Date.now()
+export const isMemoable = (path, method = 'GET') => method === 'GET' && MEMO_PATHS.some((re) => re.test(path))
+export function invalidateMemo() { memo.clear() }
+export const memoSize = () => memo.size
+// tests: a fake clock
+export function _setClock(fn) { now = fn || (() => Date.now()) }
+
+// a shared promise rejected early for one caller when its signal fires, without cancelling the fetch
+function withSignal(p, signal) {
+  if (!signal || typeof signal.addEventListener !== 'function') return p
+  return new Promise((resolve, reject) => {
+    const abort = () => { const e = new Error('The operation was aborted'); e.name = 'AbortError'; reject(e) } // i18n-ok: the browser's own error name and text, never shown
+    if (signal.aborted) { abort(); return }
+    signal.addEventListener('abort', abort, { once: true })
+    p.then((v) => { signal.removeEventListener('abort', abort); resolve(v) }, (e) => { signal.removeEventListener('abort', abort); reject(e) })
+  })
+}
+
 // silent401: the caller expects "not signed in" as an answer (the first /api/me) and handles it itself
-export async function api(path, { method = 'GET', body, signal, silent401 = false } = {}) {
+// fresh: skip the memo for this call (the answer still refreshes it)
+export async function api(path, { method = 'GET', body, signal, silent401 = false, fresh = false } = {}) {
+  if (isMemoable(path, method)) {
+    const key = `${getLang()} ${path}`
+    const hit = memo.get(key)
+    if (hit && !fresh && now() - hit.at < MEMO_MS) return withSignal(hit.promise, signal)
+    const promise = request(path, { method, body, silent401 })
+    memo.set(key, { at: now(), promise })
+    promise.catch(() => { if (memo.get(key)?.promise === promise) memo.delete(key) })
+    return withSignal(promise, signal)
+  }
+  return request(path, { method, body, signal, silent401 })
+}
+
+async function request(path, { method = 'GET', body, signal, silent401 = false } = {}) {
   let r
   try {
     r = await fetch(path, {

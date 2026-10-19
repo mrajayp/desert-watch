@@ -1,7 +1,7 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, createContext, lazy, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { NavLink, Navigate, Route, Routes, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { api, setTracking, setUnauthorisedHandler, track } from './api'
-import { getLang, pick, saveLang, setLang as applyLang, t } from './i18n'
+import { api, invalidateMemo, setTracking, setUnauthorisedHandler, track } from './api'
+import { getLang, loadCatalogue, pick, saveLang, setLang as applyLang, t } from './i18n'
 import LangSwitch from './components/LangSwitch'
 import GapPanel from './components/GapPanel'
 import ItemPanel from './components/ItemPanel'
@@ -15,17 +15,20 @@ import { useFilters } from './hooks/useFilters'
 import { useWide } from './hooks/useMedia'
 import { addPath, articlePath, articlesPath, detailKind, filterSearch, gapParams, gapPath, idList, loginPath, outletPath, parentPath, parseId, safeNext } from './routes'
 import ThisWeek from './pages/ThisWeek'
-import Help from './pages/Help'
-import Overview from './pages/Overview'
-import Trends from './pages/Trends'
-import Outlets from './pages/Outlets'
-import Admin from './pages/Admin'
 import Me from './pages/Me'
-import DigestPage from './pages/Digest'
-import Timeline from './pages/Timeline'
 import Articles from './pages/Articles'
-import Contribute from './pages/Contribute'
 import { Invite, Login } from './pages/Auth'
+
+// Every page but the landing page, the article list and the detail dialogs is its own chunk, fetched on
+// the first visit. The charts, d3 and the world atlas travel with the page that draws them.
+const Contribute = lazy(() => import('./pages/Contribute'))
+const Help = lazy(() => import('./pages/Help'))
+const Overview = lazy(() => import('./pages/Overview'))
+const Trends = lazy(() => import('./pages/Trends'))
+const Outlets = lazy(() => import('./pages/Outlets'))
+const Admin = lazy(() => import('./pages/Admin'))
+const DigestPage = lazy(() => import('./pages/Digest'))
+const Timeline = lazy(() => import('./pages/Timeline'))
 
 const Ctx = createContext(null)
 export const useApp = () => useContext(Ctx)
@@ -33,8 +36,12 @@ export const useApp = () => useContext(Ctx)
 export default function App() {
   const [me, setMe] = useState(undefined)
   const [lang, setLangState] = useState(getLang())
-  // switching language remounts the screens below, so every t() and every API text is fetched again
-  const setLang = useCallback((l) => { applyLang(l); saveLang(l); setLangState(l) }, [])
+  // switching language remounts the screens below, so every t() and every API text is fetched again;
+  // Arabic waits for its catalogue chunk first, so no screen ever renders half-translated
+  const setLang = useCallback(async (l) => {
+    try { await loadCatalogue(l) } catch { /* the chunk did not arrive: the switch still happens, in English words */ }
+    applyLang(l); saveLang(l); setLangState(l)
+  }, [])
   const loc = useLocation()
   const nav = useNavigate()
   // the first /api/me may say "not signed in": that is an answer, not a failure
@@ -103,8 +110,9 @@ function Shell({ me, setMe, lang, setLang, metaQ }) {
   const carry = filterSearch(new URLSearchParams(pageLoc.search)) // lens and week follow the reader from page to page
   const moreActive = MORE_PATHS.some((p) => pageLoc.pathname === p || pageLoc.pathname.startsWith(`${p}/`))
 
-  const pendingQ = useApi(me.role === 'admin' ? '/api/admin/users' : null, { deps: [version] })
-  const pending = pendingQ.data ? pendingQ.data.filter((u) => u.status === 'pending').length : 0
+  // the badge on More and Admin: one small count, not the whole user list
+  const pendingQ = useApi(me.role === 'admin' ? '/api/admin/pending-count' : null, { deps: [version] })
+  const pending = Number(pendingQ.data?.pending) || 0
 
   // open a detail view over the current page (or over the same page when one is already open)
   const open = useCallback((path, extra = {}) => {
@@ -121,7 +129,8 @@ function Shell({ me, setMe, lang, setLang, metaQ }) {
   }, [nav])
 
   const value = useMemo(() => ({
-    me, setMe, meta, lang, setLang, filters, setFilters, version, can, refresh: () => setVersion((v) => v + 1), reloadMeta: metaQ.retry,
+    // refresh: after a write (a vote, a claim, an added article) every page refetches, past the GET memo
+    me, setMe, meta, lang, setLang, filters, setFilters, version, can, refresh: () => { invalidateMemo(); setVersion((v) => v + 1) }, reloadMeta: metaQ.retry,
     openGap: (theme_id, region_id, ctx = {}) => { track('click', 'gap', `${theme_id}:${region_id}`, ctx); open(gapPath(theme_id, region_id, { lens: ctx.lens, week: ctx.week }), { from: ctx.from }) },
     openArticles: (spec) => { track('click', 'chart', spec.title, spec.query); nav(articlesPath(spec.query), { state: { title: spec.title, subtitle: spec.subtitle, note: spec.note, from: spec.from || 'chart' } }) },
     openItem: (id, ctx = {}) => { track('click', 'item', id, ctx); open(articlePath(id), { from: ctx.from }) },
@@ -177,7 +186,7 @@ function Shell({ me, setMe, lang, setLang, metaQ }) {
               <NavLink to="/digest">{t('Digest')}</NavLink>
               <NavLink to="/help">{t('Help')}</NavLink>
               <NavLink to="/me">{t('Privacy')}</NavLink>
-              {me.role === 'admin' && <NavLink to="/admin">{t('Admin')}{pending > 0 && <span className="pill flag" style={{ marginInlineStart: 4 }}>{pending}</span>}</NavLink>}
+              {me.role === 'admin' && <NavLink to={{ pathname: '/admin', search: pending > 0 ? '?tab=people' : '' }}>{t('Admin')}{pending > 0 && <span className="pill flag" style={{ marginInlineStart: 4 }}>{pending}</span>}</NavLink>}
               <div className="more-who">
                 <span className="small muted" dir="auto">{me.display_name}</span>
                 <button type="button" className="btn small ghost" onClick={logout}>{t('Sign out')}</button>
@@ -195,7 +204,7 @@ function Shell({ me, setMe, lang, setLang, metaQ }) {
           {!meta ? (
             <div className="page">{metaQ.error ? <ErrorBox error={metaQ.error} onRetry={metaQ.retry} /> : <Loading />}</div>
           ) : (
-            <>
+            <Suspense fallback={<div className="page"><Loading /></div>}>
               <Routes location={pageLoc}>
                 <Route path="/" element={<ThisWeek />} />
                 <Route path="/map" element={<Overview />} />
@@ -215,7 +224,7 @@ function Shell({ me, setMe, lang, setLang, metaQ }) {
                 <Route path="*" element={<Navigate to="/" replace />} />
               </Routes>
               {background && wide && <Routes location={loc}>{detailRoutes}</Routes>}
-            </>
+            </Suspense>
           )}
         </div>
         {meta && <PageFeedback />}

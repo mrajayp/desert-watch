@@ -4,7 +4,7 @@
 //  * ClusterMultiples - the outlet map repeated for consecutive 4-week periods with the outlet set
 //                       and positions held fixed; node size = that period's articles. Differences
 //                       between panels are changes in coverage, not in what was collected.
-import * as d3 from 'd3'
+import { forceCollide, forceSimulation, forceX, forceY, max as d3max, scaleSqrt, sum as d3sum } from 'd3'
 import { useMemo, useRef, useState } from 'react'
 import { fmtDate, fmtNum, isAr, t } from '../i18n'
 import { CLUSTER_SLOTS, clusterColor, layoutClusters, tagText } from './ClusterMap'
@@ -31,7 +31,7 @@ export function ClusterSummary({ network, clusters, themes, lang = 'en', onOpenC
     const named = clusters.filter((c) => c.rank < CLUSTER_SLOTS.length)
     const other = clusters.filter((c) => c.rank >= CLUSTER_SLOTS.length)
     const groups = [...named.map((c) => ({ key: c.rank, c, articles: c.articles, outlets: c.outlets, members: new Set(c.members) }))]
-    if (other.length) groups.push({ key: 'other', c: null, articles: d3.sum(other, (c) => c.articles), outlets: d3.sum(other, (c) => c.outlets), members: new Set(other.flatMap((c) => c.members)) })
+    if (other.length) groups.push({ key: 'other', c: null, articles: d3sum(other, (c) => c.articles), outlets: d3sum(other, (c) => c.outlets), members: new Set(other.flatMap((c) => c.members)) })
     const groupOf = new Map()
     groups.forEach((g) => g.members.forEach((m) => groupOf.set(m, g.key)))
     // reprint flow between clusters (and within)
@@ -45,22 +45,22 @@ export function ClusterSummary({ network, clusters, themes, lang = 'en', onOpenC
       else flow.set(`${a}|${b}`, (flow.get(`${a}|${b}`) || 0) + e.weight)
     }
     const maxR = Math.min(W, H) * 0.2
-    const r = d3.scaleSqrt().domain([0, d3.max(groups, (g) => g.articles) || 1]).range([0, maxR])
+    const r = scaleSqrt().domain([0, d3max(groups, (g) => g.articles) || 1]).range([0, maxR])
     const nodes = groups.map((g, i) => ({ ...g, r: Math.max(18, r(g.articles)), x: W / 2 + Math.cos(i * 2.4) * 60, y: H / 2 + Math.sin(i * 2.4) * 40 }))
-    const sim = d3.forceSimulation(nodes).force('collide', d3.forceCollide((d) => d.r + 46)).force('x', d3.forceX(W / 2).strength(0.06))
-      .force('y', d3.forceY(H / 2).strength(0.1)).stop()
+    const sim = forceSimulation(nodes).force('collide', forceCollide((d) => d.r + 46)).force('x', forceX(W / 2).strength(0.06))
+      .force('y', forceY(H / 2).strength(0.1)).stop()
     for (let i = 0; i < 300; i++) sim.tick()
     nodes.forEach((n) => { n.x = Math.max(n.r + 10, Math.min(W - n.r - 10, n.x)); n.y = Math.max(n.r + 10, Math.min(H - n.r - 46, n.y)) })
     const byKey = new Map(nodes.map((n) => [n.key, n]))
     const links = [...flow.entries()].map(([k, w]) => { const [a, b] = k.split('|'); return { s: byKey.get(isNaN(a) ? a : +a), t: byKey.get(isNaN(b) ? b : +b), w } })
       .filter((l) => l.s && l.t && l.w >= 3)
       .sort((a, b) => b.w - a.w).slice(0, 8)  // strongest flows only; the outlet view has the rest
-    const wScale = d3.scaleSqrt().domain([3, d3.max(links, (l) => l.w) || 3]).range([1, 4.5])
+    const wScale = scaleSqrt().domain([3, d3max(links, (l) => l.w) || 3]).range([1, 4.5])
     return { nodes, links, within, wScale }
   }, [network, clusters, W, H])
 
   if (!layout) return <div ref={wrap} className="viz"><div className="empty">{t('Clusters appear once enough outlets have 10+ articles.')}</div></div>
-  const total = d3.sum(layout.nodes, (n) => n.articles) || 1
+  const total = d3sum(layout.nodes, (n) => n.articles) || 1
   const label = (n) => (n.c ? (lang === 'ar' && n.c.name_ar ? n.c.name_ar : n.c.name) : t('Other clusters'))
   const arrow = (l) => {
     // curved arrow from edge of s to edge of t
@@ -82,7 +82,7 @@ export function ClusterSummary({ network, clusters, themes, lang = 'en', onOpenC
         {layout.links.map((l, i) => {
           const on = hover == null || l.s.key === hover || l.t.key === hover
           return <path key={i} d={arrow(l)} fill="none" stroke="var(--ink-2)" strokeWidth={layout.wScale(l.w)} strokeOpacity={on ? 0.45 : 0.06}
-            markerEnd="url(#cs-arrow)" onMouseMove={(e) => tip.show(e, <div><b>{t('{from} → {to}', { from: label(l.s), to: label(l.t) })}</b><div>{t('{n} near-identical headlines published later by the second cluster', { n: l.w })}</div></div>, wrap.current)} />
+            markerEnd="url(#cs-arrow)" onMouseMove={(e) => tip.show(e, <div><b>{t('{from} → {to}', { from: label(l.s), to: label(l.t) })}</b><div>{t('{n} near-identical headlines published later by the second cluster', { n: l.w })}</div></div>, wrap.current, `a:${i}`)} />
         })}
         {layout.nodes.map((n) => {
           const top = n.c ? n.c.themes.filter((t) => t.lift >= 1.15).slice(0, 2) : []
@@ -96,14 +96,14 @@ export function ClusterSummary({ network, clusters, themes, lang = 'en', onOpenC
                   {top.map((th) => <div key={th.theme_id} className="small">{t('over-covers {theme} ×{lift}', { theme: tname.get(th.theme_id), lift: fmtNum(th.lift, { useGrouping: false }) })}</div>)}
                   {layout.within.get(n.key) ? <div className="small muted">{t('{n} reprints inside the cluster', { n: layout.within.get(n.key) })}</div> : null}
                   {n.c && <div className="small muted">{t('e.g. {outlets}', { outlets: n.c.top_outlets.slice(0, 3).join(isAr() ? '، ' : ', ') })}</div>}
-                </div>), wrap.current) }}
+                </div>), wrap.current, n.key) }}
               onClick={() => n.c && onOpenCluster?.(n.c.rank)}>
               <circle r={n.r} fill={n.c ? clusterColor(n.c.rank) : 'var(--cat-unknown)'} fillOpacity={0.9} stroke="var(--surface)" strokeWidth={2} />
               <text y={4} textAnchor="middle" className="num" style={{ fontSize: Math.max(11, Math.min(20, n.r / 3)), fontWeight: 600, fill: n.c && (n.c.rank === 1 || n.c.rank === 3) ? 'var(--ink)' : n.c ? '#fff' : 'var(--ink)' }}>
                 {Math.round((n.articles / total) * 100)}%</text>
               <text y={n.r + 15} textAnchor="middle" style={{ fontSize: 12, fontWeight: 600, fill: 'var(--ink)', paintOrder: 'stroke', stroke: 'var(--surface)', strokeWidth: 3 }}>
                 {label(n).length > 34 ? label(n).slice(0, 33) + '…' : label(n)}</text>
-              <text y={n.r + 29} textAnchor="middle" style={{ fontSize: 10.5, fill: 'var(--ink-2)', paintOrder: 'stroke', stroke: 'var(--surface)', strokeWidth: 3 }}>
+              <text y={n.r + 29} textAnchor="middle" style={{ fontSize: 11, fill: 'var(--ink-2)', paintOrder: 'stroke', stroke: 'var(--surface)', strokeWidth: 3 }}>
                 {t('{n} outlets', { n: n.outlets })}{n.c ? ` · ${tagText(n.c.tags[0])}` : ''}</text>
             </g>)
         })}
@@ -135,8 +135,8 @@ export function ClusterMultiples({ network, clusters, periods, lang = 'en', svgR
   if (!base || !n) return <div ref={wrap} className="viz"><div className="empty">{t('Small multiples need at least one full 4-week period of network data.')}</div></div>
   const rows = Math.ceil(n / cols)
   const H = rows * (ph + 52) + 4
-  const maxN = d3.max(Object.values(periods.outlets).flat()) || 1
-  const r = d3.scaleSqrt().domain([0, maxN]).range([0, Math.max(12, pw / 22)])
+  const maxN = d3max(Object.values(periods.outlets).flat()) || 1
+  const r = scaleSqrt().domain([0, maxN]).range([0, Math.max(12, pw / 22)])
   const sx = pw / 1000, sy = ph / 720
   return (
     <div ref={wrap} className="viz" onMouseLeave={tip.hide}>
@@ -149,7 +149,7 @@ export function ClusterMultiples({ network, clusters, periods, lang = 'en', svgR
         {periods.periods.map((p, i) => {
           const ox = (i % cols) * (pw + gap), oy = Math.floor(i / cols) * (ph + 52)
           const totals = Object.entries(periods.clusters).map(([cid, v]) => ({ c: idByCluster.get(+cid), n: v.articles[i] }))
-          const sum = d3.sum(totals, (t) => t.n) || 1
+          const sum = d3sum(totals, (t) => t.n) || 1
           const shares = totals.filter((t) => t.c).sort((a, b) => a.c.rank - b.c.rank)
           let acc = 0
           return (
@@ -162,7 +162,7 @@ export function ClusterMultiples({ network, clusters, periods, lang = 'en', svgR
                   const v = periods.outlets[nd.id]?.[i] || 0
                   return v > 0 ? (
                     <circle key={nd.id} cx={nd.x * sx} cy={nd.y * sy} r={Math.max(2.4, r(v))} fill={clusterColor(nd.rank)} stroke="var(--surface)" strokeWidth={1}
-                      onMouseMove={(e) => tip.show(e, <div><b dir="auto">{nd.name}</b><div>{t('{n} articles, {from} → {to}', { n: fmt(v), from: fmtDate(p.start), to: fmtDate(p.end) })}</div></div>, wrap.current)} />
+                      onMouseMove={(e) => tip.show(e, <div><b dir="auto">{nd.name}</b><div>{t('{n} articles, {from} → {to}', { n: fmt(v), from: fmtDate(p.start), to: fmtDate(p.end) })}</div></div>, wrap.current, `${nd.id}:${i}`)} />
                   ) : <circle key={nd.id} cx={nd.x * sx} cy={nd.y * sy} r={1.4} fill="none" stroke="var(--axis)" strokeWidth={0.8} />
                 })}
               </g>
@@ -171,7 +171,7 @@ export function ClusterMultiples({ network, clusters, periods, lang = 'en', svgR
                 {shares.map((sh) => {
                   const w = ((sh.n / sum) * (pw - 20))
                   const el = <rect key={sh.c.id} x={acc} y={0} width={Math.max(0, w - 1.5)} height={8} rx={2} fill={clusterColor(sh.c.rank)}
-                    onMouseMove={(e) => tip.show(e, <div><b>{lang === 'ar' && sh.c.name_ar ? sh.c.name_ar : sh.c.name}</b><div>{t('{n} articles ({pct}%)', { n: fmt(sh.n), pct: Math.round((sh.n / sum) * 100) })}</div></div>, wrap.current)} />
+                    onMouseMove={(e) => tip.show(e, <div><b>{lang === 'ar' && sh.c.name_ar ? sh.c.name_ar : sh.c.name}</b><div>{t('{n} articles ({pct}%)', { n: fmt(sh.n), pct: Math.round((sh.n / sum) * 100) })}</div></div>, wrap.current, `s:${sh.c.id}:${i}`)} />
                   acc += w
                   return el
                 })}

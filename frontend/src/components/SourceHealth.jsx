@@ -10,6 +10,13 @@ const STATUS_TEXT = { ok: N_('ok'), partial: N_('partial'), error: N_('error'), 
 const statusText = (s) => (STATUS_TEXT[s] ? t(STATUS_TEXT[s]) : s)
 // not faults: a source waiting for its key, or one whose key is set but whose collector is not written yet
 const WAITING = new Set(['awaiting_key', 'not_built'])
+// how often a source runs: expected_hours from the API when the row carries it; a manual source
+// (manual: true, or expected_hours sent as null) says so with its last run; an older API says nothing
+function schedule(r) {
+  if (r.manual === true || r.expected_hours === null) return r.last_run ? t('manual · last run {date}', { date: fmtDateTime(r.last_run) }) : t('manual')
+  if (typeof r.expected_hours === 'number' && r.expected_hours > 0) return t('runs every {n} hours', { n: r.expected_hours })
+  return ''
+}
 
 // compact: one line at the foot of the This week and Map pages: "Data updated 12 minutes ago · 2 sources
 // stale · Help" (admins get a link to Admin instead). Otherwise the full table, on the Admin page.
@@ -37,9 +44,10 @@ export default function SourceHealth({ compact = false }) {
   if (!rows.length && q.error) return <ErrorBox error={q.error} onRetry={q.retry} compact />
   return (
     <table className="data">
-      <thead><tr><th>{t('Source')}</th><th>{t('Status')}</th><th>{t('Last success')}</th><th className="num">{t('Rows (last run)')}</th><th>{t('Note')}</th></tr></thead>
+      <thead><tr><th>{t('Source')}</th><th>{t('Status')}</th><th>{t('Schedule')}</th><th>{t('Last success')}</th><th className="num">{t('Rows (last run)')}</th><th>{t('Note')}</th></tr></thead>
       <tbody>{rows.map((r) => (
         <tr key={r.key}><td>{r.label}</td><td>{statusText(r.status)}{r.stale && !WAITING.has(r.status) ? ` · ${t('stale')}` : ''}</td>
+          <td className="small">{schedule(r)}</td>
           <td className="small">{r.last_ok ? fmtDateTime(r.last_ok) : '–'}</td><td className="num">{r.rows}</td>
           <td className="small muted" style={{ maxWidth: 360, whiteSpace: 'pre-wrap' }}>{r.error?.split('\n')[0]}</td></tr>))}
       </tbody>

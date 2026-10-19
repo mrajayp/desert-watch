@@ -14,19 +14,40 @@ export function useSize(ref, fallback = 800) {
   return w
 }
 
+// A tooltip that follows the pointer. The position is written straight to the box's style through a
+// ref, so a mouse move never re-renders the chart; only the content is React state, and with a `key`
+// (the hovered week, district, outlet...) the content is set once per key, so moving across one mark
+// re-renders nothing at all. Without a key the content is set on every call (still positioned by ref).
+//   tip.show(evt, <div>…</div>, wrap.current, key?)
 export function useTooltip() {
-  const [tip, setTip] = useState(null)
-  const show = (evt, content, container) => {
-    const box = container.getBoundingClientRect()
-    let x = evt.clientX - box.left + 14
-    let y = evt.clientY - box.top + 14
-    if (x > box.width - 290) x = Math.max(4, x - 300)
-    setTip({ x, y, content })
+  const [tip, setTip] = useState(null) // { content, key }
+  const box = useRef(null)
+  const pos = useRef({ x: 0, y: 0 })
+  // left/top stay physical: x and y are measured from the pointer, in screen coordinates
+  const place = (el) => { if (el) { el.style.left = `${pos.current.x}px`; el.style.top = `${pos.current.y}px` } }
+  const show = (evt, content, container, key) => {
+    const b = container.getBoundingClientRect()
+    let x = evt.clientX - b.left + 14
+    let y = evt.clientY - b.top + 14
+    if (x > b.width - 290) x = Math.max(4, x - 300)
+    pos.current = { x, y }
+    place(box.current)
+    setTip((cur) => (cur && key != null && cur.key === key ? cur : { content, key }))
   }
-  // left/top stay physical: x and y are measured from the pointer, in screen coordinates. The box is a
-  // pointer convenience (aria-hidden): a screen reader would otherwise hear every mouse move.
-  const node = tip ? <div className="tooltip" style={{ left: tip.x, top: tip.y }} role="tooltip" aria-hidden="true">{tip.content}</div> : null
-  return { show, hide: () => setTip(null), node }
+  const hide = () => setTip(null)
+  // the box is a pointer convenience (aria-hidden): a screen reader would otherwise hear every mouse move
+  const node = tip ? (
+    <div ref={(el) => { box.current = el; place(el) }} className="tooltip" role="tooltip" aria-hidden="true">{tip.content}</div>
+  ) : null
+  return { show, hide, node }
+}
+
+// the width of a text in a font, measured on one shared canvas (never one canvas per call)
+let _measure = null
+export function textWidth(text, font = '11px system-ui, sans-serif') { // i18n-ok: a CSS font list, never shown
+  if (!_measure) _measure = document.createElement('canvas').getContext('2d')
+  _measure.font = font
+  return _measure.measureText(text).width
 }
 
 // Hatch pattern for "Not judged" (texture = never colour-alone).

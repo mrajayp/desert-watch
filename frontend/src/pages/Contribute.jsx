@@ -1,29 +1,36 @@
-import { useEffect, useRef, useState } from 'react'
-import { api } from '../api'
+import { Suspense, lazy, useEffect, useRef, useState } from 'react'
+import { api, qs } from '../api'
 import { useApp } from '../App'
-import { LENS_TEXT, RED_FROM, fmt, langName } from '../charts/scales'
+import { countryName } from '../charts/countries'
+import { DIMENSIONS, LENS_TEXT, RED_FROM, fmt, langName } from '../charts/scales'
 import { lensNeed, verdictSentence, weekRange } from '../charts/trendText'
-import AiPanelTask from '../components/AiPanelTask'
 import ArticleRow, { replaceItem } from '../components/ArticleRow'
-import { ErrorBox, Loading } from '../components/Notices'
+import { ErrorBox, Loading, useNotices } from '../components/Notices'
 import { LabelForm, NotCounted, ThemePills } from '../components/ThemeLabels'
 import { useApi } from '../hooks/useApi'
 import { useMutation } from '../hooks/useMutation'
 import { usePageTitle } from '../hooks/usePageTitle'
 import { fmtDate, isAr, pick, t, tn } from '../i18n'
 
+// the AI answers task (with its logging form) travels with the AI audit code, fetched when this page opens
+const AiPanelTask = lazy(() => import('../components/AiPanelTask'))
+
 const N_ = (s) => s // marks English for the catalogue; translated with t() when read
 
 // codes the API sends, shown in the interface language
 const MISSING = { scope: N_('scope'), alignment: N_('alignment') }
 const SUGGESTION_STATUS = { pending: N_('pending'), accepted: N_('accepted'), rejected: N_('rejected') }
+const CONFIDENCE = { reported: N_('reported'), likely: N_('likely'), disputed: N_('disputed'), unverified: N_('unverified') }
 const code = (table, k) => (table[k] ? t(table[k]) : k)
+const OUTLET_PAGE = 25
 
 // One place that tells a journalist where their input is needed right now, and why it matters.
 export default function Contribute() {
   const { meta, me, openGap, openOutlet, openAdd, version, can } = useApp()
   usePageTitle(t('Contribute'))
-  const q = useApi('/api/contribute', { deps: [version] })
+  // the outlet queue (task 6) is paged by the API: outlets_page / outlets_size
+  const [outletPage, setOutletPage] = useState(1)
+  const q = useApi('/api/contribute' + qs({ outlets_page: outletPage, outlets_size: OUTLET_PAGE }), { deps: [version] })
   const d = q.data
   const nm = (o) => (o ? pick(o, 'name') : '—')
   const themes = new Map(meta.themes.map((th) => [th.id, th]))
@@ -95,11 +102,9 @@ export default function Contribute() {
 
         <Task n="6" title={t('Who is this outlet?')} why={t('{n} active outlets have no scope or political alignment on record. Categories need an evidence link; admins review proposals.', { n: fmt(d.outlets.total) })}
           empty={t('Every active outlet is categorised.')}>
-          {d.outlets.items.length > 0 && <ul className="list">{d.outlets.items.map((o) => (
-            <li key={o.id} className="row" style={{ justifyContent: 'space-between', flexWrap: 'nowrap' }}>
-              <div><b dir="auto">{o.name}</b> <span className="small muted">{o.domain} · {tn(o.articles, '{count} article (12 wk)', '{count} articles (12 wk)', { count: fmt(o.articles) })} · {t('missing {what}', { what: o.missing.map((m) => code(MISSING, m)).join(t(' and ')) })}</span></div>
-              <button className="btn small" onClick={() => openOutlet(o.id)}>{t('Categorise')}</button>
-            </li>))}</ul>}
+          {d.outlets.items.length > 0 && (
+            <OutletQueue data={d.outlets} page={outletPage} setPage={setOutletPage} refreshing={q.refreshing}
+              onDone={(id) => q.setData((x) => ({ ...x, outlets: { ...x.outlets, total: Math.max(0, (x.outlets.total || 1) - 1), items: x.outlets.items.filter((o) => o.id !== id) } }))} />)}
         </Task>
       </div>
 
@@ -118,8 +123,57 @@ export default function Contribute() {
       </section>
       {me.role === 'admin' && <p className="small muted" style={{ marginTop: 8 }}>{t('Admins: suggestions arrive in Admin → Suggestions.')}</p>}
 
-      <AiPanelTask n="9" ro={ro} />
+      <Suspense fallback={<section className="card" style={{ marginTop: 16 }}><Loading /></section>}><AiPanelTask n="9" ro={ro} /></Suspense>
     </main>
+  )
+}
+
+// The outlets that still need a scope (and an alignment), 25 a page in the order the API ranks them (by
+// counted articles). When the register programme has a suggestion for the scope it is prefilled, with its
+// confidence and what it rests on; one click applies it (admins) or proposes it (journalists) through the
+// same POST /api/outlets/{id}/categories as the outlet dialog. The evidence link is the suggestion's own
+// when it is a link, else the outlet's home page.
+function OutletQueue({ data, page, setPage, refreshing, onDone }) {
+  const { me, openOutlet, can } = useApp()
+  const { notify } = useNotices()
+  const [picked, setPicked] = useState({}) // outlet id -> the scope chosen in its select
+  const size = data.size || OUTLET_PAGE
+  const pages = data.pages ?? Math.max(1, Math.ceil((data.total || 0) / size))
+  const scopeOf = (o) => picked[o.id] ?? o.suggestion?.scope ?? ''
+  const evidenceUrl = (o) => (/^https?:\/\//i.test(o.suggestion?.evidence || '') ? o.suggestion.evidence : `https://${o.domain}`)
+  const apply = useMutation((o, scope) => api(`/api/outlets/${o.id}/categories`, { method: 'POST', body: {
+    dimension: 'scope', value: scope, confidence: o.suggestion?.confidence || 'unverified', evidence_url: evidenceUrl(o), note: o.suggestion?.evidence || null,
+  } }), { onSuccess: (r, o) => { notify(r?.status === 'active' ? t('Applied.') : t('Proposed — an admin will review it.')); onDone(o.id) } })
+  const scopes = Object.keys(DIMENSIONS.scope.colors)
+  return (
+    <div style={refreshing ? { opacity: 0.6 } : undefined} aria-busy={refreshing || undefined}>
+      {apply.error && <ErrorBox error={apply.error} compact />}
+      <ul className="list">{data.items.map((o) => (
+        <li key={o.id} className="row" style={{ justifyContent: 'space-between' }}>
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <b dir="auto">{o.name}</b> <span className="small muted">{o.domain} · {tn(o.articles, '{count} article (12 wk)', '{count} articles (12 wk)', { count: fmt(o.articles) })} · {t('missing {what}', { what: (o.missing || []).map((m) => code(MISSING, m)).join(t(' and ')) })}</span>
+            {o.suggestion?.scope && (
+              <div className="small muted">{t('Suggested: {scope} ({confidence}), from {evidence}', {
+                scope: DIMENSIONS.scope.values[o.suggestion.scope] || o.suggestion.scope, confidence: code(CONFIDENCE, o.suggestion.confidence || 'unverified'), evidence: o.suggestion.evidence || '—',
+              })}{o.suggestion.base_country ? ` · ${countryName(o.suggestion.base_country)}` : ''}</div>)}
+          </div>
+          <div className="row" style={{ flexWrap: 'nowrap' }}>
+            {can && (
+              <select value={scopeOf(o)} onChange={(e) => setPicked({ ...picked, [o.id]: e.target.value })} aria-label={t('Scope')}>
+                <option value="">{t('choose…')}</option>
+                {scopes.map((v) => <option key={v} value={v}>{DIMENSIONS.scope.values[v]}</option>)}
+              </select>)}
+            {can && <button className="btn small primary" disabled={!scopeOf(o) || apply.busy} onClick={() => apply.run(o, scopeOf(o))}>{me.role === 'admin' ? t('Apply') : t('Propose')}</button>}
+            <button className="btn small" onClick={() => openOutlet(o.id)}>{t('Open')}</button>
+          </div>
+        </li>))}</ul>
+      {pages > 1 && (
+        <div className="row" style={{ marginTop: 8 }}>
+          <button type="button" className="btn small" disabled={page <= 1 || refreshing} aria-label={t('Previous page')} onClick={() => setPage(page - 1)}>‹</button>
+          <span className="small muted">{t('Page {page} of {pages}', { page, pages })}</span>
+          <button type="button" className="btn small" disabled={page >= pages || refreshing} aria-label={t('Next page')} onClick={() => setPage(page + 1)}>›</button>
+        </div>)}
+    </div>
   )
 }
 
@@ -212,14 +266,16 @@ function LearnQueue() {
   )
 }
 
-const SUGGEST_KINDS = {
+export const SUGGEST_KINDS = {
   source: { label: N_('Source to monitor'), hint: N_('A website, Facebook page or Telegram channel we should follow') },
   keyword: { label: N_('Search word'), hint: N_('A word or phrase that should count towards a topic') },
   alias: { label: N_('Place spelling'), hint: N_('Another way a district or town is written') },
   gap: { label: N_('Gap I know about'), hint: N_('A topic and place that is under-reported (feeds the Journalists lens)') },
 }
 
-function summary(x, themes, regions, nm) {
+// a suggestion's payload in words ("“term” → Theme", "“spelling” = District"); '' for a kind this page does
+// not know. Also used by the Admin queue, so an admin reads what the author saw, not raw JSON.
+export function summary(x, themes, regions, nm) {
   const p = x.payload || {}
   const arrow = isAr() ? '←' : '→'
   if (x.kind === 'source') return p.url

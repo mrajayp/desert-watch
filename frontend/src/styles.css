@@ -1,6 +1,12 @@
 /* Desert Watch tokens. Chart colours validated with the dataviz validator:
    - scope (3 slots, all-pairs, both modes): blue / aqua / yellow
-   - alignment (5 slots, adjacent, both modes): blue / aqua / violet / magenta / green
+   - alignment (5 slots, ALL pairs, both modes, 2026-10-19): blue / aqua / violet / magenta / olive-brown.
+     Light: every pair passes (worst CVD pink↔aqua ΔE 6.1, in the floor band: the cluster tags, outlet
+     labels and tables are the secondary encoding; worst normal-vision violet↔blue 16.3). The old green
+     al-5 sat 15.6 from aqua, a hair above the hard floor, so it became olive-brown. Dark: the old violet
+     and magenta failed outright (violet↔blue 9.8 normal-vision, magenta↔aqua ΔE 1.6 deutan) and were
+     re-stepped (worst CVD 10.1, normal-vision 15.8; violet and magenta sit at 2.9:1 on the dark surface,
+     so labels and tables stay beside them).
    - gap ramp: single-hue red sequential; not judged = hatching
    Red appears only where coverage is missing (a warning).
    --muted carries every subtitle, so it keeps 4.5:1 on --surface (#6f6d67 on #fcfcfb = 5.0:1). */
@@ -24,7 +30,7 @@
   --scope-diaspora: #eda100;
   --cat-unknown: #b5b3ab;
 
-  --al-1: #2a78d6; --al-2: #1baf7a; --al-3: #4a3aa7; --al-4: #e87ba4; --al-5: #008300;
+  --al-1: #2a78d6; --al-2: #1baf7a; --al-3: #4a3aa7; --al-4: #e87ba4; --al-5: #a06f30;
 
   --gap-0: #f0efec; --gap-1: #fbe0de; --gap-2: #f5b8b5; --gap-3: #ee8a87; --gap-4: #e34948; --gap-5: #b8302f; --gap-6: #8a1f1f; --gap-over: #d6e6fa;
   --cov-1: #e8eef6; --cov-2: #cde2fb; --cov-3: #9ec5f4; --cov-4: #5598e7; --cov-5: #256abf;
@@ -43,7 +49,7 @@
     --ink: #ffffff; --ink-2: #c3c2b7; --muted: #898781; --grid: #2c2c2a; --axis: #383835;
     --line: rgba(255,255,255,0.10); --accent: #3987e5; --accent-ink: #86b6ef; --focus: #3987e5;
     --scope-libyan: #3987e5; --scope-international: #199e70; --scope-diaspora: #c98500; --cat-unknown: #5d5c57;
-    --al-1: #3987e5; --al-2: #199e70; --al-3: #9085e9; --al-4: #d55181; --al-5: #008300;
+    --al-1: #3987e5; --al-2: #199e70; --al-3: #754ac2; --al-4: #ae2d79; --al-5: #9d6300;
     --gap-0: #2a2a28; --gap-1: #3d2523; --gap-2: #5c2a28; --gap-3: #86302e; --gap-4: #b8302f; --gap-5: #e34948; --gap-6: #f08583; --gap-over: #1c3352;
     --cov-1: #1d2633; --cov-2: #1c3352; --cov-3: #1c4a80; --cov-4: #2a6dc4; --cov-5: #5598e7;
     --hatch: #4a4a46;
@@ -56,7 +62,7 @@
   --ink: #ffffff; --ink-2: #c3c2b7; --muted: #898781; --grid: #2c2c2a; --axis: #383835;
   --line: rgba(255,255,255,0.10); --accent: #3987e5; --accent-ink: #86b6ef; --focus: #3987e5;
   --scope-libyan: #3987e5; --scope-international: #199e70; --scope-diaspora: #c98500; --cat-unknown: #5d5c57;
-  --al-1: #3987e5; --al-2: #199e70; --al-3: #9085e9; --al-4: #d55181; --al-5: #008300;
+  --al-1: #3987e5; --al-2: #199e70; --al-3: #754ac2; --al-4: #ae2d79; --al-5: #9d6300;
   --gap-0: #2a2a28; --gap-1: #3d2523; --gap-2: #5c2a28; --gap-3: #86302e; --gap-4: #b8302f; --gap-5: #e34948; --gap-6: #f08583; --gap-over: #1c3352;
   --cov-1: #1d2633; --cov-2: #1c3352; --cov-3: #1c4a80; --cov-4: #2a6dc4; --cov-5: #5598e7;
   --hatch: #4a4a46;
@@ -242,12 +248,16 @@ body.dialog-open { overflow: hidden; }
   main.page { padding: 16px; }
 }
 @media (forced-colors: active) { .gap-fill { forced-color-adjust: none; } }
-/* a finger, not a mouse: every control at least 36px tall */
+/* a finger, not a mouse: every control at least 36px tall (links in running text and the SVG marks are
+   the exceptions: the maps and charts have a select, a list or a table beside them for touch and keyboard) */
 @media (pointer: coarse) {
-  .btn, .seg button, .seg label > span, .chip, button.pill, .nav a, .nav-more, .more-menu a, select, .linkish,
-  input[type=text], input[type=email], input[type=password], input[type=url], input[type=search] { min-height: 36px; }
-  .btn, .chip, .nav a, .linkish { display: inline-flex; align-items: center; }
+  .btn, .seg button, .seg label > span, .chip, button.pill, .nav a, .nav-more, .more-menu a, select, .linkish, .textbtn, .disclose,
+  .chart-table > summary, .lens-option, .gapcard,
+  input[type=text], input[type=email], input[type=password], input[type=url], input[type=search], input[type=date], input[type=number] { min-height: 36px; }
+  .btn, .chip, .nav a, .linkish, .textbtn, .chart-table > summary { display: inline-flex; align-items: center; }
   input[type=range] { height: 36px; }
+  input[type=checkbox], input[type=radio] { width: 22px; height: 22px; }
+  label.row, .filters label { min-height: 36px; }
 }
 
 /* feedback box at the bottom of every page */
@@ -318,3 +328,33 @@ button.pill:hover { box-shadow: inset 0 0 0 1px var(--axis); }
 /* help: a link to /help#term lands under the sticky top bar */
 .md h3, .md h4 { scroll-margin-top: 70px; }
 .md h4 { margin: 14px 0 4px; font-size: 13.5px; }
+
+/* ---- the table and list alternatives to a drawing (charts/GeoNetwork, RegionalNetwork, Heatmap) */
+.chart-table { margin-top: 8px; }
+.chart-table > summary { cursor: pointer; color: var(--ink-2); padding: 4px 0; }
+.chart-table > summary:hover { color: var(--ink); }
+.chart-table table.data { margin-top: 6px; }
+.map-alt { margin-top: 8px; display: grid; gap: 4px; }
+.district-list { list-style: none; margin: 6px 0 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 2px 16px; }
+.district-list > li { padding: 3px 0; }
+.heat-table th, .heat-table td { font-size: 12px; padding: 5px 6px; vertical-align: top; }
+.heat-table .textbtn { text-align: start; }
+
+/* ---- Admin: one tab per concern */
+.admin-tabs { margin-bottom: 14px; }
+.admin-tabs button { padding: 6px 12px; }
+
+/* ---- a table that becomes a stack of cards on a phone (Outlets, Admin users): each cell carries its
+   heading in data-label; the first cell is the card's title, the last its actions */
+@media (max-width: 639px) {
+  table.cards, table.cards tbody, table.cards tr, table.cards td { display: block; width: 100%; }
+  table.cards thead { display: none; }
+  table.cards tr { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; margin-bottom: 8px; background: var(--surface); }
+  table.cards tr:hover td { background: transparent; }
+  table.cards td { border: 0; padding: 2px 0; display: flex; gap: 8px; align-items: baseline; text-align: start; }
+  table.cards td.num { text-align: start; }
+  table.cards td[data-label]::before { content: attr(data-label); color: var(--muted); font-size: 12px; flex: 0 0 7.5em; }
+  table.cards td.card-title { display: block; margin-bottom: 4px; }
+  table.cards td.card-actions { justify-content: flex-end; padding-top: 6px; }
+  table.cards td:empty { display: none; }
+}

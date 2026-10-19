@@ -78,6 +78,7 @@ for (const file of targets) {
     while (p.parentPath) {
       const parent = p.parentPath.node
       if (parent.type === 'CallExpression') {
+        if (parent.callee.type === 'Import') return 'silent' // a dynamic import('./pages/X'): a module path, never shown
         const n = name(parent.callee)
         if (n === 't' || n === 'tn' || n === 'N_') return 'translated'
         if (SILENT_CALLS.test(n) || /\.(attr|style|classed|select|selectAll|append|on|call|join|raise|lower)$/.test(n)) return 'silent'

@@ -1,11 +1,10 @@
-import { useEffect, useMemo, useState } from 'react'
+import { Suspense, lazy, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { qs, track } from '../api'
 import { useApp } from '../App'
 import { LENS_TEXT, RED_FROM, fmt, gapFill, verdictOf } from '../charts/scales'
 import { lensNeed, verdictSentence, weekEnd, weekRange } from '../charts/trendText'
 import ArticleRow from '../components/ArticleRow'
-import CoverageMap from '../components/CoverageMap'
 import LensSheet from '../components/LensSheet'
 import { ErrorBox, Loading } from '../components/Notices'
 import SourceHealth from '../components/SourceHealth'
@@ -15,6 +14,9 @@ import { useMedia } from '../hooks/useMedia'
 import { usePageTitle } from '../hooks/usePageTitle'
 import { fmtDate, pick, t } from '../i18n'
 import { articlesPath } from '../routes'
+
+// the map (d3-geo, the boundaries, the chart code) is its own chunk, fetched only when the map section is open
+const CoverageMap = lazy(() => import('../components/CoverageMap'))
 
 // from here the list sits on the left (56%) with the map open beside it; below, the map is a section
 // under the list, collapsed until opened
@@ -149,7 +151,7 @@ export default function ThisWeek() {
           <button type="button" className="disclose" aria-expanded={showMap} onClick={() => setMapOpen(!showMap)}>
             <span className="caret" aria-hidden="true">▸</span><h2>{t('Map: where coverage reaches')}</h2>
           </button>
-          {showMap && <div style={{ marginTop: 10 }}><CoverageMap cells={cells} heading={false} /></div>}
+          {showMap && <div style={{ marginTop: 10 }}><Suspense fallback={<Loading />}><CoverageMap cells={cells} heading={false} /></Suspense></div>}
         </section>
       </div>
       <SourceHealth compact />

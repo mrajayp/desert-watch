@@ -15,7 +15,7 @@ import CopyLink from './CopyLink'
 import Dialog from './Dialog'
 import { ErrorBox, Loading } from './Notices'
 import OutletReach from './OutletReach'
-import { countryName } from '../charts/RegionalNetwork'
+import { countryName } from '../charts/countries'
 
 // Codes from the API (config/outlet_taxonomy.yaml) get their words from charts/scales.js (dimLabel,
 // dimValue), the same words the map tooltip uses. The scrape's own labels stay exactly as published.
@@ -33,9 +33,10 @@ const dimName = (d) => (isAr() ? d.name_ar || dimLabel(d.key) : d.name || dimLab
 const num = (v) => fmtNum(v, { useGrouping: false })
 
 // One outlet: /outlets/:id. Its profile, reach, categories (with evidence), recent articles, discussion.
+// GET /api/outlets/{id} is the one outlet's full row (the same shape as a row of GET /api/outlets, plus
+// ai_cited_4w and closed_on); the history, the articles and the taxonomy load alongside it, not after it.
 export default function OutletPanel({ id }) {
   const { me, meta, closePanel, refresh, can } = useApp()
-  const all = useApi('/api/outlets' + qs({ days: 365 }))
   const detail = useApi(`/api/outlets/${id}`)
   const hist = useApi(`/api/outlets/${id}/history`)
   const items = useApi('/api/items' + qs({ outlet_id: id, days: 84, limit: 20 }))
@@ -44,11 +45,11 @@ export default function OutletPanel({ id }) {
   const [base, setBase] = useState('')
   const [closedOn, setClosedOn] = useState('')
   const [msg, setMsg] = useState(null)
-  const o = all.data?.find((x) => x.id === id)
+  const o = detail.data
   usePageTitle(o?.name || t('Outlet'))
   // AI answers audit: only when the user may see it
-  const aiCited = typeof detail.data?.ai_cited_4w === 'number' ? detail.data.ai_cited_4w : null
-  const reloadAll = () => { all.retry(); hist.retry(); refresh() }
+  const aiCited = typeof o?.ai_cited_4w === 'number' ? o.ai_cited_4w : null
+  const reloadAll = () => { detail.retry(); hist.retry(); refresh() }
   const submit = useMutation((e) => { e.preventDefault(); return api(`/api/outlets/${id}/categories`, { method: 'POST', body: { ...form, note: form.note || null } }) },
     { onSuccess: (r) => { setMsg(r.status === 'active' ? t('Applied.') : t('Proposed — an admin will review it.')); setForm({ ...form, value: '', evidence_url: '', note: '' }); reloadAll() } })
   const review = useMutation((cid, approve) => api(`/api/outlets/categories/${cid}/review`, { method: 'POST', body: { approve } }), { onSuccess: reloadAll })
@@ -62,20 +63,22 @@ export default function OutletPanel({ id }) {
     { onSuccess: () => { setClosedOn(''); reloadAll() } })
 
   const ready = o && tax.data
-  const loadError = all.error || tax.error
-  const retry = () => { all.retry(); tax.retry() }
+  const loadError = detail.error || tax.error
+  const retry = () => { detail.retry(); tax.retry() }
   const dim = tax.data?.dimensions.find((d) => d.key === form.dimension)
   const label = dimValue
   const histDim = (key) => {
     const d = tax.data.dimensions.find((x) => x.key === key)
     return d ? dimName(d) : undefined
   }
-  const subtitle = o && <>{o.domain} · {o.created_via === 'auto' ? t('found automatically') : t('seeded')} · {t('{n} articles (12 months)', { n: o.articles })}</>
+  // the row's article count covers the list's default 12 weeks unless the API says it counted a year (articles_days)
+  const articleCount = o?.articles == null ? null
+    : (o.articles_days ?? 84) >= 365 ? t('{n} articles (12 months)', { n: o.articles }) : t('{n} articles (12 weeks)', { n: o.articles })
+  const subtitle = o && <>{o.domain}{o.created_via ? <> · {o.created_via === 'auto' ? t('found automatically') : t('seeded')}</> : null}{articleCount ? <> · {articleCount}</> : null}</>
   return (
     <Dialog title={<span dir="auto">{o?.name || t('Outlet')}</span>} subtitle={subtitle} onClose={closePanel} actions={<CopyLink path={outletPath(id)} objectType="outlet" objectKey={id} />}>
       {!ready && loadError && <ErrorBox error={loadError} onRetry={retry} />}
-      {!ready && !loadError && all.data && !o && <p className="err">{t('No outlet with this id.')}</p>}
-      {!ready && !loadError && (!all.data || o) && <Loading />}
+      {!ready && !loadError && <Loading />}
       {ready && (
         <>
           {loadError && <ErrorBox error={loadError} onRetry={retry} compact />}
@@ -83,7 +86,7 @@ export default function OutletPanel({ id }) {
           <table className="data"><tbody>
             <tr><th>{t('Base')}</th><td>{o.base_city || countryName(o.base_country) || <span className="muted">{t('not set')}</span>}</td></tr>
             {tax.data.dimensions.map((d) => {
-              const c = o.categories[d.key]
+              const c = (o.categories || {})[d.key]
               return <tr key={d.key}><th>{dimName(d)}{d.contested && <span className="muted small"> ({t('contested')})</span>}</th>
                 <td>{c ? <>{d.third_party && <span className="muted small">{t('as published:')} </span>}{label(d.key, c.value)} <span className="pill">{code(CONFIDENCE, c.confidence)}</span>{' '}
                   {c.evidence_url?.startsWith('http') ? <a className="small" href={c.evidence_url} target="_blank" rel="noreferrer noopener">{t('evidence')} ↗</a>

@@ -2,7 +2,7 @@
 // Indicators that share a chart key (same unit) are drawn together, for example the parallel and
 // official dollar. Each chart has its own labelled axis. A day with no value breaks the line.
 // Payload: /api/indicators. Never put on one axis with article counts.
-import * as d3 from 'd3'
+import { bisector as d3bisector, extent as d3extent, line as d3line, scaleLinear, scaleUtc } from 'd3'
 import { useRef } from 'react'
 import { fmt } from './scales'
 import { useSize, useTooltip } from './util'
@@ -38,17 +38,17 @@ function Chart({ group, width, onPickDay }) {
   const all = series.flatMap((x) => x.rows)
   const shown = all.filter((r) => r.v != null)
   if (shown.length < 2) return <div className="empty small">{t('Not enough days yet.')}</div>
-  const x = d3.scaleUtc().domain(d3.extent(all, (r) => r.date)).range([L, width - R])
+  const x = scaleUtc().domain(d3extent(all, (r) => r.date)).range([L, width - R])
   // the unit arrives in the interface language; the exchange-rate source says the same in any language
   const money = group.unit === 'dinars' || group.lines.every((ind) => ind.source === 'exchange')
-  const [lo, hi] = d3.extent(shown, (r) => r.v)
-  const y = d3.scaleLinear().domain([money ? lo * 0.95 : 0, hi]).nice().range([H - B, T])
-  const line = d3.line().defined((r) => r.v != null).x((r) => x(r.date)).y((r) => y(r.v))
+  const [lo, hi] = d3extent(shown, (r) => r.v)
+  const y = scaleLinear().domain([money ? lo * 0.95 : 0, hi]).nice().range([H - B, T])
+  const line = d3line().defined((r) => r.v != null).x((r) => x(r.date)).y((r) => y(r.v))
   const days = [...new Set(all.map((r) => iso(r.date)))].sort()
   const near = (e) => {
     const box = e.currentTarget.getBoundingClientRect()
     const t = x.invert(((e.clientX - box.left) / box.width) * width)
-    return days[d3.bisector((d) => new Date(d + 'T00:00:00Z')).center(days, t)]
+    return days[d3bisector((d) => new Date(d + 'T00:00:00Z')).center(days, t)]
   }
   const valueOn = (s, day) => s.rows.find((r) => iso(r.date) === day)?.v
   const say = (s, day) => {

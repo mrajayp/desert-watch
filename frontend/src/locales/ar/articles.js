@@ -25,6 +25,8 @@ export default {
   "added by the team": "أضافه الفريق",
   "reference event": "حدث مرجعي",
   "click for source": "النقر يفتح المصدر",
+  // an event on the timeline is a link to its source (read out with its date)
+  "{date}: {label} (opens the source)": "{date}: {label} (يفتح المصدر)",
   "peak {n}": "الذروة {n}",
   "General themes (articles/month)": "المواضيع العامة (مقالات/شهر)",
   "Gender themes": "مواضيع النوع الاجتماعي",
@@ -93,6 +95,8 @@ export default {
   "AI-written from the tool’s own counts; every number should appear in the facts. Check before quoting.": "كتبه الذكاء الاصطناعي من أرقام الأداة نفسها؛ ويُفترض أن يرد كل رقم فيه ضمن الوقائع. يُرجى التحقق قبل الاقتباس.",
   "Hide the facts it was given": "إخفاء الوقائع التي قُدّمت له",
   "Show the facts it was given": "عرض الوقائع التي قُدّمت له",
+  // the gaps a brief names, each a link to its gap view and to the articles it counted
+  "Gaps named in this brief": "الفجوات الواردة في هذا الموجز",
   "Archive": "الأرشيف",
   "Week of {week}": "أسبوع {week}",
   "No briefs yet.": "لا توجد موجزات بعد.",

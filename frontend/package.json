@@ -5,10 +5,10 @@
   "type": "module",
   "scripts": {
     "dev": "vite --port 5190 --strictPort",
-    "build": "node scripts/check-components.mjs && node scripts/check-i18n.mjs && node --test scripts/trends.test.mjs scripts/api.test.mjs scripts/routes.test.mjs && vite build",
+    "build": "node scripts/check-components.mjs && node scripts/check-i18n.mjs && node --test scripts/trends.test.mjs scripts/api.test.mjs scripts/memo.test.mjs scripts/routes.test.mjs && vite build && node scripts/check-bundle.mjs",
     "preview": "vite preview",
     "check": "node scripts/check-components.mjs && node scripts/check-i18n.mjs",
-    "test": "node --test scripts/trends.test.mjs scripts/api.test.mjs scripts/routes.test.mjs"
+    "test": "node --test scripts/trends.test.mjs scripts/api.test.mjs scripts/memo.test.mjs scripts/routes.test.mjs"
   },
   "dependencies": {
     "d3": "7.9.0",
@@ -19,6 +19,8 @@
     "world-atlas": "^2.0.2"
   },
   "devDependencies": {
+    "@babel/parser": "7.29.9",
+    "@babel/traverse": "7.29.10",
     "@vitejs/plugin-react": "4.3.4",
     "vite": "5.4.11"
   }

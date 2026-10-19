@@ -4,13 +4,15 @@
 // that week. Every number in the tooltip is one that is drawn. Payload: /api/cells/trends.
 // Keyboard: the plot takes focus, arrow keys move between weeks, Enter lists a week's articles and
 // G opens its gap.
-import * as d3 from 'd3'
+import { max as d3max, scaleBand, sum as d3sum, utcMonth } from 'd3'
 import { memo, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { fmt, gapFill, verdictOf } from './scales'
-import { DAY, about, articles, backfilledNote, gapLabel, lensNeed, levelLegend, needLine, noSearchData, pillClass, stepPath, trendGroups, usualLine, utc, verdict, weekEnd, weekRange, yScale } from './trendText'
+import { DAY, about, articles, backfilledNote, biggestShortfalls, gapLabel, lensNeed, levelLegend, needLine, noSearchData, pillClass, stepPath, trendGroups, usualLine, utc, verdict, weekEnd, weekRange } from './trendText'
 import { HatchDefs, themeLabel, useSize, useTooltip } from './util'
-import { t, utcFormat } from '../i18n.js'
+import { yScale } from './yScale'
+import { PHONE, useMedia } from '../hooks/useMedia'
+import { N_, t, utcFormat } from '../i18n.js'
 
 // focus from the keyboard, not from a click (a click opens the week's articles instead)
 const keyFocus = (el) => { try { return el.matches(':focus-visible') } catch { return true } } // i18n-ok: a CSS selector, never shown
@@ -28,7 +30,7 @@ const Panel = memo(function Panel({ t: th, rows, hasNeed, note, fullName, width,
   const name = (lang === 'ar' ? th.name_ar : th.name_en) || th.name_en
   // chart text is 11px at the smallest: the axis gutter and the foot leave room for it
   const L = 34, R = 4, T = 16, y0 = 116, sy = y0 + 3, sh = 7, H = sy + sh + 17
-  const xs = d3.scaleBand().domain(rows.map((r) => r.week)).range([L, width - R])
+  const xs = scaleBand().domain(rows.map((r) => r.week)).range([L, width - R])
   const step = xs.step()
   // no usual level on the week still coming in: its need is not complete either
   const lined = (r) => hasNeed && !r.in_progress && r.expected_week != null
@@ -43,14 +45,14 @@ const Panel = memo(function Panel({ t: th, rows, hasNeed, note, fullName, width,
   const focus = hover ?? lastIdx
   const usual = usualLine(rows, focus, hasNeed)
   // the axis allows for every window the reader can focus, so it does not jump on hover
-  const usualTop = useMemo(() => d3.max(rows, (_, f) => d3.max(usualLine(rows, f, hasNeed))) || 0, [rows, hasNeed])
-  const [y, ticks] = yScale(Math.max(4, d3.max(rows, (r) => r.articles) || 0, usualTop), [y0, T])
+  const usualTop = useMemo(() => d3max(rows, (_, f) => d3max(usualLine(rows, f, hasNeed))) || 0, [rows, hasNeed])
+  const [y, ticks] = yScale(Math.max(4, d3max(rows, (r) => r.articles) || 0, usualTop), [y0, T])
   const path = stepPath(rows, xs, step, y, (r, i) => usual[i])
   const cur = rows.find((r) => r.in_progress)
-  const a4 = last ? last.articles_4w ?? d3.sum(rows.slice(Math.max(0, lastIdx - 3), lastIdx + 1), (r) => r.articles) : 0
+  const a4 = last ? last.articles_4w ?? d3sum(rows.slice(Math.max(0, lastIdx - 3), lastIdx + 1), (r) => r.articles) : 0
   // month labels at the 1st of each month (quarters only on narrow panels), January shows the year
   const first = utc(rows[0].week)
-  const months = d3.utcMonth.range(d3.utcMonth.ceil(first), new Date(utc(rows[rows.length - 1].week).getTime() + 7 * DAY))
+  const months = utcMonth.range(utcMonth.ceil(first), new Date(utc(rows[rows.length - 1].week).getTime() + 7 * DAY))
     .filter((m) => width >= 420 || m.getUTCMonth() % 3 === 0)
     .map((m) => ({ m, x: L + ((m - first) / (7 * DAY)) * step }))
     .filter((d) => d.x < width - R - 16)
@@ -77,14 +79,14 @@ const Panel = memo(function Panel({ t: th, rows, hasNeed, note, fullName, width,
   const show = (e) => {
     const i = at(e)
     setHover(i)
-    tip.show(e, tipFor(rows[i]), wrap.current)
+    tip.show(e, tipFor(rows[i]), wrap.current, `m${i}`)
   }
   // keyboard: the tooltip sits over the week's bar
   const showKey = (i, plot) => {
     const box = plot.getBoundingClientRect()
     const px = box.left + ((xs(rows[i].week) + step / 2 - L) / (width - R - L)) * box.width
     setHover(i)
-    tip.show({ clientX: px, clientY: box.top + box.height / 3 }, tipFor(rows[i], true), wrap.current)
+    tip.show({ clientX: px, clientY: box.top + box.height / 3 }, tipFor(rows[i], true), wrap.current, `k${i}`)
   }
   const onKey = (e) => {
     const cur = hover ?? lastIdx
@@ -173,14 +175,22 @@ const Panel = memo(function Panel({ t: th, rows, hasNeed, note, fullName, width,
 
 // reference: the lens's meta reference (pooled lenses compare with other topics, the others with the theme's own record). scoredWeek: the
 // search lens's latest scored week, which the panels open on while the latest week has no search data.
+// On a phone the four biggest shortfalls come first, alone, with a button for the rest (~20 panels in one
+// column is a long scroll); from 640px up every theme shows, grouped as before.
+const PHONE_PANELS = 4
 export default function TrendBars({ themes, data, lens, reference, scoredWeek, lang = 'en', selectedId, onSelect, onPickWeek, onPickBar }) {
   const wrap = useRef(null)
   const W = useSize(wrap, 900)
+  const phone = useMedia(PHONE)
+  const [showAll, setShowAll] = useState(false)
   const cols = W < 560 ? 1 : W < 900 ? 2 : 3
   const width = Math.max(220, Math.floor((W - 12 * (cols - 1)) / cols) - 22) // card padding + border
   const red = data.red_from ?? 0.4
   const need = lensNeed(lens, reference)
-  const groups = trendGroups(themes, data, lens)
+  const all = trendGroups(themes, data, lens)
+  const total = all.reduce((n, g) => n + g.themes.length, 0)
+  const trimmed = phone && !showAll && total > PHONE_PANELS
+  const groups = trimmed ? [{ label: N_('Biggest shortfalls'), themes: biggestShortfalls(themes, data, red, PHONE_PANELS), fullNames: true }] : all
   return (
     <div ref={wrap}>
       {groups.map((g) => (
@@ -194,6 +204,8 @@ export default function TrendBars({ themes, data, lens, reference, scoredWeek, l
                 onSelect={onSelect} onPickWeek={onPickWeek} onPickBar={onPickBar} />))}
           </div>
         </div>))}
+      {trimmed && <button type="button" className="btn" style={{ marginTop: 10 }} onClick={() => setShowAll(true)}>{t('Show all {n}', { n: total })}</button>}
+      {phone && showAll && total > PHONE_PANELS && <button type="button" className="btn" style={{ marginTop: 10 }} onClick={() => setShowAll(false)}>{t('Show the {n} biggest shortfalls', { n: PHONE_PANELS })}</button>}
       <div className="legend" style={{ marginTop: 12 }}>
         <span><span className="sw" style={{ background: 'var(--accent)' }} />{t('Articles from the outlets we followed all year')}</span>
         <span><span className="sw" style={{ background: 'var(--ink-2)', height: 2, verticalAlign: 3 }} />{levelLegend(need)}</span>

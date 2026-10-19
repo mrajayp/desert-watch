@@ -204,10 +204,20 @@ export default {
   "Pakistan": "باكستان",
   "Australia": "أستراليا",
 
-  // charts/ForceGraph.jsx
-  "Not enough shared coverage yet to draw a network.": "لا توجد بعد تغطية مشتركة كافية لرسم شبكة.",
-  "Network of outlets linked by similar coverage and reprinted headlines": "شبكة وسائل الإعلام التي تربط بينها تغطية متشابهة وعناوين أُعيد نشرها",
-  "{count} articles in window": "المقالات في الفترة: {count}",
-  "Coverage cluster {n}": "مجموعة التغطية {n}",
+  // charts/RegionalNetwork.jsx: the same figures as a table under the map
+  "Sources by country, as a table": "المصادر حسب البلد، في جدول",
+  "Country or group": "البلد أو المجموعة",
+  "Districts named": "الشعبيات المذكورة",
+
+  // charts/GeoNetwork.jsx: the district select and the list under the map (the drawing itself is decoration)
+  "Open a district": "فتح شعبية",
+  "Districts as a list": "الشعبيات في قائمة",
+
+  // charts/Heatmap.jsx: the grid as a table
+  "Show as table": "عرض في جدول",
+  "Show as chart": "عرض في رسم بياني",
+
+  // components/CoverageMap.jsx
   "Monitored articles naming this district, {n} weeks ending {week}.": "المقالات المرصودة التي تذكر هذه الشعبية خلال {n} أسابيع تنتهي في {week}.",
+  "Links under {n} articles are hidden, and the district counts leave them out.": "الروابط التي تقل عن {n} مقالات مخفية، ولا تدخل في أعداد الشعبيات.",
 }

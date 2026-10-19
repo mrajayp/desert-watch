@@ -5,7 +5,7 @@
 // are loaded here. A district click opens the theme that coloured it (cellsByRegion keeps the worst
 // cell per district); with no scored cell it opens the district's articles for the same weeks, never
 // an unscored gap for theme #1.
-import * as d3 from 'd3'
+import { geoArea, sum as d3sum } from 'd3'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { qs } from '../api'
 import { useApp } from '../App'
@@ -30,7 +30,7 @@ async function loadGeo(meta) {
   // d3-geo uses spherical winding: a polygon whose area exceeds a hemisphere is "inside out"
   // (RFC 7946 files wind the other way). Reverse such rings.
   const rewind = (fc) => { fc.features.forEach((f) => {
-    if (d3.geoArea(f) <= 2 * Math.PI) return
+    if (geoArea(f) <= 2 * Math.PI) return
     const g = f.geometry
     const rev = (poly) => poly.map((ring) => ring.slice().reverse())
     if (g.type === 'Polygon') g.coordinates = rev(g.coordinates)
@@ -65,7 +65,9 @@ export default function CoverageMap({ cells, heading = true, outlets = false }) 
   const nationalOnly = lensMeta && lensMeta.levels.length === 1
   const themeGroup = String(filters.themeId).startsWith('group:') ? filters.themeId.slice(6) : null
   const themeId = filters.themeId && !themeGroup ? +filters.themeId : null
-  const netQ = useApi('/api/network' + qs({ theme_id: themeGroup ? '' : filters.themeId, theme_group: themeGroup, week: filters.week, weeks: meta.window_weeks }), { deps: [version] })
+  // only the outlet→district links at or above the slider's minimum: the similarity and reprint edges belong
+  // to the Outlets page (the answer is kept 10 minutes per URL by api.js, so the slider costs one call a value)
+  const netQ = useApi('/api/network' + qs({ theme_id: themeGroup ? '' : filters.themeId, theme_group: themeGroup, week: filters.week, weeks: meta.window_weeks, kinds: 'outlet_region', min_weight: minEdge }), { deps: [version] })
   const network = netQ.data
   const loadError = netQ.error || geoErr
   const retryLoads = () => { netQ.retry(); if (geoErr) setGeoTick((n) => n + 1) }
@@ -111,7 +113,7 @@ export default function CoverageMap({ cells, heading = true, outlets = false }) 
   const caption = t('Source: Desert Watch monitored coverage (Google News, Google Alerts, GDELT, outlet and YouTube feeds, social posts Google indexes) · {window}.', { window: windowText }) + '\n' +
     t('Lines join outlets to districts their articles name. Monitored coverage only. We see Facebook only through the posts Google indexes, and Telegram not at all.') + '\n' + pick(meta.country.boundaries, 'attribution')
   // unplaced is counted over every source, so its share is of the all-source count
-  const unplacedShare = nationalCells.length ? d3.sum(nationalCells, (c) => c.breakdown?.unplaced || 0) / Math.max(1, d3.sum(nationalCells, (c) => c.articles_all ?? c.coverage)) : null
+  const unplacedShare = nationalCells.length ? d3sum(nationalCells, (c) => c.breakdown?.unplaced || 0) / Math.max(1, d3sum(nationalCells, (c) => c.articles_all ?? c.coverage)) : null
   const lens = t(LENS_TEXT[filters.lens].label)
   const openDistrict = (rid) => {
     setSelected(rid)
@@ -123,9 +125,11 @@ export default function CoverageMap({ cells, heading = true, outlets = false }) 
       query: filters.week ? { region_id: rid, start: windowStart(filters.week, meta.window_weeks), end: weekEnd(filters.week) } : { region_id: rid, days: meta.window_weeks * 7 },
     })
   }
+  // in coverage mode the district counts are sums of the links drawn, so a raised minimum leaves links out of them too
   const sentence = mode === 'gap'
     ? (themeId ? t('Districts shaded by under-coverage on the {lens} lens.', { lens }) : t('Districts shaded by under-coverage on the {lens} lens, worst theme per district.', { lens }))
     : t('The {lens} lens only has national figures, so districts show how many monitored articles name them. Pale districts with no lines are the deserts.', { lens })
+      + (minEdge > 1 ? ` ${t('Links under {n} articles are hidden, and the district counts leave them out.', { n: minEdge })}` : '')
 
   return (
     <>

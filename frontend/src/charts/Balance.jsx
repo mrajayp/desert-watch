@@ -1,10 +1,14 @@
 // Small charts: language balance (diverging Arabic | English bars per theme),
 // source mix (stacked bar), a GDELT coverage-history line and monthly collected articles by source.
-import * as d3 from 'd3'
+import { area as d3area, bisector as d3bisector, curveMonotoneX, extent as d3extent, line as d3line, max as d3max, mean as d3mean, range as d3range, scaleBand, scaleLinear, scaleUtc, utcDay } from 'd3'
 import { useRef } from 'react'
 import { fmt, sourceLabel } from './scales'
 import { fitLabel, groupedRows, themeLabel, useSize, useTooltip } from './util'
 import { fmtDate, fmtMonth, pick, t, utcFormat } from '../i18n.js'
+
+// the share bar lives in its own d3-free module (charts/MixBar.jsx), so the gap dialog in the main chunk
+// does not pull these charts in; re-exported here for the older imports
+export { MixBar } from './MixBar'
 
 export function LanguageBalance({ themes, cells, lang = 'en', svgRef }) {
   const wrap = useRef(null)
@@ -17,9 +21,9 @@ export function LanguageBalance({ themes, cells, lang = 'en', svgRef }) {
   })
   const left = Math.min(230, Math.max(110, W * 0.36))
   const mid = left + (W - left) / 2
-  const max = d3.max(rows, (r) => Math.max(r.ar, r.en)) || 1
+  const max = d3max(rows, (r) => Math.max(r.ar, r.en)) || 1
   const numRoom = 38 // space for the count at each bar end
-  const x = d3.scaleLinear().domain([0, max]).range([0, Math.max(10, (W - left) / 2 - numRoom - 6)])
+  const x = scaleLinear().domain([0, max]).range([0, Math.max(10, (W - left) / 2 - numRoom - 6)])
   const bh = 16, gap = 14, top = 22, hh = 24
   const layout = groupedRows(rows.map((r) => r.t))
   const byId = new Map(rows.map((r) => [r.t.id, r]))
@@ -57,27 +61,6 @@ export function LanguageBalance({ themes, cells, lang = 'en', svgRef }) {
   )
 }
 
-export function MixBar({ parts, colors, labels, height = 12 }) {
-  const total = d3.sum(Object.values(parts)) || 1
-  let acc = 0
-  const entries = Object.entries(parts).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1])
-  return (
-    <div>
-      <svg viewBox={`0 0 100 ${height}`} preserveAspectRatio="none" style={{ width: '100%', height }}>
-        {entries.map(([k, v]) => {
-          const w = (v / total) * 100
-          const el = <rect key={k} x={acc} y={0} width={Math.max(0, w - 0.4)} height={height} fill={colors[k] || 'var(--cat-unknown)'} />
-          acc += w
-          return el
-        })}
-      </svg>
-      <div className="legend" style={{ marginTop: 4 }}>
-        {entries.map(([k, v]) => <span key={k}><span className="sw" style={{ background: colors[k] || 'var(--cat-unknown)' }} />{t(labels[k] || k)} {Math.round((v / total) * 100)}%</span>)}
-      </div>
-    </div>
-  )
-}
-
 export function HistoryLine({ data, svgRef, markers = [], onPick }) {
   const wrap = useRef(null)
   const W = useSize(wrap, 700)
@@ -89,20 +72,20 @@ export function HistoryLine({ data, svgRef, markers = [], onPick }) {
   // not give us breaks the line, so a hole is never drawn as a slope.
   const iso = (d) => d.toISOString().slice(0, 10)
   const keys = [...byDay.keys()].sort()
-  const roll = d3.utcDay.range(new Date(keys[0]), d3.utcDay.offset(new Date(keys[keys.length - 1]), 1)).map((date) => {
+  const roll = utcDay.range(new Date(keys[0]), utcDay.offset(new Date(keys[keys.length - 1]), 1)).map((date) => {
     if (!byDay.has(iso(date))) return { date, v: null }
-    const vals = d3.range(7).map((k) => byDay.get(iso(d3.utcDay.offset(date, -k)))).filter((v) => v != null)
-    return { date, v: d3.mean(vals), n: vals.length }
+    const vals = d3range(7).map((k) => byDay.get(iso(utcDay.offset(date, -k)))).filter((v) => v != null)
+    return { date, v: d3mean(vals), n: vals.length }
   })
   const shown = roll.filter((d) => d.v != null)
   const has = (d) => d.v != null
-  const x = d3.scaleUtc().domain(d3.extent(roll, (d) => d.date)).range([36, W - 10])
-  const y = d3.scaleLinear().domain([0, d3.max(shown, (d) => d.v)]).nice().range([H - 22, 8])
-  const line = d3.line().defined(has).x((d) => x(d.date)).y((d) => y(d.v)).curve(d3.curveMonotoneX)
-  const area = d3.area().defined(has).x((d) => x(d.date)).y0(y(0)).y1((d) => y(d.v)).curve(d3.curveMonotoneX)
+  const x = scaleUtc().domain(d3extent(roll, (d) => d.date)).range([36, W - 10])
+  const y = scaleLinear().domain([0, d3max(shown, (d) => d.v)]).nice().range([H - 22, 8])
+  const line = d3line().defined(has).x((d) => x(d.date)).y((d) => y(d.v)).curve(curveMonotoneX)
+  const area = d3area().defined(has).x((d) => x(d.date)).y0(y(0)).y1((d) => y(d.v)).curve(curveMonotoneX)
   const near = (e) => {
     const box = e.currentTarget.getBoundingClientRect()
-    return shown[d3.bisector((d) => d.date).center(shown, x.invert(((e.clientX - box.left) / box.width) * W))]
+    return shown[d3bisector((d) => d.date).center(shown, x.invert(((e.clientX - box.left) / box.width) * W))]
   }
   return (
     <div ref={wrap} className="viz" onMouseLeave={tip.hide}>
@@ -141,8 +124,8 @@ export function MonthlyCoverage({ rows, markers = [], svgRef, onPick }) {
   if (!rows || rows.length < 2) return <div ref={wrap} className="empty small">{t('Not enough history for this theme yet.')}</div>
   const data = rows.map((r) => ({ ...r, sources: r.sources || { other: r.total } }))
   const present = MONTH_SOURCES.filter((k) => data.some((d) => d.sources[k] > 0))
-  const x = d3.scaleBand().domain(data.map((d) => d.month)).range([36, W - 8]).paddingInner(0.15)
-  const y = d3.scaleLinear().domain([0, d3.max(data, (d) => d.total) || 1]).nice().range([H - 24, 14])
+  const x = scaleBand().domain(data.map((d) => d.month)).range([36, W - 8]).paddingInner(0.15)
+  const y = scaleLinear().domain([0, d3max(data, (d) => d.total) || 1]).nice().range([H - 24, 14])
   const step = Math.max(1, Math.ceil(data.length / (W < 600 ? 6 : 12)))
   return (
     <div ref={wrap} className="viz" onMouseLeave={tip.hide}>

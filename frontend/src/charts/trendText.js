@@ -1,6 +1,8 @@
 // Words and scales for the Trends bars (charts/TrendBars.jsx), kept free of JSX so
 // scripts/trends.test.mjs can check them with node --test.
-import * as d3 from 'd3'
+// No d3 here: this module is in the main chunk (the landing page reads its verdict sentences), and even a
+// named import from the 'd3' barrel keeps d3-transition, which patches the selection prototype at import
+// time and so can never be tree-shaken away. The one scale the bars need is in charts/yScale.js.
 import { RED_FROM, fmt, verdictOf } from './scales.js'
 import { t, tn, utcFormat } from '../i18n.js'
 
@@ -178,17 +180,6 @@ export function weekRange(w) {
   return span(f('%-d')(a), f('%-d %b %Y')(b))
 }
 
-// linear from 0 with 3-4 labelled gridlines (0 included) ending on the top of the domain
-export function yScale(top, range) {
-  for (const n of [3, 2, 4]) {
-    const hi = d3.nice(0, top, n)[1]
-    const ticks = d3.ticks(0, hi, n)
-    if (ticks.length >= 3 && ticks.length <= 4 && ticks[ticks.length - 1] === hi) return [d3.scaleLinear().domain([0, hi]).range(range), ticks]
-  }
-  const y = d3.scaleLinear().domain([0, top]).nice(3).range(range)
-  return [y, y.ticks(3)]
-}
-
 // The usual level, one value per row. Each week's step is its own expected_week (that week's need at
 // its own baseline). The 4 weeks of the window in focus (the hovered week, else the latest complete one)
 // are drawn at the focus week's baseline instead, so those 4 steps add up to the usual level its verdict
@@ -237,4 +228,19 @@ export function trendGroups(themes, data, lens) {
   // these headings mix groups, so panels keep the full name ("Gender: ...")
   return [{ label: N_('Enough searches to compare'), themes: measured, fullNames: true },
     { label: N_('Too few searches to compare'), themes: rest, note: SEARCH_FEW, fullNames: true }]
+}
+
+// The n themes with the largest shortfall over their latest complete 4 weeks, for the phone view of
+// Trends: short verdicts first (by gap), then possibly fewer, then the rest by gap; themes whose latest
+// week has no verdict come last. Only themes that have rows are considered.
+const VERDICT_RANK = { short: 0, possibly_short: 1, usual: 2, over: 3, unclear: 4 }
+export function biggestShortfalls(themes, data, red = RED_FROM, n = 4) {
+  const scored = themes.filter((t) => data?.themes?.[t.id]?.rows?.length).map((t) => {
+    const done = data.themes[t.id].rows.filter((r) => !r.in_progress)
+    const last = done[done.length - 1]
+    const v = last ? verdictOf(last, red) : null
+    return { t, rank: v == null ? 5 : VERDICT_RANK[v], gap: last?.gap ?? -Infinity }
+  })
+  scored.sort((a, b) => a.rank - b.rank || b.gap - a.gap)
+  return scored.slice(0, n).map((x) => x.t)
 }

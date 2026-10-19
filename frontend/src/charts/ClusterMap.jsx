@@ -2,7 +2,7 @@
 // position = similarity (similarity links are used for layout but NOT drawn), colour = cluster,
 // clusters named in plain words with colour-filled tags at the cluster edge, reprint arrows
 // drawn because there the link itself is the evidence. A legend table sits beside it.
-import * as d3 from 'd3'
+import { extent as d3extent, forceCollide, forceLink, forceManyBody, forceSimulation, forceX, forceY, least as d3least, max as d3max, mean as d3mean, scaleSqrt, sum as d3sum } from 'd3'
 import { Fragment, useMemo, useRef, useState } from 'react'
 import { fmtNum, isAr, pick, t } from '../i18n'
 
@@ -30,7 +30,7 @@ export function layoutClusters(network, clusters, rankOf, W, H) {
   const keep = new Set(nodes.map((n) => n.id))
   const sim = network.edges.filter((e) => e.kind === 'outlet_outlet' && keep.has(e.source) && keep.has(e.target)).map((e) => ({ ...e }))
   const reprint = network.edges.filter((e) => e.kind === 'syndication' && e.weight >= 2 && keep.has(e.source) && keep.has(e.target)).map((e) => ({ ...e }))
-  const r = d3.scaleSqrt().domain([0, d3.max(nodes, (n) => n.articles) || 1]).range([3.5, 16])
+  const r = scaleSqrt().domain([0, d3max(nodes, (n) => n.articles) || 1]).range([3.5, 16])
   // cluster centres on a circle pull each community together, so clusters read as regions
   const ranks = [...new Set(nodes.map((n) => Math.min(n.rank ?? 99, 6)))].sort((a, b) => a - b)
   const centre = new Map(ranks.map((k, i) => {
@@ -38,15 +38,15 @@ export function layoutClusters(network, clusters, rankOf, W, H) {
     return [k, [W / 2 + Math.cos(a) * W * 0.27, H / 2 + Math.sin(a) * H * 0.3]]
   }))
   const cKey = (n) => Math.min(n.rank ?? 99, 6)
-  const simu = d3.forceSimulation(nodes)
-    .force('link', d3.forceLink(sim).id((d) => d.id).distance(40).strength((l) => 0.15 + 0.4 * l.weight))
-    .force('charge', d3.forceManyBody().strength(-45))
-    .force('collide', d3.forceCollide((d) => r(d.articles) + 2.5))
-    .force('x', d3.forceX((d) => centre.get(cKey(d))[0]).strength(0.12))
-    .force('y', d3.forceY((d) => centre.get(cKey(d))[1]).strength(0.12))
+  const simu = forceSimulation(nodes)
+    .force('link', forceLink(sim).id((d) => d.id).distance(40).strength((l) => 0.15 + 0.4 * l.weight))
+    .force('charge', forceManyBody().strength(-45))
+    .force('collide', forceCollide((d) => r(d.articles) + 2.5))
+    .force('x', forceX((d) => centre.get(cKey(d))[0]).strength(0.12))
+    .force('y', forceY((d) => centre.get(cKey(d))[1]).strength(0.12))
     .stop()
   for (let i = 0; i < 320; i++) simu.tick()
-  const [x0, x1] = d3.extent(nodes, (n) => n.x), [y0, y1] = d3.extent(nodes, (n) => n.y)
+  const [x0, x1] = d3extent(nodes, (n) => n.x), [y0, y1] = d3extent(nodes, (n) => n.y)
   const pad = 48
   const k = Math.min((W - 2 * pad) / Math.max(1, x1 - x0), (H - 2 * pad) / Math.max(1, y1 - y0), 1.5)
   nodes.forEach((n) => { n.x = pad + (n.x - x0) * k + ((W - 2 * pad) - (x1 - x0) * k) / 2; n.y = pad + (n.y - y0) * k + ((H - 2 * pad) - (y1 - y0) * k) / 2 })
@@ -57,8 +57,8 @@ export function layoutClusters(network, clusters, rankOf, W, H) {
   const tags = clusters.filter((c) => c.rank < CLUSTER_SLOTS.length).map((c) => {
     const pts = nodes.filter((n) => n.rank === c.rank)
     if (!pts.length) return null
-    const top = d3.least(pts, (n) => n.y - r(n.articles))
-    const cx = d3.mean(pts, (n) => n.x)
+    const top = d3least(pts, (n) => n.y - r(n.articles))
+    const cx = d3mean(pts, (n) => n.x)
     return { c, x: Math.max(70, Math.min(W - 70, cx)), y: Math.max(14, top.y - r(top.articles) - 14) }
   }).filter(Boolean)
   // de-overlap tags: push later tags down while they collide with an earlier one
@@ -113,12 +113,12 @@ export default function ClusterMap({ network, clusters, showReprints = true, sho
           <g key={n.id} transform={`translate(${n.x},${n.y})`} opacity={active(n) ? 1 : 0.18} style={{ cursor: 'pointer' }}
             onMouseMove={(e) => { setHover(n.id); tip.show(e, <div><b dir="auto">{n.name}</b> <span className="muted">{n.domain}</span>
               <div>{t('{n} articles (12 weeks)', { n: fmt(n.articles) })}</div>
-              <div className="small">{(clusterOf(n) && name(clusterOf(n))) || t('Other clusters')}</div></div>, wrap.current) }}
+              <div className="small">{(clusterOf(n) && name(clusterOf(n))) || t('Other clusters')}</div></div>, wrap.current, n.id) }}
             onClick={() => onSelectOutlet?.(n)}>
             <circle r={graph.r(n.articles) + 4} fill="transparent" />
             <circle r={graph.r(n.articles)} fill={clusterColor(n.rank)} stroke="var(--surface)" strokeWidth={2} />
-            {graph.r(n.articles) > 10 && <text y={graph.r(n.articles) + 11} textAnchor="middle"
-              style={{ fontSize: 10, fill: 'var(--ink)', paintOrder: 'stroke', stroke: 'var(--surface)', strokeWidth: 3 }}>{n.name}</text>}
+            {graph.r(n.articles) > 10 && <text y={graph.r(n.articles) + 12} textAnchor="middle"
+              style={{ fontSize: 11, fill: 'var(--ink)', paintOrder: 'stroke', stroke: 'var(--surface)', strokeWidth: 3 }}>{n.name}</text>}
           </g>))}
         {graph.tags.map(({ c, x, y }) => {
           const label = name(c)
@@ -137,18 +137,23 @@ export default function ClusterMap({ network, clusters, showReprints = true, sho
   )
 }
 
-export function ClusterLegendTable({ clusters, themes, highlight, setHighlight, lang = 'en' }) {
+// A row lights its cluster up on the map while hovered or focused (Tab reaches every row); Enter, Space or
+// a click opens it (onOpen: the Outlets page switches to the outlet map with that cluster in focus).
+export function ClusterLegendTable({ clusters, themes, highlight, setHighlight, lang = 'en', onOpen }) {
   const tname = new Map(themes.map((t) => [t.id, lang === 'ar' ? t.name_ar : t.name_en]))
   const named = clusters.filter((c) => c.rank < CLUSTER_SLOTS.length)
   const other = clusters.filter((c) => c.rank >= CLUSTER_SLOTS.length)
   const row = (c, label, color, extra) => (
-    <tr key={label} onMouseEnter={() => setHighlight?.(c?.rank ?? null)} onMouseLeave={() => setHighlight?.(null)}
-      style={highlight != null && c?.rank === highlight ? { background: 'var(--surface-2)' } : undefined}>
+    <tr key={label} tabIndex={c ? 0 : undefined} style={{ cursor: c ? 'pointer' : undefined, ...(highlight != null && c?.rank === highlight ? { background: 'var(--surface-2)' } : {}) }}
+      onMouseEnter={() => setHighlight?.(c?.rank ?? null)} onMouseLeave={() => setHighlight?.(null)}
+      onFocus={() => setHighlight?.(c?.rank ?? null)} onBlur={() => setHighlight?.(null)}
+      onClick={() => c && onOpen?.(c.rank)}
+      onKeyDown={(e) => { if (c && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); onOpen?.(c.rank) } }}>
       <td><span className="sw" style={{ display: 'inline-block', width: 12, height: 12, borderRadius: 3, background: color, verticalAlign: -2, marginInlineEnd: 6 }} /><b>{label}</b>
         {extra}</td>
-      <td className="num">{c ? c.outlets : d3.sum(other, (x) => x.outlets)}</td>
-      <td className="num">{fmt(c ? c.articles : d3.sum(other, (x) => x.articles))}</td>
-      <td className="num">{Math.round((c ? c.share : d3.sum(other, (x) => x.share)) * 100)}%</td>
+      <td className="num">{c ? c.outlets : d3sum(other, (x) => x.outlets)}</td>
+      <td className="num">{fmt(c ? c.articles : d3sum(other, (x) => x.articles))}</td>
+      <td className="num">{Math.round((c ? c.share : d3sum(other, (x) => x.share)) * 100)}%</td>
     </tr>)
   const comma = isAr() ? '، ' : ', '
   return (
@@ -168,7 +173,7 @@ export function ClusterLegendTable({ clusters, themes, highlight, setHighlight, 
 export function ClusterDistrictTable({ clusters, districts, regions, lang = 'en', highlight, onSelectDistrict }) {
   const named = clusters.filter((c) => c.rank < CLUSTER_SLOTS.length)
   const macro = new Map(regions.filter((r) => r.level === 'macro').map((r) => [r.id, r]))
-  const max = d3.max(named.flatMap((c) => Object.values(c.district_share))) || 0.01
+  const max = d3max(named.flatMap((c) => Object.values(c.district_share))) || 0.01
   const shade = (v) => {
     if (!v) return null
     const i = Math.min(5, 1 + Math.floor((v / max) * 5))
@@ -186,7 +191,8 @@ export function ClusterDistrictTable({ clusters, districts, regions, lang = 'en'
           const newMacro = i === 0 || districts[i - 1].parent_id !== d.parent_id
           return (
             <Fragment key={d.id}>{newMacro && <tr><td colSpan={named.length + 1} className="small muted" style={{ fontWeight: 600, paddingTop: 10 }}>{pick(macro.get(d.parent_id), 'name')}</td></tr>}
-              <tr style={{ cursor: 'pointer' }} onClick={() => onSelectDistrict?.(d.id)}>
+              <tr style={{ cursor: 'pointer' }} tabIndex={0} onClick={() => onSelectDistrict?.(d.id)}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelectDistrict?.(d.id) } }}>
                 <td>{lang === 'ar' ? d.name_ar : d.name_en}{!covered(d) && <span className="pill flag" style={{ marginInlineStart: 6 }}>{t('no cluster covers it')}</span>}</td>
                 {named.map((c) => {
                   const v = c.district_share[d.id] || 0

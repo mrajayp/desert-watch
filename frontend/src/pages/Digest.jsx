@@ -1,4 +1,4 @@
-import { Fragment, useState } from 'react'
+import { Fragment, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api } from '../api'
 import { useApp } from '../App'
@@ -6,8 +6,11 @@ import { ErrorBox, Loading } from '../components/Notices'
 import { useApi } from '../hooks/useApi'
 import { useMutation } from '../hooks/useMutation'
 import { usePageTitle } from '../hooks/usePageTitle'
+import { LENS_TEXT } from '../charts/scales'
+import { themeLabel } from '../charts/util'
 import { weekRange } from '../charts/trendText'
-import { N_, fmtDateTime, getLang, t } from '../i18n'
+import { N_, fmtDateTime, getLang, pick, t } from '../i18n'
+import { articlesPath, gapPath } from '../routes'
 
 // digest status codes from the API (shown for anything but 'ok')
 const STATUS = { error: N_('error'), refused: N_('refused') }
@@ -35,7 +38,7 @@ function inline(text) {
     if (m.index > last) parts.push(text.slice(last, m.index))
     const tok = m[0]
     if (tok.startsWith('[')) parts.push(SAFE_HREF.test(m[3]) ? <Href key={m.index} href={m[3]}>{inline(m[2])}</Href> : m[2])
-    else parts.push(tok.startsWith('**') ? <strong key={m.index}>{tok.slice(2, -2)}</strong> : <em key={m.index}>{tok.slice(1, -1)}</em>)
+    else parts.push(tok.startsWith('**') ? <strong key={m.index}>{inline(tok.slice(2, -2))}</strong> : <em key={m.index}>{inline(tok.slice(1, -1))}</em>)
     last = m.index + tok.length
   }
   if (last < text.length) parts.push(text.slice(last))
@@ -67,8 +70,55 @@ export function Markdown({ text }) {
   )
 }
 
+// ---- the gaps a brief names ----------------------------------------------------------------------
+// The facts a brief was written from carry its gaps (top_gaps: theme, region, lens, verdict, articles,
+// and theme_id / region_id). Each one becomes a link to the gap view at the brief's week and lens, and
+// to the articles the count covers (the facts' window). Without ids the names are matched to /api/meta.
+const WINDOW = /^(\d{4}-\d{2}-\d{2}) to (\d{4}-\d{2}-\d{2})$/ // i18n-ok: the facts' window, two ISO days, never shown
+export function gapLinks(facts, meta) {
+  if (!facts?.top_gaps || !meta) return []
+  const span = WINDOW.exec(facts.window || '')
+  const out = []
+  for (const g of facts.top_gaps) {
+    const theme = meta.themes.find((x) => x.id === g.theme_id) || meta.themes.find((x) => x.name_en === g.theme)
+    const region = meta.regions.find((x) => x.id === g.region_id) || meta.regions.find((x) => x.name_en === g.region)
+    if (!theme || !region) continue
+    out.push({
+      theme, region, lens: g.lens, verdict: g.verdict, articles: g.articles,
+      gap: gapPath(theme.id, region.id, { lens: g.lens, week: facts.week_starting }),
+      articles_path: span ? articlesPath({ theme_id: theme.id, region_id: region.id, start: span[1], end: span[2] }) : null,
+    })
+  }
+  return out
+}
+// the first mention of each linked theme in the brief becomes a Markdown link to its gap (one per theme,
+// outside headings, never inside an existing link); the renderer turns it into a Link
+export function linkify(md, links, lang) {
+  let text = md || ''
+  const done = new Set()
+  for (const l of links) {
+    if (done.has(l.theme.id)) continue
+    const names = [...new Set([lang === 'ar' ? l.theme.name_ar : l.theme.name_en, themeLabel(l.theme, lang)].filter(Boolean))]
+    const lines = text.split('\n')
+    let hit = false
+    for (let i = 0; i < lines.length && !hit; i++) {
+      if (/^#/.test(lines[i])) continue
+      for (const name of names) {
+        const re = new RegExp(`(^|[^\\p{L}\\[])(${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})(?![^\\[]*\\]\\()(?=$|[^\\p{L}])`, lang === 'ar' ? 'u' : 'iu')
+        const m = re.exec(lines[i])
+        if (!m) continue
+        lines[i] = lines[i].slice(0, m.index + m[1].length) + `[${m[2]}](${l.gap})` + lines[i].slice(m.index + m[0].length)
+        hit = true
+        break
+      }
+    }
+    if (hit) { text = lines.join('\n'); done.add(l.theme.id) }
+  }
+  return text
+}
+
 export default function DigestPage() {
-  const { me } = useApp()
+  const { me, meta, lang } = useApp()
   usePageTitle(t('Digest'))
   const [picked, setPicked] = useState(null) // an archive entry the reader chose; else the latest good one
   const [showFacts, setShowFacts] = useState(false)
@@ -80,6 +130,8 @@ export default function DigestPage() {
   const curQ = useApi(curId ? `/api/digests/${curId}` : null)
   const cur = curQ.data
   const open = (id) => { setPicked(id); setShowFacts(false) }
+  const links = useMemo(() => gapLinks(cur?.facts, meta), [cur, meta])
+  const body = useMemo(() => (cur?.status === 'ok' ? linkify(cur.content_md, links, cur.lang || lang) : ''), [cur, links, lang])
   const regenerate = useMutation(() => api('/api/admin/run/digest', { method: 'POST' }),
     { onSuccess: () => setMsg(t('Generating… refresh in a minute. (Needs the ANTHROPIC_API_KEY secret on the server.)')) })
   return (
@@ -110,10 +162,20 @@ export default function DigestPage() {
               {msg && <p className="small">{msg}</p>}
               {cur.status === 'ok' && cur.lang && cur.lang !== getLang() &&
                 <p className="small muted">{t('This brief was written before briefs were produced in Arabic too, so it is shown in English.')}</p>}
-              {cur.status === 'ok' ? <Markdown text={cur.content_md} /> : <div className="banner">{status(cur.status)}: {cur.error}</div>}
+              {cur.status === 'ok' ? <Markdown text={body} /> : <div className="banner">{status(cur.status)}: {cur.error}</div>}
+              {links.length > 0 && (
+                <>
+                  <h3>{t('Gaps named in this brief')}</h3>
+                  <ul className="list small">{links.map((l) => (
+                    <li key={`${l.theme.id}:${l.region.id}:${l.lens}`}>
+                      <Link to={l.gap}>{pick(l.theme)} · {pick(l.region)}</Link>
+                      <span className="muted"> · {t(LENS_TEXT[l.lens]?.label || l.lens)}</span>
+                      {l.articles_path && l.articles != null && <> · <Link to={l.articles_path}>{t('{n} articles', { n: l.articles })}</Link></>}
+                    </li>))}</ul>
+                </>)}
               <p className="small muted" style={{ marginTop: 16 }}>{t('AI-written from the tool’s own counts; every number should appear in the facts. Check before quoting.')}</p>
-              <button className="btn small ghost" onClick={() => setShowFacts(!showFacts)}>{showFacts ? t('Hide the facts it was given') : t('Show the facts it was given')}</button>
-              {showFacts && <pre className="mono" style={{ whiteSpace: 'pre-wrap', maxHeight: 420, overflow: 'auto', background: 'var(--surface-2)', padding: 10, borderRadius: 6 }}>{JSON.stringify(cur.facts, null, 2)}</pre>}
+              {me.role === 'admin' && <button className="btn small ghost" onClick={() => setShowFacts(!showFacts)}>{showFacts ? t('Hide the facts it was given') : t('Show the facts it was given')}</button>}
+              {me.role === 'admin' && showFacts && <pre className="mono" style={{ whiteSpace: 'pre-wrap', maxHeight: 420, overflow: 'auto', background: 'var(--surface-2)', padding: 10, borderRadius: 6 }}>{JSON.stringify(cur.facts, null, 2)}</pre>}
             </>)}
         </section>
         <section className="card">

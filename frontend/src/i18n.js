@@ -7,11 +7,25 @@
 //                                           object of plural forms {zero, one, two, few, many, other}
 //   pick(theme, 'name')                 -> theme.name_ar in Arabic, theme.name_en otherwise
 // scripts/check-i18n.mjs fails the build when a visible string is not wrapped or has no Arabic.
+// The Arabic catalogue is a separate chunk, loaded by loadCatalogue() before the first render in Arabic
+// and before a switch to Arabic, so English readers never download it (scripts/check-i18n.mjs still
+// imports locales/ar/index.js directly).
 import { timeFormatLocale } from 'd3-time-format'
-import AR from './locales/ar/index.js'
 
 export const LANGS = ['en', 'ar']
 let current = 'en'
+let AR = {}
+let catalogue = null // the pending or finished import of the Arabic catalogue
+
+// resolves once the catalogue for `l` is in memory (English needs none); safe to call again
+export function loadCatalogue(l) {
+  if (l !== 'ar') return Promise.resolve()
+  if (!catalogue) {
+    catalogue = import('./locales/ar/index.js').then((m) => { AR = m.default || m }).catch((e) => { catalogue = null; throw e })
+  }
+  return catalogue
+}
+export const catalogueLoaded = () => Object.keys(AR).length > 0
 
 export function getLang() { return current }
 export const isAr = () => current === 'ar'

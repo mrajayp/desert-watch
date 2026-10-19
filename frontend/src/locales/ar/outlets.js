@@ -93,8 +93,8 @@ export default {
   'Coverage clusters among outlets covering {country} — 4-week periods': 'مجموعات التغطية بين وسائل الإعلام التي تغطي {country}، على فترات من 4 أسابيع',
   'Coverage clusters among outlets covering {country}': 'مجموعات التغطية بين وسائل الإعلام التي تغطي {country}',
   'Clusters': 'المجموعات',
-  'Hover a row to highlight it on the map. Names are generated from each cluster’s most over-covered themes, compared with all monitored outlets.':
-    'عند تمرير المؤشر فوق صف، يُبرَز على الخريطة. تُشتق الأسماء من المواضيع التي تُكثر كل مجموعة من تغطيتها، مقارنةً بجميع وسائل الإعلام المرصودة.',
+  'Hover or focus a row to highlight it on the map; Enter opens it. Names are generated from each cluster’s most over-covered themes, compared with all monitored outlets.':
+    'عند تمرير المؤشر فوق صف أو الوصول إليه بلوحة المفاتيح، يُبرَز على الخريطة؛ ويفتحه زر الإدخال (Enter). تُشتق الأسماء من المواضيع التي تُكثر كل مجموعة من تغطيتها، مقارنةً بجميع وسائل الإعلام المرصودة.',
   'Share of coverage by {dimension}': 'حصة التغطية حسب {dimension}',
   'Which clusters cover which districts': 'أيّ المجموعات تغطي أيّ الشعبيات',
   'Share of each cluster’s articles that name the district. Rows of dots are districts no cluster writes about — candidate deserts. Click a district to open it.':
@@ -248,7 +248,6 @@ export default {
   'A team member': 'أحد أعضاء الفريق',
   'No votes yet.': 'لا توجد أصوات بعد.',
   'Nobody has claimed this yet.': 'لا أحد يعمل على هذا حتى الآن.',
-  'No outlet with this id.': 'لا توجد وسيلة إعلامية بهذا المعرّف.',
   'Monitored articles naming this district, 12 weeks.': 'المقالات المرصودة التي تذكر هذه الشعبية خلال 12 أسبوعًا.',
   '+ Add missing article': '+ إضافة مقال ناقص',
   'Official statements ({n})': 'البيانات الرسمية ({n})',

@@ -2,7 +2,8 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import * as d3 from 'd3'
-import { LENS_NEED, SEARCH_FEW, backfilledNote, chanceText, gapLabel, lensNeed, trendGroups, levelLegend, needLine, noSearchData, notJudged, pillClass, reasonText, shortfall, stepPath, unclearReason, usualLine, verdict, verdictSentence, weekEnd, weekRange, yScale } from '../src/charts/trendText.js'
+import { LENS_NEED, SEARCH_FEW, backfilledNote, biggestShortfalls, chanceText, gapLabel, lensNeed, trendGroups, levelLegend, needLine, noSearchData, notJudged, pillClass, reasonText, shortfall, stepPath, unclearReason, usualLine, verdict, verdictSentence, weekEnd, weekRange } from '../src/charts/trendText.js'
+import { yScale } from '../src/charts/yScale.js'
 import { GAP_BINS, GAP_STEPS, RED_FROM, VERDICTS, gapBins, gapFill, verdictOf } from '../src/charts/scales.js'
 
 const need = LENS_NEED.audience
@@ -290,4 +291,21 @@ test('search lens: measured themes first, the rest keep their charts under a hea
   assert.equal(reasonText('no_need_data', lensNeed('search'), false), 'too few searches to compare')
   // other lenses keep General then Gender
   assert.deepEqual(trendGroups(themes, data, 'audience').map((x) => x.label), ['General', 'Gender'])
+})
+
+test('on a phone Trends leads with the biggest shortfalls: short by gap, then possibly fewer, then the rest', () => {
+  const themes = [{ id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }, { id: 5 }, { id: 6 }, { id: 7, group: 'gender' }]
+  const rows = (verdict, gap, extra = {}) => [{ week: 'w0', articles: 10, gap: 0.1, verdict: 'usual' }, { week: 'w1', articles: 8, gap, verdict, ...extra }, { week: 'w2', in_progress: true, gap: null }]
+  const data = { themes: {
+    1: { rows: rows('usual', 0.1) }, 2: { rows: rows('short', 0.9) }, 3: { rows: rows('possibly_short', 0.5) },
+    4: { rows: rows('short', 1.4) }, 5: { rows: rows('over', -0.6) }, 6: { rows: rows('unclear', null, { insufficient: true }) },
+    7: { rows: rows('short', 0.6) },
+  } }
+  assert.deepEqual(biggestShortfalls(themes, data, 0.4, 4).map((t) => t.id), [4, 2, 7, 3])
+  assert.deepEqual(biggestShortfalls(themes, data, 0.4, 6).map((t) => t.id), [4, 2, 7, 3, 1, 5])
+  // a theme with no rows is left out; the week still coming in never decides
+  assert.deepEqual(biggestShortfalls([...themes, { id: 8 }], data, 0.4, 10).map((t) => t.id), [4, 2, 7, 3, 1, 5, 6])
+  // before verdicts existed the threshold rule ranks them
+  const old = { themes: { 1: { rows: rows(undefined, 0.2) }, 2: { rows: rows(undefined, 0.7) } } }
+  assert.deepEqual(biggestShortfalls(themes.slice(0, 2), old, 0.4, 1).map((t) => t.id), [2])
 })

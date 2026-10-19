@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { api } from '../api'
 import { useApp } from '../App'
 import SourceHealth from '../components/SourceHealth'
@@ -9,6 +10,7 @@ import { useMutation } from '../hooks/useMutation'
 import { usePageTitle } from '../hooks/usePageTitle'
 import { fmtDate, fmtDateTime, fmtNum, isAr, pick, t, tn } from '../i18n'
 import { sourceLabel } from '../charts/scales'
+import { summary } from './Contribute'
 import { Markdown } from './Digest'
 
 const N_ = (s) => s // marks English for the catalogue; translated with t() when read
@@ -31,21 +33,51 @@ const THRESHOLD_NAMES = { theme_classifier_new_labels: N_('theme classifier new 
 const comma = () => (isAr() ? '، ' : ', ')
 const semi = () => (isAr() ? '؛ ' : '; ')
 
+// The page is five tabs, one per concern, instead of a dozen cards in a column. The tab lives in the URL
+// (?tab=people), so the pending badge in the menu can open the access requests directly. Arrow keys move
+// between tabs (the right arrow goes forward in both writing directions).
+const TABS = [['themes', N_('Themes & classifier')], ['people', N_('People & access')], ['sources', N_('Sources & health')], ['ai', N_('AI audit')], ['feedback', N_('Feedback')]]
+
 export default function Admin() {
-  const { refresh, reloadMeta } = useApp()
   usePageTitle(t('Admin'))
+  const [sp, setSp] = useSearchParams()
+  const tab = TABS.some(([k]) => k === sp.get('tab')) ? sp.get('tab') : 'themes'
+  const setTab = (k) => setSp((prev) => { const n = new URLSearchParams(prev); if (k === 'themes') n.delete('tab'); else n.set('tab', k); return n }, { replace: true })
+  const [msg, setMsg] = useState(null)
+  const onTabKey = (e) => {
+    const i = TABS.findIndex(([k]) => k === tab)
+    const forward = isAr() ? 'ArrowLeft' : 'ArrowRight', back = isAr() ? 'ArrowRight' : 'ArrowLeft' // i18n-ok: key names, never shown
+    const go = e.key === forward ? i + 1 : e.key === back ? i - 1 : e.key === 'Home' ? 0 : e.key === 'End' ? TABS.length - 1 : null
+    if (go == null) return
+    e.preventDefault()
+    const next = TABS[(go + TABS.length) % TABS.length][0]
+    setTab(next)
+    document.getElementById(`admin-tab-${next}`)?.focus()
+  }
+  return (
+    <main className="page">
+      <div className="seg admin-tabs" role="tablist" aria-label={t('Admin sections')}>
+        {TABS.map(([k, l]) => (
+          <button key={k} type="button" role="tab" id={`admin-tab-${k}`} aria-selected={tab === k} aria-controls={`admin-panel-${k}`} tabIndex={tab === k ? 0 : -1}
+            onClick={() => setTab(k)} onKeyDown={onTabKey}>{t(l)}</button>))}
+      </div>
+      {msg && <div className="banner info">{msg}</div>}
+      <div role="tabpanel" id={`admin-panel-${tab}`} aria-labelledby={`admin-tab-${tab}`}>
+        {tab === 'themes' && <><div className="grid halves"><ThemesCard onMsg={setMsg} /><LearningCard /></div><ModelsCard /><MethodsCard /></>}
+        {tab === 'people' && <><InviteCard /><UsersCard /></>}
+        {tab === 'sources' && <><SourcesCard onMsg={setMsg} /><FeedsCard /><AlertsCard /><HealthCard /></>}
+        {tab === 'ai' && <AiAuditAdmin />}
+        {tab === 'feedback' && <><SuggestionsCard /><FeedbackCard /></>}
+      </div>
+    </main>
+  )
+}
+
+function ThemesCard({ onMsg }) {
+  const { refresh, reloadMeta } = useApp()
   const themesQ = useApi('/api/themes')
   const themes = themesQ.data || []
-  const sugsQ = useApi('/api/admin/suggestions')
-  const sugs = sugsQ.data || []
-  const learningQ = useApi('/api/admin/learning')
-  const learning = learningQ.data
-  const loadError = themesQ.error || sugsQ.error || learningQ.error
-  const retryLoads = () => { themesQ.retry(); sugsQ.retry(); learningQ.retry() }
   const [edit, setEdit] = useState(null)
-  const [invite, setInvite] = useState({ email: '', role: 'journalist' })
-  const [inviteLink, setInviteLink] = useState(null)
-  const [msg, setMsg] = useState(null)
   const startEdit = (th) => { preview.clearError(); setPreviewData(null); setEdit(th ? { ...th, en: th.en_terms.join('\n'), ar: th.ar_terms.join('\n'), ex: th.exclude.join('\n') } : { id: null, name_en: '', name_ar: '', en: '', ar: '', ex: '', active: true }) }
   const body = () => ({ name_en: edit.name_en, name_ar: edit.name_ar, en_terms: split(edit.en), ar_terms: split(edit.ar), exclude: split(edit.ex), active: edit.active,
     acled_event_types: edit.acled_event_types || [], reliefweb_themes: edit.reliefweb_themes || [] })
@@ -54,101 +86,169 @@ export default function Admin() {
   const preview = useMutation(() => api(`/api/themes/preview${edit.id ? `?tid=${edit.id}` : ''}`, { method: 'POST', body: body() }), { onSuccess: setPreviewData })
   // a saved theme changes /api/meta (names, the list), which is otherwise loaded once per app load
   const saveTheme = useMutation(() => api(edit.id ? `/api/themes/${edit.id}` : '/api/themes', { method: edit.id ? 'PUT' : 'POST', body: body() }),
-    { onSuccess: () => { setMsg(t('Saved. Articles are being re-tagged and scores recomputed in the background.')); setEdit(null); themesQ.retry(); reloadMeta(); setTimeout(refresh, 4000) } })
+    { onSuccess: () => { onMsg(t('Saved. Articles are being re-tagged and scores recomputed in the background.')); setEdit(null); themesQ.retry(); reloadMeta(); setTimeout(refresh, 4000) } })
+  return (
+    <section className="card">
+      <div className="card-head"><h2>{t('Themes')}</h2><button className="btn small" onClick={() => startEdit(null)}>{t('+ New theme')}</button></div>
+      <p className="sub">{t('Editing a theme bumps its version and re-tags all articles. Arabic terms only apply to RSS and Google News (GDELT can’t search Arabic script).')}</p>
+      {themesQ.error && <ErrorBox error={themesQ.error} onRetry={themesQ.retry} compact />}
+      <ul className="list">{themes.map((th) => (
+        <li key={th.id} className="row" style={{ justifyContent: 'space-between' }}>
+          <span><b>{th.name_en}</b> <span className="ar" dir="rtl">{th.name_ar}</span> <span className="muted small">{t('v{version} · {en} EN / {ar} AR terms', { version: th.version, en: th.en_terms.length, ar: th.ar_terms.length })}{!th.active && ` · ${t('inactive')}`}</span></span>
+          <button className="btn small" onClick={() => startEdit(th)}>{t('Edit')}</button></li>))}</ul>
+      {edit && (
+        <div className="form" style={{ marginTop: 12 }}>
+          <div className="row"><label style={{ flex: 1 }}>{t('Name (EN)')}<input type="text" value={edit.name_en} onChange={(e) => setEdit({ ...edit, name_en: e.target.value })} /></label>
+            <label style={{ flex: 1 }}>{t('Name (AR)')}<input type="text" dir="rtl" value={edit.name_ar} onChange={(e) => setEdit({ ...edit, name_ar: e.target.value })} /></label></div>
+          <div className="grid halves">
+            <label>{t('English terms (one per line)')}<textarea rows={7} value={edit.en} onChange={(e) => setEdit({ ...edit, en: e.target.value })} /></label>
+            <label>{t('Arabic terms')}<textarea rows={7} dir="rtl" value={edit.ar} onChange={(e) => setEdit({ ...edit, ar: e.target.value })} /></label>
+          </div>
+          <label>{t('Exclusions (veto a match)')}<textarea rows={2} value={edit.ex} onChange={(e) => setEdit({ ...edit, ex: e.target.value })} /></label>
+          <label className="row"><input type="checkbox" checked={edit.active} onChange={(e) => setEdit({ ...edit, active: e.target.checked })} />{t('Active')}</label>
+          <div className="row"><button className="btn" disabled={preview.busy} onClick={() => preview.run()}>{t('Preview matches (30 days)')}</button><span className="spacer" />
+            <button className="btn ghost" onClick={() => setEdit(null)}>{t('Cancel')}</button><button className="btn primary" disabled={!edit.name_en || saveTheme.busy} onClick={() => saveTheme.run()}>{t('Save')}</button></div>
+          {(preview.error || saveTheme.error) && <ErrorBox error={preview.error || saveTheme.error} compact />}
+          {previewData && (
+            <div>
+              <p className="small">{t('Matches {matched} of {scanned} recent articles. Top terms: {terms}', {
+                matched: previewData.matched, scanned: previewData.scanned, terms: previewData.top_terms.slice(0, 8).map(([term, k]) => `${term} (${k})`).join(comma()),
+              })}</p>
+              <ul className="list small scroll" style={{ maxHeight: 260 }}>{previewData.samples.map((s) => (
+                <li key={s.id}><span dir="auto">{s.title}</span> <span className="muted">[{s.hits.join(comma())}]</span>{!s.relevant && <span className="pill flag">{t('marked junk')}</span>}</li>))}</ul>
+              <p className="small muted">{t('Check precision before saving: if fewer than ~8 in 10 samples are on-topic, tighten terms or add exclusions.')}</p>
+            </div>)}
+        </div>)}
+    </section>
+  )
+}
+
+function InviteCard() {
+  const [invite, setInvite] = useState({ email: '', role: 'journalist' })
+  const [inviteLink, setInviteLink] = useState(null)
   const sendInvite = useMutation((e) => { e.preventDefault(); return api('/api/admin/invites', { method: 'POST', body: invite }) },
     { onSuccess: (r) => { setInviteLink(location.origin + r.invite_path); setInvite({ email: '', role: 'journalist' }) } })
-  const review = useMutation((id, accept) => api(`/api/admin/suggestions/${id}`, { method: 'POST', body: { accept } }), { onSuccess: () => { sugsQ.retry(); learningQ.retry() } })
-  const run = useMutation((job) => api(`/api/admin/run/${job}`, { method: 'POST' }), { onSuccess: (r, job) => setMsg(t('Queued {job}. Refresh in a minute.', { job })) })
-
   return (
-    <main className="page">
-      {msg && <div className="banner info">{msg}</div>}
-      {loadError && <ErrorBox error={loadError} onRetry={retryLoads} />}
-      {run.error && <ErrorBox error={run.error} compact />}
-      <div className="grid halves">
-        <section className="card">
-          <div className="card-head"><h2>{t('Themes')}</h2><button className="btn small" onClick={() => startEdit(null)}>{t('+ New theme')}</button></div>
-          <p className="sub">{t('Editing a theme bumps its version and re-tags all articles. Arabic terms only apply to RSS and Google News (GDELT can’t search Arabic script).')}</p>
-          <ul className="list">{themes.map((th) => (
-            <li key={th.id} className="row" style={{ justifyContent: 'space-between' }}>
-              <span><b>{th.name_en}</b> <span className="ar" dir="rtl">{th.name_ar}</span> <span className="muted small">{t('v{version} · {en} EN / {ar} AR terms', { version: th.version, en: th.en_terms.length, ar: th.ar_terms.length })}{!th.active && ` · ${t('inactive')}`}</span></span>
-              <button className="btn small" onClick={() => startEdit(th)}>{t('Edit')}</button></li>))}</ul>
-          {edit && (
-            <div className="form" style={{ marginTop: 12 }}>
-              <div className="row"><label style={{ flex: 1 }}>{t('Name (EN)')}<input type="text" value={edit.name_en} onChange={(e) => setEdit({ ...edit, name_en: e.target.value })} /></label>
-                <label style={{ flex: 1 }}>{t('Name (AR)')}<input type="text" dir="rtl" value={edit.name_ar} onChange={(e) => setEdit({ ...edit, name_ar: e.target.value })} /></label></div>
-              <div className="grid halves">
-                <label>{t('English terms (one per line)')}<textarea rows={7} value={edit.en} onChange={(e) => setEdit({ ...edit, en: e.target.value })} /></label>
-                <label>{t('Arabic terms')}<textarea rows={7} dir="rtl" value={edit.ar} onChange={(e) => setEdit({ ...edit, ar: e.target.value })} /></label>
-              </div>
-              <label>{t('Exclusions (veto a match)')}<textarea rows={2} value={edit.ex} onChange={(e) => setEdit({ ...edit, ex: e.target.value })} /></label>
-              <label className="row"><input type="checkbox" checked={edit.active} onChange={(e) => setEdit({ ...edit, active: e.target.checked })} />{t('Active')}</label>
-              <div className="row"><button className="btn" disabled={preview.busy} onClick={() => preview.run()}>{t('Preview matches (30 days)')}</button><span className="spacer" />
-                <button className="btn ghost" onClick={() => setEdit(null)}>{t('Cancel')}</button><button className="btn primary" disabled={!edit.name_en || saveTheme.busy} onClick={() => saveTheme.run()}>{t('Save')}</button></div>
-              {(preview.error || saveTheme.error) && <ErrorBox error={preview.error || saveTheme.error} compact />}
-              {previewData && (
-                <div>
-                  <p className="small">{t('Matches {matched} of {scanned} recent articles. Top terms: {terms}', {
-                    matched: previewData.matched, scanned: previewData.scanned, terms: previewData.top_terms.slice(0, 8).map(([term, k]) => `${term} (${k})`).join(comma()),
-                  })}</p>
-                  <ul className="list small scroll" style={{ maxHeight: 260 }}>{previewData.samples.map((s) => (
-                    <li key={s.id}><span dir="auto">{s.title}</span> <span className="muted">[{s.hits.join(comma())}]</span>{!s.relevant && <span className="pill flag">{t('marked junk')}</span>}</li>))}</ul>
-                  <p className="small muted">{t('Check precision before saving: if fewer than ~8 in 10 samples are on-topic, tighten terms or add exclusions.')}</p>
-                </div>)}
-            </div>)}
-        </section>
-        <section className="card">
-          <h2>{t('Invite a journalist')}</h2>
-          <form className="row" onSubmit={(e) => sendInvite.run(e)}>
-            <input type="email" required placeholder={t('email')} value={invite.email} onChange={(e) => setInvite({ ...invite, email: e.target.value })} />
-            <select value={invite.role} onChange={(e) => setInvite({ ...invite, role: e.target.value })}><option value="journalist">{cap(code('journalist'))}</option><option value="admin">{cap(code('admin'))}</option></select>
-            <button className="btn primary" disabled={sendInvite.busy}>{t('Create invite')}</button>
-          </form>
-          {sendInvite.error && <ErrorBox error={sendInvite.error} compact />}
-          {inviteLink && <p className="small">{t('Send this link privately (valid 7 days):')} <code dir="ltr" style={{ wordBreak: 'break-all' }}>{inviteLink}</code></p>}
+    <section className="card">
+      <h2>{t('Invite a journalist')}</h2>
+      <form className="row" onSubmit={(e) => sendInvite.run(e)}>
+        <input type="email" required placeholder={t('email')} value={invite.email} onChange={(e) => setInvite({ ...invite, email: e.target.value })} />
+        <select value={invite.role} onChange={(e) => setInvite({ ...invite, role: e.target.value })}><option value="journalist">{cap(code('journalist'))}</option><option value="admin">{cap(code('admin'))}</option></select>
+        <button className="btn primary" disabled={sendInvite.busy}>{t('Create invite')}</button>
+      </form>
+      {sendInvite.error && <ErrorBox error={sendInvite.error} compact />}
+      {inviteLink && <p className="small">{t('Send this link privately (valid 7 days):')} <code dir="ltr" style={{ wordBreak: 'break-all' }}>{inviteLink}</code></p>}
+    </section>
+  )
+}
 
-          <h2 style={{ marginTop: 20 }}>{t('Suggestions queue ({n})', { n: sugs.length })}</h2>
-          {review.error && <ErrorBox error={review.error} compact />}
-          {sugs.length === 0 ? <p className="muted small">{t('Nothing pending.')}</p> : (
-            <ul className="list small">{sugs.map((g) => (
-              <li key={g.id}><b>{code(g.kind)}</b> {t('by {who}', { who: g.user || code(g.origin) })} · <span className="mono" dir="ltr">{JSON.stringify(g.payload)}</span>
-                <div className="row"><button className="btn small" disabled={review.busy} onClick={() => review.run(g.id, true)}>{t('Accept')}</button><button className="btn small ghost" disabled={review.busy} onClick={() => review.run(g.id, false)}>{t('Reject')}</button></div></li>))}</ul>)}
+// Pending suggestions, each read the way Contribute shows them to their author (summary), never as raw JSON.
+function SuggestionsCard() {
+  const { meta } = useApp()
+  const sugsQ = useApi('/api/admin/suggestions')
+  const sugs = sugsQ.data || []
+  const review = useMutation((id, accept) => api(`/api/admin/suggestions/${id}`, { method: 'POST', body: { accept } }), { onSuccess: sugsQ.retry })
+  const themes = new Map(meta.themes.map((th) => [th.id, th]))
+  const regions = new Map(meta.regions.map((r) => [r.id, r]))
+  const nm = (o) => (o ? pick(o, 'name') : '—')
+  return (
+    <section className="card">
+      <h2>{t('Suggestions queue ({n})', { n: sugs.length })}</h2>
+      {sugsQ.error && <ErrorBox error={sugsQ.error} onRetry={sugsQ.retry} compact />}
+      {review.error && <ErrorBox error={review.error} compact />}
+      {!sugsQ.data && !sugsQ.error && <Loading />}
+      {sugsQ.data && sugs.length === 0 ? <p className="muted small">{t('Nothing pending.')}</p> : (
+        <ul className="list small">{sugs.map((g) => (
+          <li key={g.id}><b>{code(g.kind)}</b> {t('by {who}', { who: g.user || code(g.origin) })} · <span dir="auto">{summary(g, themes, regions, nm) || <span className="mono" dir="ltr">{JSON.stringify(g.payload)}</span>}</span>
+            {g.payload?.note && <div className="muted" dir="auto">{g.payload.note}</div>}
+            <div className="row"><button className="btn small" disabled={review.busy} onClick={() => review.run(g.id, true)}>{t('Accept')}</button><button className="btn small ghost" disabled={review.busy} onClick={() => review.run(g.id, false)}>{t('Reject')}</button></div></li>))}</ul>)}
+    </section>
+  )
+}
 
-          <h2 style={{ marginTop: 20 }}>{t('Learning')}</h2>
-          {learning && (
-            <div className="small">
-              <p>{t('Labels: {list} ({explicit} explicit, {implicit} implicit)', {
-                list: Object.entries(learning.labels).map(([k, v]) => `${k} ${v}`).join(' · ') || t('none yet'),
-                explicit: learning.by_origin.explicit || 0, implicit: learning.by_origin.implicit || 0,
-              })}</p>
-              <p>{t('Behaviour events: {list}', { list: Object.entries(learning.events).map(([k, v]) => `${k} ${v}`).join(' · ') || t('none yet') })}</p>
-              <p>{t('Vote agreement: {unanimous} of {multiple} gaps with 2+ votes are unanimous.', { unanimous: learning.vote_agreement.unanimous, multiple: learning.vote_agreement.gaps_with_multiple_votes })}</p>
-              {learning.rule_confirmation && Object.keys(learning.rule_confirmation).length > 0 && (
-                <>
-                  <p style={{ marginBottom: 4 }}><b>{t('Precision proxy')}</b> — {t('share of search results (last 28 days) whose theme the keyword rules confirm. Low = the search returns loosely related items, or the rules miss vocabulary:')}</p>
-                  <table className="data"><thead><tr><th>{t('Theme / language')}</th><th className="num">{t('Items')}</th><th className="num">{t('Confirmed')}</th></tr></thead>
-                    <tbody>{Object.entries(learning.rule_confirmation).map(([k, v]) => (
-                      <tr key={k}><td>{k}</td><td className="num">{v.n}</td><td className="num">{Math.round(v.confirmed * 100)}%{v.confirmed < 0.5 && <span className="pill flag" style={{ marginInlineStart: 6 }}>{t('review terms')}</span>}</td></tr>))}</tbody></table>
-                </>)}
-              <p className="muted">{t('Models switch on at: {list}. Until then rankings are rule-based.', {
-                list: Object.entries(learning.thresholds).map(([k, v]) => `${THRESHOLD_NAMES[k] ? t(THRESHOLD_NAMES[k]) : k.replace(/_/g, ' ')} ≥ ${v}`).join(semi()),
-              })}</p>
-            </div>)}
-        </section>
+function LearningCard() {
+  const learningQ = useApi('/api/admin/learning')
+  const learning = learningQ.data
+  return (
+    <section className="card">
+      <h2>{t('Learning')}</h2>
+      {learningQ.error && <ErrorBox error={learningQ.error} onRetry={learningQ.retry} compact />}
+      {!learning && !learningQ.error && <Loading />}
+      {learning && (
+        <div className="small">
+          <p>{t('Labels: {list} ({explicit} explicit, {implicit} implicit)', {
+            list: Object.entries(learning.labels).map(([k, v]) => `${k} ${v}`).join(' · ') || t('none yet'),
+            explicit: learning.by_origin.explicit || 0, implicit: learning.by_origin.implicit || 0,
+          })}</p>
+          <p>{t('Behaviour events: {list}', { list: Object.entries(learning.events).map(([k, v]) => `${k} ${v}`).join(' · ') || t('none yet') })}</p>
+          <p>{t('Vote agreement: {unanimous} of {multiple} gaps with 2+ votes are unanimous.', { unanimous: learning.vote_agreement.unanimous, multiple: learning.vote_agreement.gaps_with_multiple_votes })}</p>
+          {learning.rule_confirmation && Object.keys(learning.rule_confirmation).length > 0 && (
+            <>
+              <p style={{ marginBottom: 4 }}><b>{t('Precision proxy')}</b> — {t('share of search results (last 28 days) whose theme the keyword rules confirm. Low = the search returns loosely related items, or the rules miss vocabulary:')}</p>
+              <table className="data"><thead><tr><th>{t('Theme / language')}</th><th className="num">{t('Items')}</th><th className="num">{t('Confirmed')}</th></tr></thead>
+                <tbody>{Object.entries(learning.rule_confirmation).map(([k, v]) => (
+                  <tr key={k}><td>{k}</td><td className="num">{v.n}</td><td className="num">{Math.round(v.confirmed * 100)}%{v.confirmed < 0.5 && <span className="pill flag" style={{ marginInlineStart: 6 }}>{t('review terms')}</span>}</td></tr>))}</tbody></table>
+            </>)}
+          <p className="muted">{t('Models switch on at: {list}. Until then rankings are rule-based.', {
+            list: Object.entries(learning.thresholds).map(([k, v]) => `${THRESHOLD_NAMES[k] ? t(THRESHOLD_NAMES[k]) : k.replace(/_/g, ' ')} ≥ ${v}`).join(semi()),
+          })}</p>
+        </div>)}
+    </section>
+  )
+}
+
+// The jobs an admin can start by hand (POST /api/admin/run/{job}), named for what they do, not by their key.
+const JOB_NAMES = {
+  rss: N_('Outlet feeds'), youtube: N_('YouTube channels'), galerts: N_('Google Alerts'), gnews: N_('Google News'), gnews_social: N_('Social posts (Google)'),
+  digest: N_('Weekly digest'), gdelt: 'GDELT', gdelt_timeline: N_('GDELT history'), wikipedia: N_('Wikipedia views'), recompute: N_('Recompute the scores'), backup: N_('Backup'),
+  discover_feeds: N_('Feed discovery'),
+}
+const jobName = (j) => (JOB_NAMES[j] ? (JOB_NAMES[j] === 'GDELT' ? JOB_NAMES[j] : t(JOB_NAMES[j])) : j)
+
+function SourcesCard({ onMsg }) {
+  const run = useMutation((job) => api(`/api/admin/run/${job}`, { method: 'POST' }), { onSuccess: (r, job) => onMsg(t('Queued {job}. Refresh in a minute.', { job: jobName(job) })) })
+  return (
+    <section className="card">
+      <div className="card-head"><div><h2>{t('Data sources')}</h2><p className="sub">{t('Every collector and job, when it last ran and how often it should. The buttons start one now.')}</p></div></div>
+      <div className="row" style={{ marginBottom: 10 }}>
+        <span className="small muted">{t('Run now:')}</span>
+        {Object.keys(JOB_NAMES).map((j) => <button key={j} className="btn small" disabled={run.busy} onClick={() => run.run(j)}>{jobName(j)}</button>)}
       </div>
-      <ModelsCard />
-      <MethodsCard />
-      <UsersCard />
-      <FeedbackCard />
-      <AlertsCard />
-      <AiAuditAdmin />
-      <HealthCard />
-      <section className="card" style={{ marginTop: 16 }}>
-        <div className="card-head"><h2>{t('Data sources')}</h2>
-          <div className="row">{['rss', 'youtube', 'galerts', 'gnews', 'gnews_social', 'digest', 'gdelt', 'gdelt_timeline', 'wikipedia', 'recompute', 'backup'].map((j) => <button key={j} className="btn small" disabled={run.busy} onClick={() => run.run(j)}>{t('Run {job}', { job: j })}</button>)}</div></div>
-        <SourceHealth />
-      </section>
-    </main>
+      {run.error && <ErrorBox error={run.error} compact />}
+      <SourceHealth />
+    </section>
+  )
+}
+
+// The outlet feeds the nightly discovery (GET /api/admin/feeds) found, and the feeds paused after repeated failures.
+function FeedsCard() {
+  const q = useApi('/api/admin/feeds')
+  const d = q.data
+  const [showAll, setShowAll] = useState(false)
+  return (
+    <section className="card" style={{ marginTop: 16 }}>
+      <div className="card-head">
+        <div><h2>{t('Feed discovery')}</h2>
+          <p className="sub">{t('Outlet feeds found by the nightly search, and the feeds paused after repeated failures.')}</p></div>
+        <button className="btn small" onClick={q.retry}>{t('Refresh')}</button>
+      </div>
+      {q.error && <ErrorBox error={q.error} onRetry={q.retry} compact />}
+      {!d && !q.error && <Loading />}
+      {d && (
+        <>
+          <p className="small">{t('{n} outlets with a feed · {searched} searched so far (last {date}) · {found} found by the search · {left} still to try, {nightly} a night', {
+            n: fmtNum(d.with_feed), searched: fmtNum(d.searched.outlets), date: d.searched.last ? fmtDate(d.searched.last) : t('never'), found: fmtNum(d.searched.found), left: fmtNum(d.candidates_left), nightly: fmtNum(d.nightly) })}</p>
+          <h3>{t('Paused feeds ({n})', { n: fmtNum(d.paused.length) })}</h3>
+          {d.paused.length === 0 ? <p className="small muted">{t('none')}</p> : (
+            <ul className="list small">{d.paused.map((f) => (
+              <li key={f.id}><b dir="ltr">{f.domain}</b> · {t('paused {date} after {n} failed runs · {error}', { date: f.since ? fmtDate(f.since) : '–', n: fmtNum(f.failures || 0), error: f.error || '–' })}</li>))}</ul>)}
+          <h3>{t('Found feeds ({n})', { n: fmtNum(d.discovered.length) })}</h3>
+          {d.discovered.length === 0 ? <p className="small muted">{t('none')}</p> : (
+            <ul className="list small">{(showAll ? d.discovered : d.discovered.slice(0, 15)).map((f) => (
+              <li key={f.id}><b dir="ltr">{f.domain}</b> · <span dir="ltr">{f.rss_url}</span> · {t('found {date} via {how}', { date: f.found_at ? fmtDate(f.found_at) : '–', how: f.how || '–' })}</li>))}</ul>)}
+          {d.discovered.length > 15 && <button type="button" className="textbtn small" onClick={() => setShowAll(!showAll)}>{showAll ? t('Show fewer') : t('Show all {n}', { n: fmtNum(d.discovered.length) })}</button>}
+        </>)}
+    </section>
   )
 }
 
@@ -224,18 +324,19 @@ function UsersCard() {
         <h3 style={{ margin: 0 }}>{t('All users ({n})', { n: users.length - pending.length })}</h3>
         <span className="seg">{['all', 'active', 'disabled', 'rejected'].map((k) => <button key={k} aria-pressed={show === k} onClick={() => setShow(k)}>{code(k)}</button>)}</span>
       </div>
+      {/* under 640px the rows stack as cards (styles.css table.cards) */}
       <div className="scroll" style={{ maxHeight: 420 }}>
-        <table className="data">
+        <table className="data cards">
           <thead><tr><th>{t('Name')}</th><th>{t('Email')}</th><th>{t('Organisation')}</th><th>{t('Role')}</th><th>{t('Status')}</th><th>{t('Since')}</th><th /></tr></thead>
           <tbody>{rest.map((u) => (
             <tr key={u.id}>
-              <td><b dir="auto">{u.display_name}</b>{u.id === me.id && <span className="muted small"> {t('(you)')}</span>}</td>
-              <td className="small">{u.email}</td><td className="small" dir="auto">{u.organisation || '–'}</td>
-              <td><select value={u.role} disabled={u.id === me.id} aria-label={t('Role for {name}', { name: u.display_name })}
+              <td className="card-title"><b dir="auto">{u.display_name}</b>{u.id === me.id && <span className="muted small"> {t('(you)')}</span>}</td>
+              <td className="small" data-label={t('Email')}>{u.email}</td><td className="small" dir="auto" data-label={t('Organisation')}>{u.organisation || '–'}</td>
+              <td data-label={t('Role')}><select value={u.role} disabled={u.id === me.id} aria-label={t('Role for {name}', { name: u.display_name })}
                 onChange={(e) => patch(u, { role: e.target.value })}>{['admin', 'journalist', 'viewer'].map((r) => <option key={r} value={r}>{code(r)}</option>)}</select></td>
-              <td className="small">{code(u.status)}{u.approved_by && <span className="muted"> · {t('approved by {name}', { name: u.approved_by })}</span>}</td>
-              <td className="small">{fmtDate(u.created_at)}</td>
-              <td>{u.id !== me.id && (u.status === 'active'
+              <td className="small" data-label={t('Status')}>{code(u.status)}{u.approved_by && <span className="muted"> · {t('approved by {name}', { name: u.approved_by })}</span>}</td>
+              <td className="small" data-label={t('Since')}>{fmtDate(u.created_at)}</td>
+              <td className="card-actions">{u.id !== me.id && (u.status === 'active'
                 ? <button className="btn small ghost" onClick={() => patch(u, { status: 'disabled' })}>{t('Disable')}</button>
                 : <button className="btn small" onClick={() => patch(u, { status: 'active' })}>{t('Re-enable')}</button>)}</td>
             </tr>))}</tbody>
@@ -429,6 +530,10 @@ function HealthCard() {
     [t('Last digest'), last(d.last_digest)],
     [t('Last recompute'), last(d.last_recompute)],
     [t('Stale sources'), d.stale_sources.length ? d.stale_sources.map((x) => `${x.label} (${runStatus(x.status)})`).join(comma()) : t('none')],
+    // what the browser would have blocked under the report-only content security policy, per directive (since the process started)
+    [t('Content security policy (report only)'), d.csp_violations && Object.keys(d.csp_violations).length
+      ? Object.entries(d.csp_violations).map(([k, n]) => `${k}: ${fmtNum(n)}`).join(comma())
+      : t('nothing reported since the process started')],
     // source|outlet pairs that stopped reaching us lately: their articles left every compared week with them
     [t('Left the comparison ({weeks} weeks)', { weeks: d.basis_departures_weeks ?? 4 }), d.basis_departures?.length
       ? d.basis_departures.map((x) => t('{outlet} via {source}, last article {date}', { outlet: x.outlet, source: sourceLabel(x.source), date: fmtDate(x.last_day) })).join(comma())

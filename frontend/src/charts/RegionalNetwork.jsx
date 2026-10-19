@@ -1,13 +1,24 @@
 // Regional view of "who covers where": sources outside Libya are grouped by the country they are
 // based in and pinned to that country's media hub, so positions are geographic and stable over
 // time. Arcs run from each source country into the Libyan districts its articles name.
-import * as d3 from 'd3'
-import { useMemo, useRef, useState } from 'react'
-import { feature } from 'topojson-client'
-import world from 'world-atlas/countries-110m.json'
+import { geoMercator, geoPath, max as d3max, rollup as d3rollup, scaleSqrt } from 'd3'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { countryName } from './countries'
 import { covFill, fmt, gapFill } from './scales'
 import { HatchDefs, useSize, useTooltip } from './util'
-import { pick, t, tn, isAr } from '../i18n'
+import { pick, t, tn } from '../i18n'
+
+// The world outlines (world-atlas, ~108 KB) and topojson-client are fetched the first time this view is
+// drawn, not with the page: the Libya detail view never needs them. One load per app session.
+let worldCache = null
+function loadWorld() {
+  if (!worldCache) {
+    worldCache = Promise.all([import('topojson-client'), import('world-atlas/countries-110m.json')])
+      .then(([{ feature }, mod]) => { const world = mod.default || mod; return feature(world, world.objects.countries).features })
+      .catch((e) => { worldCache = null; throw e })
+  }
+  return worldCache
+}
 
 // Media hub per country (lon, lat). Uncontested reference points, not outlet addresses.
 export const HUBS = {
@@ -22,39 +33,9 @@ export const HUBS = {
   Sweden: [18.07, 59.33], Norway: [10.75, 59.91], Denmark: [12.57, 55.68], Portugal: [-9.14, 38.72], Yemen: [44.19, 15.37],
   India: [77.21, 28.61], Pakistan: [73.05, 33.68], Australia: [149.13, -35.28],
 }
-// The API sends an outlet's base country in English; this gives its name in the interface language.
-export function countryName(c) {
-  if (!c) return ''
-  const names = {
-    Libya: t('Libya'), 'United Kingdom': t('United Kingdom'), Qatar: t('Qatar'), 'United Arab Emirates': t('United Arab Emirates'),
-    Egypt: t('Egypt'), Turkey: t('Turkey'), France: t('France'), Italy: t('Italy'), Lebanon: t('Lebanon'), 'Saudi Arabia': t('Saudi Arabia'),
-    Greece: t('Greece'), Malta: t('Malta'), Morocco: t('Morocco'), Syria: t('Syria'), Israel: t('Israel'), Palestine: t('Palestine'),
-    Nigeria: t('Nigeria'), Ukraine: t('Ukraine'), 'United States': t('United States'), Switzerland: t('Switzerland'), Tunisia: t('Tunisia'),
-    Germany: t('Germany'), Jordan: t('Jordan'), Algeria: t('Algeria'), Sudan: t('Sudan'), Iraq: t('Iraq'), Russia: t('Russia'),
-    Spain: t('Spain'), Belgium: t('Belgium'), Netherlands: t('Netherlands'), Kuwait: t('Kuwait'), Bahrain: t('Bahrain'), Oman: t('Oman'),
-    Chad: t('Chad'), Niger: t('Niger'), Mali: t('Mali'), Canada: t('Canada'), Iran: t('Iran'), Austria: t('Austria'), Sweden: t('Sweden'),
-    Norway: t('Norway'), Denmark: t('Denmark'), Portugal: t('Portugal'), Yemen: t('Yemen'), India: t('India'), Pakistan: t('Pakistan'),
-    Australia: t('Australia'),
-  }
-  return names[c] || (isAr() && regionAr(c)) || c
-}
-
-// any other country: the browser's own Arabic name, found through its English name
-let REGIONS = null
-function regionAr(name) {
-  try {
-    if (!REGIONS) {
-      const en = new Intl.DisplayNames(['en'], { type: 'region' }), ar = new Intl.DisplayNames(['ar'], { type: 'region' })
-      REGIONS = new Map()
-      for (let a = 65; a < 91; a++) for (let b = 65; b < 91; b++) {
-        const code = String.fromCharCode(a, b)
-        const n = en.of(code)
-        if (n && n !== code) REGIONS.set(n, ar.of(code))
-      }
-    }
-    return REGIONS.get(name) || ''
-  } catch { return '' }
-}
+// The API sends an outlet's base country in English; countryName (charts/countries.js) gives its name in
+// the interface language. Re-exported here for the older imports.
+export { countryName }
 const EXTENT = { type: 'MultiPoint', coordinates: [[-11, 6], [57, 6], [-11, 55], [57, 55]] } // i18n-ok: GeoJSON geometry type
 const LIBYA_UNPLACED = [17.0, 34.6] // in the sea north of Sirte: "Libyan outlets, base not set"
 const UNKNOWN = [-6.5, 20.0]         // over the Sahara west: "origin unknown"
@@ -65,12 +46,17 @@ export default function RegionalNetwork({ geo, meta, network, cellsByRegion, mod
   const H = Math.round(W * (W < 640 ? 0.95 : 0.62))
   const tip = useTooltip()
   const [hover, setHover] = useState(null)
-
-  const countries = useMemo(() => feature(world, world.objects.countries).features, [])
+  // the country outlines are decoration: the map draws without them until they arrive (or if they never do)
+  const [countries, setCountries] = useState([])
+  useEffect(() => {
+    let live = true
+    loadWorld().then((c) => { if (live) setCountries(c) }).catch(() => {})
+    return () => { live = false }
+  }, [])
   const layout = useMemo(() => {
     if (!geo || !network) return null
-    const projection = d3.geoMercator().fitExtent([[8, 8], [W - 8, H - 8]], EXTENT)
-    const path = d3.geoPath(projection)
+    const projection = geoMercator().fitExtent([[8, 8], [W - 8, H - 8]], EXTENT)
+    const path = geoPath(projection)
     const inFrame = ([px, py]) => px >= 0 && px <= W && py >= 0 && py <= H
     const clamp = ([px, py]) => [Math.max(24, Math.min(W - 24, px)), Math.max(24, Math.min(H - 24, py))]
     const geoByName = new Map(geo.features.map((f) => [f.properties.shapeName, f]))
@@ -121,15 +107,15 @@ export default function RegionalNetwork({ geo, meta, network, cellsByRegion, mod
       agg.set(k, (agg.get(k) || 0) + e.weight)
     }
     const arcs = [...agg.entries()].map(([k, w]) => { const [gk, tid] = k.split('|'); return { g: groups.get(gk), t: districtById.get(+tid), w } })
-    const wScale = d3.scaleSqrt().domain([1, d3.max(arcs, (a) => a.w) || 1]).range([0.7, 7])
-    const rScale = d3.scaleSqrt().domain([0, d3.max([...groups.values()], (g) => g.articles) || 1]).range([3, Math.max(14, W / 40)])
-    const reach = d3.rollup(arcs, (v) => v.length, (a) => a.g.key)
+    const wScale = scaleSqrt().domain([1, d3max(arcs, (a) => a.w) || 1]).range([0.7, 7])
+    const rScale = scaleSqrt().domain([0, d3max([...groups.values()], (g) => g.articles) || 1]).range([3, Math.max(14, W / 40)])
+    const reach = d3rollup(arcs, (v) => v.length, (a) => a.g.key)
     return { path, districts, groups: [...groups.values()].filter((g) => g.articles > 0 || reach.get(g.key)), arcs, wScale, rScale, reach }
   }, [geo, network, meta, W, H, minEdge])
 
   if (!layout) return <div ref={wrap} className="viz"><div className="empty">{t('Loading map…')}</div></div>
   const { path, districts, groups, arcs, wScale, rScale, reach } = layout
-  const maxCov = d3.max(districts, (d) => cellsByRegion.get(d.id)?.coverage || 0) || 1
+  const maxCov = d3max(districts, (d) => cellsByRegion.get(d.id)?.coverage || 0) || 1
   const fillFor = (d) => (mode === 'gap' ? gapFill(cellsByRegion.get(d.id), red) || 'url(#hatch)' : covFill(cellsByRegion.get(d.id)?.coverage || 0, maxCov)) // i18n-ok: SVG pattern reference, not shown
   const curve = (a) => {
     const sx = a.g.x, sy = a.g.y, tx = a.t.x, ty = a.t.y
@@ -142,18 +128,20 @@ export default function RegionalNetwork({ geo, meta, network, cellsByRegion, mod
     <div><b dir="auto">{g.label}</b>{g.offscreen && <span className="muted"> {t('(outside the map frame)')}</span>}
       <div>{t('{count} articles', { count: fmt(g.articles) })} · {tn(g.outlets.length, '{n} outlet', '{n} outlets')} · {t('{n} districts named', { n: reach.get(g.key) || 0 })}</div>
       <div className="small" style={{ marginTop: 4 }}>{g.outlets.sort((a, b) => b.articles - a.articles).slice(0, 8).map((o) => `${pick(o)} (${o.articles})`).join(' · ')}
-        {g.outlets.length > 8 ? ` ${t('+{n} more', { n: g.outlets.length - 8 })}` : ''}</div></div>), wrap.current)
+        {g.outlets.length > 8 ? ` ${t('+{n} more', { n: g.outlets.length - 8 })}` : ''}</div></div>), wrap.current, g.key)
   const libya = countries.find((c) => c.properties.name === 'Libya')
+  const sorted = [...groups].sort((a, b) => b.articles - a.articles)
 
   return (
     <div ref={wrap} className="viz" onMouseLeave={() => { tip.hide(); setHover(null) }}>
-      <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} style={{ overflow: "hidden", borderRadius: 6 }} role="img" aria-label={t('Regional map: where the sources covering Libya are based, with arcs to the districts they cover')}>
+      {/* the drawing is decoration for assistive technology: the table under it carries the same numbers */}
+      <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} style={{ overflow: "hidden", borderRadius: 6 }} aria-hidden="true" focusable="false">
         <HatchDefs />
         <rect width={W} height={H} fill="var(--surface)" />
         {countries.map((c) => c !== libya && <path key={c.id || c.properties.name} d={path(c)} fill="var(--surface-2)" stroke="var(--grid)" strokeWidth={0.6} />)}
         {districts.map((d) => d.feature && (
           <path key={d.id} d={path(d.feature)} fill={fillFor(d)} stroke="var(--surface)" strokeWidth={0.6} style={{ cursor: 'pointer' }}
-            onMouseMove={(e) => tip.show(e, <div><b>{pick(d)}</b><div>{t('{count} articles name it', { count: fmt(cellsByRegion.get(d.id)?.coverage || 0) })}</div></div>, wrap.current)}
+            onMouseMove={(e) => tip.show(e, <div><b>{pick(d)}</b><div>{t('{count} articles name it', { count: fmt(cellsByRegion.get(d.id)?.coverage || 0) })}</div></div>, wrap.current, d.id)}
             onClick={() => onSelectRegion?.(d.id)} />))}
         {libya && <path d={path(libya)} fill="none" stroke="var(--ink-2)" strokeWidth={1.2} pointerEvents="none" />}
         <g fill="none" strokeLinecap="round">
@@ -162,7 +150,7 @@ export default function RegionalNetwork({ geo, meta, network, cellsByRegion, mod
             return <path key={i} d={curve(a)} stroke={colorFor(a.g)} strokeWidth={wScale(a.w)} strokeOpacity={on ? (hover ? 0.85 : 0.35) : 0.04} pointerEvents="none" />
           })}
         </g>
-        {groups.sort((a, b) => b.articles - a.articles).map((g) => {
+        {sorted.map((g) => {
           const r = rScale(g.articles)
           const dim = hover && hover !== g.key
           const rightSide = g.x < W * 0.8
@@ -185,6 +173,17 @@ export default function RegionalNetwork({ geo, meta, network, cellsByRegion, mod
         <span><span className="sw" style={{ background: 'var(--cat-unknown)', borderRadius: '50%' }} />{t('Origin not set')}</span>
         <span className="muted">{t('Bubble = articles in the weeks shown · arc = articles naming the district · → country is beyond the frame')}</span>
       </div>
+      {/* the same numbers as a table: keyboard and screen-reader readers, and anyone who wants the figures */}
+      <details className="chart-table">
+        <summary className="small">{t('Sources by country, as a table')}</summary>
+        <table className="data">
+          <caption className="sr-only">{t('Regional map: where the sources covering Libya are based, with arcs to the districts they cover')}</caption>
+          <thead><tr><th>{t('Country or group')}</th><th className="num">{t('Outlets')}</th><th className="num">{t('Articles')}</th><th className="num">{t('Districts named')}</th></tr></thead>
+          <tbody>{sorted.map((g) => (
+            <tr key={g.key}><td dir="auto">{g.label}{g.offscreen ? <span className="muted"> {t('(outside the map frame)')}</span> : null}</td>
+              <td className="num">{g.outlets.length}</td><td className="num">{fmt(g.articles)}</td><td className="num">{reach.get(g.key) || 0}</td></tr>))}</tbody>
+        </table>
+      </details>
     </div>
   )
 }

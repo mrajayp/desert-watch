@@ -3,9 +3,9 @@
 // striped = not judged. Each cell also prints the count the score used (articles, from the outlets
 // followed all year) so the score is never a black box; the tooltip adds the all-source count when it
 // differs and the verdict sentence with its interval and chance.
-import { useRef } from 'react'
+import { useRef, useState } from 'react'
 import { GAP_STEPS, fmt, gapFill, verdictOf } from './scales'
-import { verdictSentence } from './trendText'
+import { gapLabel, verdictSentence } from './trendText'
 import { HatchDefs, fitLabel, groupedRows, themeLabel, useSize, useTooltip } from './util'
 import { WarningPills } from '../components/Warnings'
 import { pick, t } from '../i18n'
@@ -32,8 +32,32 @@ export default function Heatmap({ themes, regions, cells, onSelect, svgRef, unit
   const H = yy + 4
   const byKey = new Map(cells.map((c) => [`${c.theme_id}:${c.region_id}`, c]))
   const nm = (o) => pick(o)
+  // the same grid as a table: the count and the verdict words in each cell, every cell reachable by keyboard
+  const [asTable, setAsTable] = useState(false)
+  const count = (c) => c?.articles ?? c?.coverage
   return (
     <div ref={wrap} className="viz" onMouseLeave={tip.hide}>
+      <div className="row" style={{ justifyContent: 'flex-end', marginBottom: 6 }}>
+        <button type="button" className="btn small" aria-pressed={asTable} onClick={() => setAsTable(!asTable)}>{asTable ? t('Show as chart') : t('Show as table')}</button>
+      </div>
+      {asTable && (
+        <div className="scroll">
+          <table className="data heat-table">
+            <caption className="sr-only">{t('Gap by theme and region')}</caption>
+            <thead><tr><th>{t('Theme')}</th>{regions.map((r) => <th key={r.id}>{nm(r)}</th>)}</tr></thead>
+            <tbody>{rows.map((row) => row.header ? (
+              <tr key={`h-${row.header}`}><th colSpan={regions.length + 1} className="small muted" style={{ textAlign: 'start' }}>{t(row.header)}</th></tr>
+            ) : (
+              <tr key={row.theme.id}><th scope="row" style={{ textAlign: 'start' }}>{nm(row.theme)}</th>
+                {regions.map((r) => {
+                  const c = byKey.get(`${row.theme.id}:${r.id}`)
+                  return <td key={r.id}>{c ? (
+                    <button type="button" className="textbtn" onClick={() => onSelect?.(row.theme.id, r.id)} title={verdictSentence(c, need, red)}>
+                      <span className="num">{fmt(count(c))}</span> · {gapLabel(c, red, need)}</button>) : <span className="muted">–</span>}</td>
+                })}</tr>))}</tbody>
+          </table>
+        </div>)}
+      <div hidden={asTable}>
       <svg ref={svgRef} viewBox={`0 0 ${Math.max(W, left + cw * regions.length)} ${H}`} role="img" aria-label={t('Gap by theme and region')}>
         <HatchDefs id="hm-hatch" />
         {regions.map((r, j) => (
@@ -66,7 +90,7 @@ export default function Heatmap({ themes, regions, cells, onSelect, svgRef, unit
                       <div>{verdictSentence(c, need, red)}</div>
                       <WarningPills codes={c.flags} block />
                       {fb && <div className="small muted" style={{ marginTop: 4 }}>{t('Team: {votes}', { votes: Object.entries(fb).map(([k, v]) => voteText(k, v)).join(t(', ')) })}</div>}
-                    </div>) : <div>{t('No data for this theme and region')}</div>, wrap.current)}>
+                    </div>) : <div>{t('No data for this theme and region')}</div>, wrap.current, `${th.id}:${r.id}`)}>
                   <rect x={1} y={1} width={cw - 2} height={ch - 2} rx={4} fill={fill} />
                   {c && <text x={cw / 2} y={ch / 2 + 4} textAnchor="middle" className="num"
                     style={{ fontSize: 11, fill: dark ? '#fff' : 'var(--ink-2)' }}>{fmt(n)}</text>}
@@ -75,6 +99,7 @@ export default function Heatmap({ themes, regions, cells, onSelect, svgRef, unit
             })}
           </g>) })())}
       </svg>
+      </div>
       {tip.node}
       <div className="legend" style={{ marginTop: 8 }}>
         <span><span className="ramp" style={{ marginInlineEnd: 5 }}>{GAP_STEPS.map((i) => <span key={i} style={{ background: `var(--gap-${i})` }} />)}</span>{t('Fewer articles than chance would explain')}</span>

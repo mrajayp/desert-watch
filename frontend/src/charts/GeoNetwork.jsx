@@ -2,12 +2,12 @@
 // the lens has no regional need data); outlets sit at their base and draw lines to the
 // districts their articles name. Outlets based outside Libya sit in the right-hand margin,
 // Libyan outlets with no known base sit in a strip at the bottom.
-import * as d3 from 'd3'
+import { geoMercator, geoPath, group as d3group, groups as d3groups, max as d3max, rollup as d3rollup, scaleSqrt, sum as d3sum } from 'd3'
 import { useMemo, useRef, useState } from 'react'
 import { GAP_STEPS, DIMENSIONS, categoryColor, categoryOf, covFill, dimLabel, dimValue, fmt, gapFill } from './scales'
 import { gapLabel } from './trendText'
 import { HatchDefs, useSize, useTooltip } from './util'
-import { countryName } from './RegionalNetwork'
+import { countryName } from './countries'
 import { WarningPills } from '../components/Warnings'
 import { isAr, pick, t, tn } from '../i18n'
 
@@ -30,8 +30,8 @@ export default function GeoNetwork({ geo, macroGeo, meta, network, cellsByRegion
     const mapW = narrow ? W : W * (1 - MARGIN_COL)
     const bottomStrip = 70
     const mapH = narrow ? H * 0.62 : H - bottomStrip
-    const projection = d3.geoMercator().fitExtent([[12, 12], [mapW - 12, mapH - 12]], geo)
-    const path = d3.geoPath(projection)
+    const projection = geoMercator().fitExtent([[12, 12], [mapW - 12, mapH - 12]], geo)
+    const path = geoPath(projection)
     const geoByName = new Map(geo.features.map((f) => [f.properties.shapeName, f]))
     const regionById = new Map(meta.regions.map((r) => [r.id, r]))
     const districts = meta.regions.filter((r) => r.level === 'district').map((r) => {
@@ -44,7 +44,7 @@ export default function GeoNetwork({ geo, macroGeo, meta, network, cellsByRegion
     // outlets: weight = articles in window; keep those with any edge
     const outlets = network.nodes.filter((n) => n.type === 'outlet')
     const regionEdges = network.edges.filter((e) => e.kind === 'outlet_region' && e.weight >= minEdge)
-    const edgesByOutlet = d3.group(regionEdges, (e) => e.source)
+    const edgesByOutlet = d3group(regionEdges, (e) => e.source)
     const inside = [], outside = [], unplaced = []
     for (const o of outlets) {
       const scope = o.categories?.scope
@@ -53,9 +53,9 @@ export default function GeoNetwork({ geo, macroGeo, meta, network, cellsByRegion
       } else if (scope === 'international' || scope === 'diaspora' || o.base_country) outside.push(o)
       else unplaced.push(o)
     }
-    const rScale = d3.scaleSqrt().domain([0, d3.max(outlets, (o) => o.articles) || 1]).range([3.5, narrow ? 11 : 15])
+    const rScale = scaleSqrt().domain([0, d3max(outlets, (o) => o.articles) || 1]).range([3.5, narrow ? 11 : 15])
     // jitter co-located inside outlets in a small ring
-    d3.groups(inside, (o) => `${Math.round(o.x)}:${Math.round(o.y)}`).forEach(([, g]) => {
+    d3groups(inside, (o) => `${Math.round(o.x)}:${Math.round(o.y)}`).forEach(([, g]) => {
       if (g.length < 2) return
       g.forEach((o, i) => { const a = (i / g.length) * 2 * Math.PI; o.x += Math.cos(a) * 14; o.y += Math.sin(a) * 14 })
     })
@@ -81,8 +81,8 @@ export default function GeoNetwork({ geo, macroGeo, meta, network, cellsByRegion
       const t = districtById.get(Number(e.target.slice(2)))
       return s && t ? { ...e, s, t } : null
     }).filter(Boolean)
-    const wScale = d3.scaleSqrt().domain([1, d3.max(edges, (e) => e.weight) || 1]).range([0.8, 6])
-    const incoming = d3.rollup(edges, (v) => ({ n: v.length, w: d3.sum(v, (e) => e.weight),
+    const wScale = scaleSqrt().domain([1, d3max(edges, (e) => e.weight) || 1]).range([0.8, 6])
+    const incoming = d3rollup(edges, (v) => ({ n: v.length, w: d3sum(v, (e) => e.weight),
       colors: new Set(v.map((e) => categoryOf(e.s, colorBy))) }), (e) => e.t.id)
     return { mapW, mapH, path, districts, inside, out, un, edges, rScale, wScale, incoming, stripY, colX, regionById,
       macro: macroGeo ? macroGeo.features : [] }
@@ -90,7 +90,7 @@ export default function GeoNetwork({ geo, macroGeo, meta, network, cellsByRegion
 
   if (!layout) return <div ref={wrap} className="viz"><div className="empty">{t('Loading map…')}</div></div>
   const { mapW, mapH, path, districts, inside, out, un, edges, rScale, wScale, incoming } = layout
-  const maxCov = d3.max(districts, (d) => cellsByRegion.get(d.id)?.coverage || 0) || 1
+  const maxCov = d3max(districts, (d) => cellsByRegion.get(d.id)?.coverage || 0) || 1
   const related = hover ? new Set(edges.filter((e) => e.source === hover || `r:${e.t.id}` === hover)
     .flatMap((e) => [e.source, `r:${e.t.id}`])) : null
   const fillFor = (d) => {
@@ -111,7 +111,7 @@ export default function GeoNetwork({ geo, macroGeo, meta, network, cellsByRegion
         {mode === 'gap' && <div>{cell ? gapLabel(cell, red) : t('no need data')}</div>}
         <div>{inc ? tn(inc.n, '{n} outlet shown covering it', '{n} outlets shown covering it') : (cell?.coverage ? t('Links below the minimum are hidden') : t('No monitored outlet covers this district'))}</div>
         <WarningPills codes={cell?.flags} block />
-      </div>), wrap.current)
+      </div>), wrap.current, `r:${d.id}`)
   }
   // the 2023-24 scrape's disputed labels stay on the outlet page, where their caveat is; a tooltip has no room for it
   const outletTip = (evt, o) => tip.show(evt, (
@@ -122,7 +122,7 @@ export default function GeoNetwork({ geo, macroGeo, meta, network, cellsByRegion
         <div key={k} className="small">{dimLabel(k)}: {dimValue(k, v)}
           {o.confidence?.[k] && <span className="muted"> ({confText(o.confidence[k])})</span>}</div>))}
       <div style={{ marginTop: 4 }}>{t('{count} articles on this selection', { count: fmt(o.articles) })}</div>
-    </div>), wrap.current)
+    </div>), wrap.current, o.id)
 
   const curve = (e) => {
     const { s, t } = e
@@ -133,11 +133,17 @@ export default function GeoNetwork({ geo, macroGeo, meta, network, cellsByRegion
   }
   const unSet = new Set(un.map((o) => o.id))
   const labelled = new Set([...inside, ...out, ...un].sort((a, b) => b.articles - a.articles).slice(0, narrow ? 6 : 12).map((o) => o.id))
+  // the districts by name, for the select and the list under the map
+  const byName = [...districts].sort((a, b) => pick(a).localeCompare(pick(b), lang === 'ar' ? 'ar' : 'en'))
+  const districtValue = (d) => {
+    const cell = cellsByRegion.get(d.id)
+    return mode === 'gap' ? (cell ? gapLabel(cell, red) : t('no need data')) : t('{count} articles name it', { count: fmt(cell?.coverage || 0) })
+  }
 
   return (
     <div ref={wrap} className="viz" onMouseLeave={() => { tip.hide(); setHover(null) }}>
-      <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} role="img"
-        aria-label={t("Map of Libya's districts with lines from news outlets to the districts their articles name")}>
+      {/* the drawing is decoration for assistive technology: the select and the list under it reach every district */}
+      <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} aria-hidden="true" focusable="false">
         <HatchDefs />
         <g>
           {districts.map((d) => d.feature && (
@@ -167,7 +173,7 @@ export default function GeoNetwork({ geo, macroGeo, meta, network, cellsByRegion
             return (
               <g key={d.id} transform={`translate(${d.x},${d.y})`} pointerEvents="none">
                 {!inc && <circle r={3} fill="none" stroke="var(--gap-5)" strokeWidth={1.5} />}
-                {!narrow && <text y={inc ? -6 : -7} textAnchor="middle" style={{ fontSize: 10, fill: 'var(--ink-2)', paintOrder: 'stroke', stroke: 'var(--surface)', strokeWidth: 3 }}>
+                {!narrow && <text y={inc ? -6 : -7} textAnchor="middle" style={{ fontSize: 11, fill: 'var(--ink-2)', paintOrder: 'stroke', stroke: 'var(--surface)', strokeWidth: 3 }}>
                   {pick(d)}</text>}
               </g>)
           })}
@@ -188,13 +194,29 @@ export default function GeoNetwork({ geo, macroGeo, meta, network, cellsByRegion
                 {(labelled.has(o.id) || hover === o.id || right) && (
                   <text x={right ? rScale(o.articles) + 5 : 0} y={right ? 4 : rScale(o.articles) + 12}
                     textAnchor={right ? 'start' : 'middle'}
-                    style={{ fontSize: 10.5, fill: 'var(--ink)', paintOrder: 'stroke', stroke: 'var(--surface)', strokeWidth: 3 }}>
+                    style={{ fontSize: 11, fill: 'var(--ink)', paintOrder: 'stroke', stroke: 'var(--surface)', strokeWidth: 3 }}>
                     {pick(o).length > 26 ? pick(o).slice(0, 25) + '…' : pick(o)}</text>)}
               </g>)
           })}
         </g>
       </svg>
       {tip.node}
+      <div className="map-alt" role="group" aria-label={t("Map of Libya's districts with lines from news outlets to the districts their articles name")}>
+        <label className="small row">{t('Open a district')}
+          <select value="" onChange={(e) => { if (e.target.value) onSelectRegion?.(+e.target.value) }}>
+            <option value="">{t('choose…')}</option>
+            {byName.map((d) => <option key={d.id} value={d.id}>{pick(d)}</option>)}
+          </select>
+        </label>
+        <details className="chart-table">
+          <summary className="small">{t('Districts as a list')}</summary>
+          <ul className="district-list">
+            {byName.map((d) => (
+              <li key={d.id}><button type="button" className="textbtn" onClick={() => onSelectRegion?.(d.id)}>{pick(d)}</button>
+                <span className="small muted"> · {districtValue(d)}</span></li>))}
+          </ul>
+        </details>
+      </div>
     </div>
   )
 }

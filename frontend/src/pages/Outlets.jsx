@@ -7,14 +7,14 @@ import Filters from '../components/Filters'
 import { ErrorBox } from '../components/Notices'
 import ClusterMap, { ClusterDistrictTable, ClusterLegendTable } from '../charts/ClusterMap'
 import { ClusterMultiples, ClusterSummary } from '../charts/ClusterViews'
-import { MixBar } from '../charts/Balance'
+import { MixBar } from '../charts/MixBar'
 import { DIMENSIONS, categoryColor, fmt } from '../charts/scales'
 import { weekEnd } from '../charts/trendText'
 import { ExportMenu } from '../charts/util'
 import { useApi } from '../hooks/useApi'
 import { usePageTitle } from '../hooks/usePageTitle'
 import { fmtDate, fmtNum, pick, t } from '../i18n'
-import { countryName } from '../charts/RegionalNetwork'
+import { countryName } from '../charts/countries'
 
 const N_ = (s) => s // marks English for the catalogue; translated with t() when shown
 // a decimal as the API sends it (4.2), with the interface language's decimal mark
@@ -92,8 +92,9 @@ export default function Outlets() {
           </section>
           <section className="card">
             <h2>{t('Clusters')}</h2>
-            <p className="sub">{t('Hover a row to highlight it on the map. Names are generated from each cluster’s most over-covered themes, compared with all monitored outlets.')}</p>
-            {clusters && <ClusterLegendTable clusters={clusters.clusters} themes={meta.themes} highlight={highlight} setHighlight={setHighlight} lang={lang} />}
+            <p className="sub">{t('Hover or focus a row to highlight it on the map; Enter opens it. Names are generated from each cluster’s most over-covered themes, compared with all monitored outlets.')}</p>
+            {clusters && <ClusterLegendTable clusters={clusters.clusters} themes={meta.themes} highlight={highlight} setHighlight={setHighlight} lang={lang}
+              onOpen={(rank) => { setHighlight(rank); setView('outlets') }} />}
             <h3>{t('Share of coverage by {dimension}', { dimension: DIMENSIONS[dim].label.toLowerCase() })}</h3>
             <MixBar parts={mix} labels={DIMENSIONS[dim].values}
               colors={Object.fromEntries(Object.keys(DIMENSIONS[dim].values).map((v) => [v, categoryColor(dim, v)]))} height={14} />
@@ -117,24 +118,25 @@ export default function Outlets() {
               <label className="small row"><input type="checkbox" checked={onlyUnclassified} onChange={(e) => setOnlyUnclassified(e.target.checked)} />{t('unclassified only')}</label>
             </div>
           </div>
+          {/* under 640px the rows stack as cards (styles.css table.cards); each cell carries its heading */}
           <div className="scroll">
-            <table className="data">
+            <table className="data cards">
               <thead><tr><th>{t('Outlet')}</th><th className="num">{t('Articles (12 wk)')}</th><th>{t('Arabic share')}</th><th>{t('Base')}</th><th>{t('Scope')}</th><th>{t('Alignment')}</th><th title={t('Social Media scraped data, Oct 2023 to Aug 2024')}>{t('Scrape 2023–24')}</th><th>{t('Quality')}</th><th /></tr></thead>
               <tbody>{shown.map((r) => {
                 const total = Object.values(r.lang_mix).reduce((a, b) => a + b, 0) || 1
                 return (
                   <tr key={r.id}>
-                    <td><b dir="auto">{r.name}</b><div className="small muted">{r.domain}</div></td>
-                    <td className="num">{fmt(r.articles)}</td>
-                    <td className="num">{Math.round(((r.lang_mix.ar || 0) / total) * 100)}%</td>
-                    <td>{r.base_city || countryName(r.base_country) || <span className="muted">–</span>}</td>
-                    <td>{r.categories.scope ? DIMENSIONS.scope.values[r.categories.scope.value] : <span className="muted">–</span>}</td>
-                    <td>{r.categories.alignment ? <>{DIMENSIONS.alignment.values[r.categories.alignment.value]} <span className="pill">{CONFIDENCE[r.categories.alignment.confidence] ? t(CONFIDENCE[r.categories.alignment.confidence]) : r.categories.alignment.confidence}</span></> : <span className="muted">–</span>}</td>
-                    <td className="small">{r.external?.social_media_scrape ? <>
+                    <td className="card-title"><b dir="auto">{r.name}</b><div className="small muted">{r.domain}</div></td>
+                    <td className="num" data-label={t('Articles (12 wk)')}>{fmt(r.articles)}</td>
+                    <td className="num" data-label={t('Arabic share')}>{Math.round(((r.lang_mix.ar || 0) / total) * 100)}%</td>
+                    <td data-label={t('Base')}>{r.base_city || countryName(r.base_country) || <span className="muted">–</span>}</td>
+                    <td data-label={t('Scope')}>{r.categories.scope ? DIMENSIONS.scope.values[r.categories.scope.value] : <span className="muted">–</span>}</td>
+                    <td data-label={t('Alignment')}>{r.categories.alignment ? <>{DIMENSIONS.alignment.values[r.categories.alignment.value]} <span className="pill">{CONFIDENCE[r.categories.alignment.confidence] ? t(CONFIDENCE[r.categories.alignment.confidence]) : r.categories.alignment.confidence}</span></> : <span className="muted">–</span>}</td>
+                    <td className="small" data-label={t('Scrape 2023–24')}>{r.external?.social_media_scrape ? <>
                       {t('{articles} art. · {engagement} FB eng.', { articles: fmt(r.external.social_media_scrape.articles), engagement: fmt(r.external.social_media_scrape.fb_engagement) })}
                       {r.categories.scrape_affiliation && <div className="muted">{t('labelled {label}', { label: r.categories.scrape_affiliation.value })} <span className="pill">{t('disputed')}</span></div>}</> : '–'}</td>
-                    <td className="small">{r.quality ? `${num(r.quality.accuracy)}/${num(r.quality.depth)}/${num(r.quality.local_sourcing)} (n=${r.quality.n})` : '–'}</td>
-                    <td><button className="btn small" onClick={() => openOutlet(r.id)}>{r.pending_changes ? t('Open · {n} pending', { n: r.pending_changes }) : t('Open')}</button></td>
+                    <td className="small" data-label={t('Quality')}>{r.quality ? `${num(r.quality.accuracy)}/${num(r.quality.depth)}/${num(r.quality.local_sourcing)} (n=${r.quality.n})` : '–'}</td>
+                    <td className="card-actions"><button className="btn small" onClick={() => openOutlet(r.id)}>{r.pending_changes ? t('Open · {n} pending', { n: r.pending_changes }) : t('Open')}</button></td>
                   </tr>)
               })}</tbody>
             </table>

@@ -91,6 +91,10 @@ export default {
   "This week, still coming in": "هذا الأسبوع، والبيانات لا تزال تصل",
   // the pill of a week that could not be judged links to the help page
   "{week}. {verdict} Why a week is not judged.": "{week}. {verdict} لماذا لا يُحكم على الأسبوع.",
+  // charts/TrendBars.jsx on a phone: the four biggest shortfalls first, the rest behind a button
+  "Biggest shortfalls": "أكبر أوجه النقص",
+  "Show all {n}": "عرض الكل ({n})",
+  "Show the {n} biggest shortfalls": { few: "عرض أكبر {n} أوجه نقص", other: "عرض أكبر {n} وجه نقص" },
 
   // pages/Trends.jsx: the By region block (the gap heatmap and the language balance)
   "By region": "حسب المنطقة",

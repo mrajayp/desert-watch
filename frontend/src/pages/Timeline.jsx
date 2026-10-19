@@ -1,11 +1,11 @@
 // Timeline: key events overlaid on monthly coverage per theme, with official statements and
 // humanitarian reports as separate streams (not counted as media coverage).
-import * as d3 from 'd3'
+import { max as d3max, scaleBand } from 'd3'
 import { useMemo, useRef, useState } from 'react'
 import { api } from '../api'
 import { useApp } from '../App'
 import { fmt } from '../charts/scales'
-import { ExportMenu, fitLabel, themeLabel, useSize, useTooltip } from '../charts/util'
+import { ExportMenu, fitLabel, textWidth, themeLabel, useSize, useTooltip } from '../charts/util'
 import { ErrorBox, Loading } from '../components/Notices'
 import WikiReading from '../components/WikiReading'
 import { useApi } from '../hooks/useApi'
@@ -61,28 +61,31 @@ export default function Timeline() {
   if (!data) return <main className="page">{q.error ? <ErrorBox error={q.error} onRetry={q.retry} /> : <Loading />}</main>
   if (!view) return <main className="page"><div className="empty">{t('No coverage collected yet.')}</div></main>
 
-  const left = Math.min(260, Math.max(130, W * 0.24))
+  // under 600px a row's label sits above its bars, so the months keep the whole width
+  const stacked = W < 600
+  const left = stacked ? 8 : Math.min(260, Math.max(130, W * 0.24))
   const right = 12
-  const x = d3.scaleBand().domain(view.months).range([left, W - right]).paddingInner(0.12)
+  const x = scaleBand().domain(view.months).range([left, W - right]).paddingInner(0.12)
   const dayX = (day) => {
     const m = day.slice(0, 7) // i18n-ok: the month key of the band, not shown
     const d = +day.slice(8, 10) || 15
     return x(m) == null ? null : x(m) + (x.bandwidth() * (d - 1)) / 30
   }
-  // lay event labels into lanes so they don't overlap
-  const ctx = document.createElement('canvas').getContext('2d'); ctx.font = '11px system-ui, sans-serif'
+  // lay event labels into lanes so they don't overlap (textWidth measures on one shared canvas)
   const lanes = []
   const placed = view.events.map((e) => {
     const ex = dayX(e.day)
-    const w = Math.min(220, ctx.measureText(pick(e, 'label')).width + 10)
+    const w = Math.min(220, textWidth(pick(e, 'label')) + 10)
     let lane = 0
     while ((lanes[lane] ?? -1e9) > ex - 4) lane++
     lanes[lane] = ex + w
     return { ...e, x: ex, lane, w }
   })
   const laneCount = Math.min(6, Math.max(1, lanes.length))
-  const evH = 14 + laneCount * 16
-  const rowH = { events: evH, stream: 30, header: 24, theme: 30 }
+  const evTop = stacked ? 20 : 6 // stacked: the "Key events" label takes the first line
+  const evH = evTop + 8 + laneCount * 16
+  const labelH = stacked ? 14 : 0 // the label line above a stacked row's bars
+  const rowH = { events: evH, stream: 30 + labelH, header: 24, theme: 30 + labelH }
   let y = 26
   const ys = view.rows.map((r) => { const y0 = y; y += rowH[r.kind]; return y0 })
   const H = y + 6
@@ -90,14 +93,22 @@ export default function Timeline() {
   const tickEvery = Math.max(1, Math.ceil(view.months.length / (W < 700 ? 6 : 14)))
 
   const bars = (values, y0, h, color, label) => {
-    const max = d3.max(values) || 1
+    const max = d3max(values) || 1
     return values.map((v, i) => {
       const m = view.months[i]
       const bh = v ? Math.max(2, ((h - 8) * v) / max) : 0
       return (
         <rect key={m} x={x(m)} y={y0 + h - 4 - bh} width={x.bandwidth()} height={bh} rx={1.5} fill={color}
-          onMouseMove={(e) => tip.show(e, <div><b>{label}</b><div>{fmtMonth(m)}: {fmt(v)}</div></div>, wrap.current)} />)
+          onMouseMove={(e) => tip.show(e, <div><b>{label}</b><div>{fmtMonth(m)}: {fmt(v)}</div></div>, wrap.current, `${label}:${m}`)} />)
     })
+  }
+  // an event's tooltip, from the pointer or from the element that took keyboard focus
+  const eventTip = (e, ev, el) => {
+    setHoverEv(e.id)
+    const at = el ? (() => { const b = el.getBoundingClientRect(); return { clientX: b.left + 8, clientY: b.bottom } })() : ev
+    tip.show(at, <div><b>{fmtDate(e.day)}</b><div dir="auto">{pick(e, 'label')}</div>
+      {e.theme_id && <div className="small muted">{themeName(e.theme_id)}</div>}
+      <div className="small muted">{e.origin === 'user' ? t('added by the team') : t('reference event')}{e.source_url ? ` · ${t('click for source')}` : ''}</div></div>, wrap.current, e.id)
   }
   const caption = t('Source: Desert Watch monitored coverage (relevant articles per theme per month), official statements and ReliefWeb reports as separate streams.') + '\n' +
     t('Older months come from backfilled search, which returns fewer items: compare shapes, not levels, across years. Events: config + team, each with a source link.')
@@ -130,28 +141,36 @@ export default function Timeline() {
                   <line x1={4} x2={W - right} y1={y0 + 21} y2={y0 + 21} stroke="var(--grid)" /></g>)
               if (r.kind === 'events') return (
                 <g key="ev">
-                  <text x={left - 10} y={y0 + 14} textAnchor="end" style={{ fontSize: 12, fontWeight: 600, fill: 'var(--ink)' }}>{t('Key events')}</text>
-                  {placed.filter((e) => e.lane < laneCount).map((e) => (
-                    <g key={e.id} transform={`translate(${e.x},${y0 + 6 + e.lane * 16})`} style={{ cursor: 'pointer' }}
-                      onMouseEnter={(ev) => { setHoverEv(e.id); tip.show(ev, <div><b>{fmtDate(e.day)}</b><div dir="auto">{pick(e, 'label')}</div>
-                        {e.theme_id && <div className="small muted">{themeName(e.theme_id)}</div>}
-                        <div className="small muted">{e.origin === 'user' ? t('added by the team') : t('reference event')} · {t('click for source')}</div></div>, wrap.current) }}
-                      onClick={() => e.source_url && window.open(e.source_url, '_blank', 'noopener,noreferrer')}>
-                      <circle r={4} cy={6} fill={hoverEv === e.id ? 'var(--ink)' : 'var(--surface)'} stroke="var(--ink)" strokeWidth={1.5} />
-                      <text x={7} y={10} style={{ fontSize: 11, fill: 'var(--ink)', paintOrder: 'stroke', stroke: 'var(--surface)', strokeWidth: 3 }}>
-                        {fitLabel(pick(e, 'label'), Math.min(e.w, W - right - e.x - 10), '11px system-ui, sans-serif')}</text>
-                    </g>))}
+                  <text x={stacked ? 4 : left - 10} y={y0 + 14} textAnchor={stacked ? 'start' : 'end'} style={{ fontSize: 12, fontWeight: 600, fill: 'var(--ink)' }}>{t('Key events')}</text>
+                  {placed.filter((e) => e.lane < laneCount).map((e) => {
+                    // an event with a source is a real link (Tab reaches it, Enter opens the source); one without stays a mark
+                    const mark = (
+                      <>
+                        <circle r={4} cy={6} fill={hoverEv === e.id ? 'var(--ink)' : 'var(--surface)'} stroke="var(--ink)" strokeWidth={1.5} />
+                        <text x={7} y={10} style={{ fontSize: 11, fill: 'var(--ink)', paintOrder: 'stroke', stroke: 'var(--surface)', strokeWidth: 3 }}>
+                          {fitLabel(pick(e, 'label'), Math.min(e.w, W - right - e.x - 10), '11px system-ui, sans-serif')}</text>
+                      </>)
+                    return (
+                      <g key={e.id} transform={`translate(${e.x},${y0 + evTop + e.lane * 16})`} style={{ cursor: e.source_url ? 'pointer' : 'default' }}
+                        onMouseEnter={(ev) => eventTip(e, ev)}>
+                        {e.source_url ? (
+                          <a href={e.source_url} target="_blank" rel="noreferrer noopener" aria-label={t('{date}: {label} (opens the source)', { date: fmtDate(e.day), label: pick(e, 'label') })}
+                            onFocus={(ev) => eventTip(e, ev, ev.currentTarget)} onBlur={() => { setHoverEv(null); tip.hide() }}>{mark}</a>
+                        ) : mark}
+                      </g>)
+                  })}
                 </g>)
               const label = r.kind === 'theme' ? themeLabel(r.theme, lang) : r.label
               const hl = r.kind === 'theme' && hoverEv != null && placed.find((e) => e.id === hoverEv)?.theme_id === r.theme.id
               return (
                 <g key={r.key || r.theme.id}>
                   {hl && <rect x={0} y={y0} width={W} height={rowH[r.kind]} fill="var(--surface-2)" />}
-                  <text x={left - 10} y={y0 + rowH[r.kind] / 2 + 4} textAnchor="end" style={{ fontSize: 12, fill: r.kind === 'stream' ? 'var(--ink-2)' : 'var(--ink)', fontStyle: r.kind === 'stream' ? 'italic' : 'normal' }}>
-                    <title>{r.kind === 'theme' ? pick(r.theme, 'name') : r.label}</title>{fitLabel(label, left - 16)}</text>
+                  <text x={stacked ? 4 : left - 10} y={stacked ? y0 + 11 : y0 + rowH[r.kind] / 2 + 4} textAnchor={stacked ? 'start' : 'end'}
+                    style={{ fontSize: 12, fill: r.kind === 'stream' ? 'var(--ink-2)' : 'var(--ink)', fontStyle: r.kind === 'stream' ? 'italic' : 'normal' }}>
+                    <title>{r.kind === 'theme' ? pick(r.theme, 'name') : r.label}</title>{fitLabel(label, stacked ? W - right - 84 : left - 16)}</text>
                   <line x1={left} x2={W - right} y1={y0 + rowH[r.kind] - 4} y2={y0 + rowH[r.kind] - 4} stroke="var(--grid)" />
-                  {bars(r.values, y0, rowH[r.kind], r.kind === 'stream' ? 'var(--ink-2)' : r.theme.group ? 'var(--al-3)' : 'var(--accent)', label)}
-                  <text x={W - right} y={y0 + 11} textAnchor="end" className="num" style={{ fontSize: 11, fill: 'var(--muted)' }}>{t('peak {n}', { n: fmt(d3.max(r.values) || 0) })}</text>
+                  {bars(r.values, y0 + labelH, rowH[r.kind] - labelH, r.kind === 'stream' ? 'var(--ink-2)' : r.theme.group ? 'var(--al-3)' : 'var(--accent)', label)}
+                  <text x={W - right} y={y0 + 11} textAnchor="end" className="num" style={{ fontSize: 11, fill: 'var(--muted)' }}>{t('peak {n}', { n: fmt(d3max(r.values) || 0) })}</text>
                 </g>)
             })}
           </svg>
