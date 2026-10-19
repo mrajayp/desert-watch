@@ -41,6 +41,9 @@ def test_every_page_shows_the_same_scored_count_for_a_cell(client, users, db):
                                        "week": wk.isoformat()}).json()
     assert g["cell"]["articles"] == cell["articles"] and g["articles"]["total"] == cell["articles_all"]
     # the digest facts: the gap row and the per-theme count, both scored, with the previous window on the same outlets
+    # (the digest reports gaps only on lenses the site offers, and one judged theme is not a lens)
+    from tests.conftest import offer_lens
+    offer_lens(db, wk)
     facts = digest.build_facts(db, db.get(Country, cid), wk)
     top = next(x for x in facts["top_gaps"] if x["theme"] == "Health" and x["region"] == "Libya")
     assert top["articles"] == cell["articles"] and top["articles_all"] == cell["articles_all"]

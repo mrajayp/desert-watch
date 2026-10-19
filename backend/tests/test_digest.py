@@ -80,6 +80,8 @@ def test_digest_compares_like_with_like_once_the_week_is_scored(db):
     db.commit()
     compute(db, country.id, weeks=5, today=today + timedelta(days=7))
     week = week_start(today)
+    from tests.conftest import offer_lens
+    offer_lens(db, week)   # the digest reports gaps only on lenses the site offers: one judged theme is not a lens
     f = digest.build_facts(db, country, week)
     h = next(c for c in f["coverage_by_theme"] if c["theme"] == "Health")
     cell = db.scalar(select(CellWeek).where(CellWeek.theme_id == themes["health"], CellWeek.region_id == regions["national"],
@@ -115,6 +117,8 @@ def test_digest_facts_lead_with_short_gaps_and_carry_their_evidence(db):
         db.add(CellWeek(country_id=country.id, theme_id=tid, region_id=nat, week_start=wk, lens="audience", need=1000,
                         coverage=b["articles_4w"], gap=gap, insufficient=False, flags=[], verdict=verdict, breakdown=b))
     db.commit()
+    from tests.conftest import offer_lens
+    offer_lens(db, wk)   # the digest reports gaps only on lenses the site offers
     gaps = digest.build_facts(db, country, wk)["top_gaps"]
     assert [g["theme"] for g in gaps] == [names[t2], names[t1], names[t3]]     # short first, then by gap
     short = gaps[0]

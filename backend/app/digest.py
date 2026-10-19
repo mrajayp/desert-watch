@@ -96,6 +96,10 @@ VERDICT_LIMIT = ("a gap's verdict is short only when the shortfall is larger tha
                  "rate 10% across the week, so about 1 short gap in 10 is still chance) and the shortfall is at least "
                  "{floor}x; possibly_short is fewer but not enough to be sure; usual is about as expected; over is more "
                  "than expected; unclear could not be judged. A gap is new only when new_short is true")
+# Which lenses the gaps come from: only the ones the site offers (api.gaps.available_lenses). A lens the
+# site has switched off has too few judged themes to compare, so its cells are not gaps here either.
+LENSES_LIMIT = ("gaps are reported only on the lenses the site offers now ({lenses}); a lens with too few judged "
+                "themes is left out, so a theme judged alone on a switched-off lens is not a gap")
 # Outlets whose route stopped reaching us (scoring.record_departures): their articles left every compared
 # week with them, so their silence shows as no gap. {n} outlets, {weeks} weeks.
 DEPARTURES_LIMIT = ("{n} outlet{s} left the comparison in the last {weeks} weeks: they stopped reaching us, so their "
@@ -151,10 +155,13 @@ def build_facts(s: Session, country: Country, week: date) -> dict:
                              "arabic": c.get("ar", 0), "english": c.get("en", 0),
                              "previous_window": sum(p.values()), "previous_window_all": sum(p.values())})
 
-    # scored gaps for every lens that has data this week, with the calibrated verdict and its evidence
-    # (scoring.judge): the short ones lead, then the rest by gap
+    # scored gaps for every lens the site offers now (api.gaps.available_lenses: a lens with too few
+    # judged themes is switched off, and one judged theme is not a lens), with the calibrated verdict
+    # and its evidence (scoring.judge): the short ones lead, then the rest by gap
+    from .api.gaps import available_lenses
+    offered = available_lenses(s, country.id)
     gaps = []
-    for lens in LENSES:
+    for lens in (k for k in LENSES if k in offered):
         for cell in s.scalars(select(CellWeek).where(CellWeek.country_id == country.id, CellWeek.week_start == week,
                                                      CellWeek.lens == lens, CellWeek.insufficient.is_(False),
                                                      CellWeek.gap.is_not(None))):
@@ -210,12 +217,14 @@ def build_facts(s: Session, country: Country, week: date) -> dict:
         "window": f"{win_start.date().isoformat()} to {(win_end - timedelta(days=1)).date().isoformat()}",
         "coverage_by_theme": coverage, "top_gaps": gaps[:8],
         "lenses_with_data": sorted({g["lens"] for g in gaps}),
+        "lenses_offered": sorted(offered),
         "districts_with_no_monitored_articles": silent, "districts_total": len(districts),
         "gender_articles_naming_a_district": gender_named,
         "flags_this_week": dict(flags),
         "team_activity_this_week": {"gap_votes": dict(votes), "claims": dict(claims), "comments": comments or 0},
         "known_limits": ["monitored coverage only (Facebook only as the sample of posts Google indexes, no Telegram)",
                          COUNTS_LIMIT if scored else UNSCORED_LIMIT,
+                         LENSES_LIMIT.format(lenses=", ".join(sorted(offered)) or "none"),
                          *([VERDICT_LIMIT.format(floor=settings.MIN_SHORTFALL)] if any(g["verdict"] for g in gaps) else []),
                          "event and humanitarian need data are pending source keys" if not
                          {"events", "humanitarian"} & {g["lens"] for g in gaps} else "",

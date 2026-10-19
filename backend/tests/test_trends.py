@@ -304,6 +304,8 @@ def test_digest_waits_for_sundays_page_views(db, monkeypatch):
     tuesday = monday + timedelta(days=1)
     compute(db, cid, weeks=3, today=tuesday, lenses=("audience",))
     assert digest.digest_week(db, cid, today=tuesday) == date(2026, 10, 5)
+    from tests.conftest import offer_lens
+    offer_lens(db, date(2026, 10, 5))   # the digest reports gaps only on lenses the site offers: one theme is not a lens
     d = digest.generate(db, country, today=tuesday)
     assert d.week_start == date(2026, 10, 5) and "audience" in d.facts["lenses_with_data"]
 

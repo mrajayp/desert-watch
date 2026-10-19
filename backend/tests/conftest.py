@@ -52,3 +52,24 @@ def ids(db):
     themes = {t.slug: t.id for t in db.scalars(select(Theme))}
     regions = {r.slug: r.id for r in db.scalars(select(Region))}
     return themes, regions
+
+
+def offer_lens(db, week, lens="audience", weeks=4):
+    """Make a lens one the site offers (api.gaps.available_lenses): a judged national cell on every active
+    theme for the `weeks` weeks before `week`, where none exists. The digest and the Contribute gap list
+    report gaps only on offered lenses, and one judged theme is not a lens."""
+    from datetime import timedelta
+    from app.models import CellWeek, Country, Region, Theme
+    c = db.scalar(select(Country))
+    nat = db.scalar(select(Region.id).where(Region.country_id == c.id, Region.level == "national"))
+    have = {(x.theme_id, x.week_start): x for x in db.scalars(select(CellWeek).where(CellWeek.lens == lens, CellWeek.region_id == nat))}
+    for tid in db.scalars(select(Theme.id).where(Theme.active.is_(True))):
+        for w in range(1, weeks + 1):
+            cell = have.get((tid, week - timedelta(weeks=w)))
+            if cell is None:
+                db.add(CellWeek(country_id=c.id, theme_id=tid, region_id=nat, week_start=week - timedelta(weeks=w), lens=lens,
+                                need=100, coverage=50, gap=0.0, insufficient=False, flags=[], verdict="usual", breakdown={}))
+            elif cell.insufficient:   # a cell a recompute wrote as "not judged" (no need data): judged now
+                cell.insufficient, cell.gap, cell.verdict = False, 0.0, "usual"
+                cell.breakdown = {k: v for k, v in (cell.breakdown or {}).items() if k not in ("in_progress", "reason")}
+    db.commit()

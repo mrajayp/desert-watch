@@ -87,7 +87,9 @@ def classify_items_cmd(s: Session, args: list[str]) -> dict:
     from .infer import classify_items, reset_model_links
     if "--reset" in args:
         out = reset_model_links(s)
-        return {**out, "changed": sum(out.values())}
+        print("Model links are back to what they were. Run retag-all next: it turns a link back on wherever the "
+              "rules match it.")
+        return {**out, "changed": sum(out.values()), "next": "retag-all"}
     model = _model(s, _opt(args, "--model"))
     if model is None:
         return {"skipped": "no active theme model", "changed": 0}
