@@ -106,6 +106,14 @@ DEPARTURES_LIMIT = ("{n} outlet{s} left the comparison in the last {weeks} weeks
                     "articles were removed from every week compared and their silence does not show as a gap")
 
 
+def _by_language(counts) -> dict:
+    """arabic, english and (when any) other_language article counts, so the three add up to the total:
+    French and Italian articles are neither side of the Arabic-English balance."""
+    counts = dict(counts or {})
+    other = sum(v for k, v in counts.items() if k not in ("ar", "en"))
+    return {"arabic": counts.get("ar", 0), "english": counts.get("en", 0), **({"other_language": other} if other else {})}
+
+
 def build_facts(s: Session, country: Country, week: date) -> dict:
     themes = {t.id: t for t in s.scalars(select(Theme).where(Theme.active.is_(True)))}
     regions = {r.id: r for r in s.scalars(select(Region).where(Region.country_id == country.id))}
@@ -146,13 +154,13 @@ def build_facts(s: Session, country: Country, week: date) -> dict:
             b = cell.breakdown or {}
             langs = b.get("scored_lang") or {}
             coverage.append({"theme": t.name_en, "group": t.group or "general", "articles": scored_articles(cell),
-                             "articles_all": int(cell.coverage), "arabic": langs.get("ar", 0), "english": langs.get("en", 0),
+                             "articles_all": int(cell.coverage), **_by_language(langs),
                              "previous_window": b.get("prev_scored_coverage"), "previous_window_all": b.get("prev_coverage")})
         else:
             c, p = now.get(tid, Counter()), prev.get(tid, Counter())
             total = sum(c.values())
             coverage.append({"theme": t.name_en, "group": t.group or "general", "articles": total, "articles_all": total,
-                             "arabic": c.get("ar", 0), "english": c.get("en", 0),
+                             **_by_language(c),
                              "previous_window": sum(p.values()), "previous_window_all": sum(p.values())})
 
     # scored gaps for every lens the site offers now (api.gaps.available_lenses: a lens with too few

@@ -2,9 +2,9 @@ from types import SimpleNamespace
 
 from sqlalchemy import select
 
-from app.alerts import attach_feeds, sync_specs
+from app.alerts import MAX_THEME_TERMS, attach_feeds, sync_specs, theme_chunks
 from app.collectors import galerts
-from app.models import AlertFeed, Item, ItemRegion, Region
+from app.models import AlertFeed, Item, ItemRegion, ItemTheme, Region, Theme
 
 ATOM = """<?xml version="1.0" encoding="utf-8"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
@@ -46,3 +46,33 @@ def test_collect_parses_feed_and_tags_district(db, monkeypatch):
     assert it.url == "https://example.ly/news/123" and "<b>" not in it.title and it.relevant
     sabha = db.scalar(select(Region.id).where(Region.slug == "sabha"))
     assert db.get(ItemRegion, (it.id, sabha)) is not None
+
+
+def test_theme_alerts_cover_every_term(db, monkeypatch):
+    """A-R2.9: a theme with more than MAX_THEME_TERMS terms gets one alert per chunk, so the suggested
+    alerts ask for the whole theme. The first chunk keeps the old key (its feed URL stays attached); the
+    others are numbered. A result from a numbered alert is a query link for the theme like any other."""
+    for t in db.scalars(select(Theme).where(Theme.active.is_(True))):
+        for lang, terms in (("en", t.en_terms), ("ar", t.ar_terms)):
+            rows = db.scalars(select(AlertFeed).where(AlertFeed.key.like(f"theme:{t.slug}:{lang}%"))).all()
+            assert len(rows) == len(theme_chunks(terms)) >= 1
+            assert f"theme:{t.slug}:{lang}" in {r.key for r in rows}
+            assert all(r.theme_id == t.id and r.lang == lang and r.region_id is None for r in rows)
+            assert all(r.query.count(" OR ") + 1 <= MAX_THEME_TERMS for r in rows)
+            asked = " ".join(r.query for r in rows)
+            for term in terms:
+                assert term in asked, (t.slug, lang, term)
+    sec = db.scalars(select(AlertFeed).where(AlertFeed.key.like("theme:security:en%")).order_by(AlertFeed.key)).all()
+    assert [r.key for r in sec] == ["theme:security:en", "theme:security:en:2", "theme:security:en:3"]
+    name = db.scalar(select(Theme.name_en).where(Theme.slug == "security"))
+    assert sec[0].label == f"{name} (EN) 1/3" and sec[2].label == f"{name} (EN) 3/3"
+    assert sec[0].query.startswith("Libya (militia OR militias OR") and "bomb" in sec[2].query
+    # the second chunk's alert feeds results under the theme, as a query link with the alert as its query
+    attach_feeds(db, "theme:security:en:2 https://www.google.com/alerts/feeds/123/789")
+    atom = ATOM.replace("انقطاع &lt;b&gt;الكهرباء&lt;/b&gt; في &lt;b&gt;سبها&lt;/b&gt; لليوم الثالث", "Market reopens in Sabha")
+    monkeypatch.setattr(galerts, "polite_get", lambda *a, **k: SimpleNamespace(content=atom.encode(), raise_for_status=lambda: None))
+    galerts.collect(db)
+    it = db.scalar(select(Item).where(Item.url == "https://example.ly/news/123"))
+    lk = db.scalar(select(ItemTheme).where(ItemTheme.item_id == it.id, ItemTheme.theme_id == sec[0].theme_id))
+    assert lk.method == "query" and not lk.active and lk.evidence["query"] == "theme:security:en:2"
+    assert it.extra["queries"] == {"security": "theme:security:en:2"}

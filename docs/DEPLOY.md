@@ -135,6 +135,53 @@ No data rebuild. These steps follow the deploy:
 7. Continuous integration runs on GitHub (`.github/workflows/ci.yml`): the backend suite and the
    front-end build on every push and pull request, without secrets. Nothing to do on the server.
 
+## After the A-R2.9 release (small text fixes, 2026-10-19)
+
+A rebuild: the theme rules now match the regular English plural or third-person form of every term
+("refinery" finds "refineries", "clash" finds "clashes", "power cut" finds "power cuts"). The exclusion and
+veto lists inflect too, so "crashes" now vetoes "killing" in a helicopter crash. Past and -ing forms are
+not generated: on the veto lists they shift meaning (storm/stormed, traffic/trafficked) and "fuels" is a verb
+in most headlines, so "fuel" is the one word left without a plural. The steps script is
+`scripts/apply_a_r2_9.sh` (retag-all, classify-items --all, recompute, ANALYZE), run as in Steps above
+with the scheduler paused.
+
+1. The numbers. On the 2026-10-18 copy (75,822 articles), re-tagged first with the plurals switched off
+   (so the second pass measures this change alone) and then with them: the plurals added or changed 563
+   links and flipped relevance on 13 articles. Counted articles went from 56,822 to 56,835. Active links
+   rose by 174 (security +44, governance +36, migration +26, economy +20, services +13, health +11,
+   gender_violence +11, gender_political_participation +7, gender_legal_status +5, gender_economic_health
+   +1), and counted links per theme by +4 to +28 (governance +28, security +13, economy +11, services +11).
+   A scan of the same copy found 250 rule hits gained and 3 lost (helicopter and jet crash stories whose
+   "killing" the inflected veto "crashes" now stops). The full recompute wrote 51,051 cells in 1.5 minutes
+   on the laptop. The production run's numbers are in the note at the end of this section.
+2. Google Alerts now cover every theme term. A theme with more than eight terms gets one suggested alert
+   per chunk of eight: the first keeps its key (`theme:<slug>:<lang>`) and its feed, the others are
+   `theme:<slug>:<lang>:2`, `:3`, `:4`. The deploy's `sync_specs` adds the 45 new rows without a feed URL.
+   They are listed in `docs/google_alerts.md` and on Admin → Google Alerts, and the hourly run skips them
+   until a feed is attached. Someone with the Google account creates each alert with the settings at the
+   top of that file and pastes `<key> <feed url>` lines into Admin → Google Alerts. Only the code's term
+   lists changed. Nothing is created in Google by the release.
+3. GDELT asks every term too, eight to a query: the six-hourly article run now makes 34 queries instead of
+   13 (about 3.5 minutes at six seconds each, before any backoff), the history line (`gdelt_timeline`) 68.
+   The Note column of the health strip says `N queries for M themes ..., K refused by GDELT` for every run,
+   so a run GDELT throttled is visible as more than a status. The history line adds the chunks' daily
+   counts (an article matching two chunks counts twice, a close upper bound) and a theme's line is written
+   only when all its chunks answered, so the stored line is always one term list wide. Refresh it once
+   after the deploy, outside 01:15-03:30 UTC: `runuser -u dw -- python -m app.cli collect gdelt_timeline`
+   (about 7 minutes plus backoff). The whole 24 months is rewritten in one run, so the line moves up as a
+   whole, never in a step. The methods page says so in both languages.
+4. Language. `detect_lang` now reads French and Italian from their function words (a short headline
+   without them still reads as English), so feed and social items in those languages leave the English
+   side of the balance chart. GDELT items already carried GDELT's own label. On the 18 Oct copy none of the 8,892
+   stored feed and social items changes language, so there is no relabel step. The weekly digest's facts
+   gain `other_language` beside `arabic` and `english` when any such articles are counted. The balance
+   chart and the monthly chart already had an "other" bucket, and the article list filter keeps Any,
+   Arabic, English.
+5. For the owner, from the rehearsal samples: "activist" sits in the gender co-occurrence women-word group,
+   and with plurals "activists" beside "minister", "beaten" or "abducted" now tags stories about Gaza
+   convoy activists as gender themes. Replacing it with "women activists" (already a gender_pp term) is a
+   term-list change, so an owner decision. The theme model's veto gates still apply where open.
+
 ## Backups
 
 Every night at 01:15 UTC the app writes a compact copy of the database with `VACUUM INTO`, checks it

@@ -10,7 +10,7 @@ from sqlalchemy import select
 from app import settings
 from app.collectors import base, gdelt, wikipedia
 from app.ingest import load_rules, store_article
-from app.models import CellWeek, Item, ItemTheme, Outlet, Region, Theme
+from app.models import CellWeek, CoverageSeries, Item, ItemTheme, Outlet, Region, Theme
 from app.scoring import (comparable_pairs, compute, compute_chunked, coverage_start, pair_spans, score_cell,
                          week_start)
 from tests.conftest import ids, login
@@ -139,6 +139,71 @@ def test_collectors_stop_after_three_refusals_in_a_row(db, monkeypatch):
 def test_gdelt_quotes_hyphenated_terms():
     q = gdelt.theme_query("Libya", ["LGBT", "same-sex", "gender identity"])
     assert q == 'Libya (LGBT OR "same-sex" OR "gender identity")'
+
+
+def _query_terms(q: str) -> list[str]:
+    """The OR list inside a GDELT query, one quoted term per entry."""
+    return q[q.index("(") + 1:q.rindex(")")].split(" OR ")
+
+
+def test_gdelt_asks_every_term_in_chunks_and_merges_the_answers(db, monkeypatch):
+    """A-R2.9: a theme with more than MAX_TERMS terms is asked in several queries, every term in exactly one
+    of them; an article two chunks return is stored once; requests stay at least 5 s apart; the run
+    detail says how many queries ran (the health strip shows it)."""
+    asked, sleeps = [], []
+    monkeypatch.setattr(base.time, "sleep", sleeps.append)
+    monkeypatch.setattr(base.time, "monotonic", lambda: 1e6)   # a frozen clock: every wait is the whole interval
+
+    def handler(request):
+        asked.append(request.url.params["query"])
+        n = len(asked)
+        return httpx.Response(200, json={"articles": [
+            {"url": "https://gd.example/shared", "title": "Libya clashes", "seendate": "20261013T100000Z",
+             "domain": "gd.example", "language": "English"},
+            {"url": f"https://gd.example/{n}", "title": f"Libya story {n}", "seendate": "20261013T110000Z",
+             "domain": "gd.example", "language": "French"}]})
+    monkeypatch.setattr(gdelt, "http_client", lambda **kw: httpx.Client(transport=httpx.MockTransport(handler)))
+    res = gdelt.collect(db)
+    themes = db.scalars(select(Theme).where(Theme.active.is_(True))).all()
+    assert asked == [q for t in themes for q in gdelt.theme_queries("Libya", t.en_terms)]
+    assert len(asked) > len(themes)   # the long lists were chunked
+    for t in themes:
+        mine = gdelt.theme_queries("Libya", t.en_terms)
+        assert len(mine) == -(-len(t.en_terms) // gdelt.MAX_TERMS)
+        assert all(len(_query_terms(q)) <= gdelt.MAX_TERMS for q in mine)
+        for term in t.en_terms:
+            quoted = f'"{term}"' if " " in term or "-" in term else term
+            assert sum(quoted in _query_terms(q) for q in mine) == 1, term
+    assert res.errors == 0 and res.detail == f"{len(asked)} queries for {len(themes)} themes over 1 day, 0 refused by GDELT"
+    assert len(db.scalars(select(Item).where(Item.url == "https://gd.example/shared")).all()) == 1
+    assert res.rows == 1 + len(asked)
+    assert db.scalar(select(Item.lang).where(Item.url == "https://gd.example/1")) == "fr"   # GDELT's own language label
+    assert len(sleeps) == len(asked) - 1 and all(w >= 5.0 for w in sleeps)   # paced: one request per 5 s or slower
+    assert gdelt.INTERVAL >= 5.0
+
+
+def test_gdelt_history_adds_the_chunks_and_skips_a_cut_line(db, monkeypatch):
+    """The long-run line adds the chunks' daily counts; a line whose chunk GDELT refused is not written,
+    so a stored line always counts the whole term list."""
+    sec = db.scalar(select(Theme).where(Theme.slug == "security"))
+    chunks = gdelt.theme_queries("Libya", sec.en_terms)
+    assert len(chunks) == 3
+    second = _query_terms(chunks[1])[0]   # a term of the second chunk
+
+    def handler(request):
+        q = request.url.params["query"]
+        if "sourcecountry:" in q and second in _query_terms(q):
+            return httpx.Response(429)   # the second chunk of the sourcecountry line, refused every time
+        return httpx.Response(200, json={"timeline": [{"data": [{"date": "20261001T000000Z", "value": 10},
+                                                                {"date": "20261002T000000Z", "value": 1}]}]})
+    monkeypatch.setattr(gdelt, "http_client", lambda **kw: httpx.Client(transport=httpx.MockTransport(handler)))
+    monkeypatch.setattr(base.time, "sleep", lambda w: None)
+    res = gdelt.collect_timeline(db, themes=["security"])
+    rows = {(r.series, r.day.isoformat()): r.value
+            for r in db.scalars(select(CoverageSeries).where(CoverageSeries.theme_id == sec.id))}
+    assert rows == {("all", "2026-10-01"): 30, ("all", "2026-10-02"): 3}
+    assert res.rows == 2 and res.errors == 1
+    assert res.detail.startswith("5 queries for 1 themes x 2 series, 1 refused by GDELT; security/sourcecountry: HTTP 429")
 
 
 # ---------------------------------------------------------------- score

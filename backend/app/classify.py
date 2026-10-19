@@ -10,7 +10,7 @@ import html
 import re
 from dataclasses import dataclass, field
 
-from .textnorm import normalise, term_variants
+from .textnorm import _AR_CHAR, normalise, term_variants
 
 COOC_WINDOW = 6  # a co-occurrence pair counts only when its two words are this close (in tokens)
 
@@ -66,7 +66,12 @@ class ThemeRule:
     def build(cls, theme_id, slug, version, en_terms, ar_terms, exclude, cooc=None, strict=False, require_country=False,
               veto=None, mask=None, cooc_veto_context=None):
         term_of: dict = {}
-        for t in [*(en_terms or []), *(ar_terms or []), *(t for g in cooc or [] for t in g)]:
+        written = [*(en_terms or []), *(ar_terms or []), *(t for g in cooc or [] for t in g)]
+        for t in written:   # an English form written in the list names itself ("migrants" beside "migrant") ...
+            n = normalise(t).strip()
+            if n and not _AR_CHAR.search(n):
+                term_of[n] = t
+        for t in written:   # ... and a derived variant (a plural, an Arabic prefix) names the term it came from
             for v in term_variants(t):
                 term_of.setdefault(v, t)
         inc = sorted({v for t in [*(en_terms or []), *(ar_terms or [])] for v in term_variants(t)})

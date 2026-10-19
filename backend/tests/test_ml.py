@@ -600,6 +600,7 @@ def test_rule_hits_evaluate_the_rules_as_production_applies_them(db):
         ("انقطاع الكهرباء في سبها", "سكان سبها يشكون من انقطاع الكهرباء والمياه", "rss"),
         ("Women candidates meet voters in Benghazi", None, "gnews"),
         ("LGBT arrests reported", "Activists said the arrests took place in Cairo.", "rss"),
+        ("Blackouts hit Benghazi refineries", None, "rss"),   # plural variants (A-R2.9) on both sides
     ]
     for i, (title, snippet, src) in enumerate(cases):
         it, _ = store_article(db, c.id, rules, url=f"https://ex.ly/parity{i}", title=title, snippet=snippet,
@@ -610,6 +611,7 @@ def test_rule_hits_evaluate_the_rules_as_production_applies_them(db):
     assert th["migration"] not in rule_hits(rules, *cases[1])
     assert th["gender_lgbtq"] not in rule_hits(rules, *cases[4])          # require_country, no Libya in the text
     assert th["services"] in rule_hits(rules, *cases[2]) and th["gender_political_participation"] in rule_hits(rules, *cases[3])
+    assert {th["services"], th["economy"]} <= rule_hits(rules, *cases[5])   # blackout -> blackouts, refinery -> refineries
 
 
 def test_web_app_does_not_import_sklearn():

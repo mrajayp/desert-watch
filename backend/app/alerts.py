@@ -12,7 +12,7 @@ from .models import AlertFeed, Country, Region, Theme
 from .i18n import N_, tr
 
 AR = re.compile("[؀-ۿ]")
-MAX_THEME_TERMS = 8
+MAX_THEME_TERMS = 8   # terms per alert query (Google keeps queries short); a theme with more gets one alert per chunk
 MAX_ALIASES = 3
 
 SETTINGS = {   # Google Alerts' own option names; the admin page shows them in the interface language
@@ -34,6 +34,25 @@ def _or(terms: list[str]) -> str:
     return terms[0] if len(terms) == 1 else "(" + " OR ".join(terms) + ")"
 
 
+def theme_chunks(terms: list[str] | None) -> list[list[str]]:
+    """A theme's terms MAX_THEME_TERMS at a time (list order, repeats dropped): one alert each."""
+    todo = list(dict.fromkeys(t.strip() for t in terms or [] if t and t.strip()))
+    return [todo[i:i + MAX_THEME_TERMS] for i in range(0, len(todo), MAX_THEME_TERMS)]
+
+
+def theme_specs(slug: str, name: str, lang: str, country_name: str, terms: list[str] | None) -> list[dict]:
+    """The alerts for one theme in one language: `theme:<slug>:<lang>` for the first chunk of terms (the
+    key from before chunking, so an attached feed stays attached), `theme:<slug>:<lang>:2`, `:3` ... for
+    the rest. The label says which part of the list the alert covers when there is more than one."""
+    chunks = theme_chunks(terms)
+    out = []
+    for n, chunk in enumerate(chunks, 1):
+        part = f" {n}/{len(chunks)}" if len(chunks) > 1 else ""
+        out.append({"key": f"theme:{slug}:{lang}" + (f":{n}" if n > 1 else ""), "lang": lang, "region": None,
+                    "theme": slug, "label": f"{name} ({lang.upper()}){part}", "query": f"{country_name} {_or(chunk)}"})
+    return out
+
+
 def build_specs(s: Session, country: Country) -> list[dict]:
     cfg = yaml.safe_load(open(settings.CONFIG_DIR / "countries" / country.config.get("config_file", f"{country.name_en.lower()}.yaml"), encoding="utf-8"))
     regions = {r.slug: r for r in s.scalars(select(Region).where(Region.country_id == country.id))}
@@ -49,14 +68,12 @@ def build_specs(s: Session, country: Country) -> list[dict]:
                       "label": f"{d['name_en']} (EN)", "query": f"{_or(en)} {name_en}"})
         specs.append({"key": f"district:{d['slug']}:ar", "lang": "ar", "region": d["slug"], "theme": None,
                       "label": f"{d['name_en']} (AR)", "query": f"{_or(ar)} {name_ar}"})
-    # 2. themes: national, one alert per theme per language
+    # 2. themes: national, one alert per chunk of MAX_THEME_TERMS terms per theme per language, so every
+    #    term of the theme has an alert (theme_specs). The first chunk keeps the key the alert had when
+    #    there was one per theme (theme:<slug>:<lang>), so its feed URL stays attached.
     for slug, t in themes.items():
-        if t.en_terms:
-            specs.append({"key": f"theme:{slug}:en", "lang": "en", "region": None, "theme": slug,
-                          "label": f"{t.name_en} (EN)", "query": f"{name_en} {_or(t.en_terms[:MAX_THEME_TERMS])}"})
-        if t.ar_terms:
-            specs.append({"key": f"theme:{slug}:ar", "lang": "ar", "region": None, "theme": slug,
-                          "label": f"{t.name_en} (AR)", "query": f"{name_ar} {_or(t.ar_terms[:MAX_THEME_TERMS])}"})
+        specs += theme_specs(slug, t.name_en, "en", name_en, t.en_terms)
+        specs += theme_specs(slug, t.name_en, "ar", name_ar, t.ar_terms)
     # 3. hand-written gap-targeted alerts
     for e in cfg.get("extra_alerts", []):
         specs.append({"key": f"extra:{e['key']}:{e['lang']}", "lang": e["lang"], "region": e.get("region"),

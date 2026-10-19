@@ -1,5 +1,5 @@
 from app.classify import PlaceRule, ThemeRule, classify_themes, tag_places
-from app.textnorm import detect_lang, normalise, term_variants
+from app.textnorm import detect_lang, english_plural, normalise, term_variants
 
 
 def test_normalise_arabic_variants():
@@ -25,7 +25,7 @@ def rules():
 
 def test_theme_matching_en_ar():
     r = rules()
-    assert set(classify_themes("Residents in Sabha protest over power cuts", r)) == set()  # 'power cuts' != 'power cut'
+    assert set(classify_themes("Residents in Sabha protest over power cuts", r)) == {1}  # 'power cuts' is the plural of 'power cut'
     assert set(classify_themes("Electricity shortages hit Sabha hospital", r)) == {1, 3}
     assert set(classify_themes("احتجاجات في سبها بسبب انقطاع الكهرباء", r)) == {1}
     assert set(classify_themes("نقص الأدوية في المستشفى العام", r)) == {3}
@@ -86,6 +86,49 @@ def test_place_homonyms_need_an_anchor_and_negatives_veto():
 def test_detect_lang():
     assert detect_lang("انقطاع الكهرباء في طرابلس") == "ar"
     assert detect_lang("Power cuts in Tripoli") == "en"
+    assert detect_lang("") == "und" and detect_lang(None) == "und"
+
+
+def test_detect_lang_french_and_italian():
+    """A-R2.9: French and Italian headlines are no longer 'en', so they leave the English side of the
+    Arabic-English balance. Function words decide; a name alone (Meloni, Roma) is not a language."""
+    assert detect_lang("Libye : des migrants secourus au large de Tripoli") == "fr"
+    assert detect_lang("La Libye et l'Italie signent un accord sur le pétrole") == "fr"
+    assert detect_lang("Les forces de Haftar à Syrte") == "fr"
+    assert detect_lang("Libia, naufragio al largo di Tripoli: 20 morti") == "it"
+    assert detect_lang("La Libia e il petrolio: cosa cambia dopo l'accordo") == "it"
+    assert detect_lang("Libia: scontri a Tripoli, è caos") == "it"
+    assert detect_lang("Agenzia Nova: Libia, il governo di Tripoli annuncia nuove misure") == "it"
+    # genuine English stays English: 'in', 'non-' and names are not Italian, a possessive 's is not French
+    assert detect_lang("Libya's NOC says oil output rises after clashes in the west") == "en"
+    assert detect_lang("GNU minister: the non-governmental groups will meet in Tripoli") == "en"
+    assert detect_lang("Dbeibah meets Meloni in Rome") == "en"
+    assert detect_lang("Migrants rescued off Libya, IOM says") == "en"
+    # too little to go on reads as English, as before
+    assert detect_lang("Scontri a Tripoli") == "en"
+
+
+def test_english_plural_variants_match():
+    """A-R2.9: a term matches its regular plural / third-person form; a phrase inflects its last word;
+    Arabic terms, -ed forms and words already plural are left alone."""
+    assert term_variants("clash") == ["clash", "clashes"]
+    assert term_variants("refinery") == ["refineries", "refinery"]
+    assert term_variants("power cut") == ["power cut", "power cuts"]
+    assert term_variants("first woman") == ["first woman", "first women"]
+    assert term_variants("killed") == ["killed"] and term_variants("migrants") == ["migrants"]
+    assert term_variants("Resolution 1325") == ["resolution 1325"]
+    assert english_plural("box") == "boxes" and english_plural("day") == "days" and english_plural("ab") is None
+    assert term_variants("fuel") == ["fuel"] and term_variants("fuel shortage") == ["fuel shortage", "fuel shortages"]
+    assert term_variants("مستشفى") == term_variants("مستشفي") and "مستشفىs" not in term_variants("مستشفى")
+    r = [ThemeRule.build(1, "security", 1, ["clash", "militia", "kill"], [], []),
+         ThemeRule.build(2, "economy", 1, ["refinery"], [], ["olive oil"])]
+    assert set(classify_themes("Militias clash near the Zawiya refinery", r)) == {1, 2}
+    assert set(classify_themes("Gunman kills two in clashes", r)) == {1}
+    assert set(classify_themes("Refineries idle as militias fight", r)) == {1, 2}
+    assert classify_themes("Olive oils from Libya win prizes", r) == {}    # the exclusion inflects too
+    # the evidence names the term as written, and a plural is the same word for the two-words rule
+    assert r[0].match(normalise("Militias clash in Tripoli")) == ("title", ["clash", "militia"])
+    assert r[0].match(normalise("Report"), [normalise("Three militias and a militia leader were seen")]) is None
 
 
 def test_cooc_and_strict():
@@ -127,4 +170,4 @@ def test_english_possessive_is_stripped():
     r = [ThemeRule.build(1, "economy", 1, ["NOC"], [], [])]
     assert set(classify_themes("Libya's NOC reports output", r)) == {1}
     assert set(classify_themes("NOC's chairman visits Brega", r)) == {1}
-    assert term_variants("women's representation") == ["women representation"]
+    assert term_variants("women's representation") == ["women representation", "women representations"]
