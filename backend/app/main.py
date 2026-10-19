@@ -2,6 +2,7 @@ import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -32,16 +33,48 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Desert Watch", lifespan=lifespan, docs_url=None, redoc_url=None)
+# Responses over 1 KB are gzipped (the outlet list, the network, the cells); small ones are left alone.
+app.add_middleware(GZipMiddleware, minimum_size=1024)
+
+# The content security policy, report-only for its first release: the browser reports what it WOULD
+# have blocked to /api/csp-report (api/admin.py counts the reports per directive, /api/admin/health
+# shows them) and blocks nothing. Once a week of reports shows nothing but noise, the header becomes
+# Content-Security-Policy. What the policy allows is exactly what the built page needs: scripts and
+# styles from this origin (Vite emits no inline script; React sets inline style attributes, hence
+# 'unsafe-inline' for styles only), images from this origin and the data: favicon, API calls to this
+# origin, no frames, no plugins, no forms elsewhere.
+CSP = ("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; "
+       "connect-src 'self'; font-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; "
+       "object-src 'none'; report-uri /api/csp-report; report-to csp")
+SECURITY_HEADERS = {
+    "Content-Security-Policy-Report-Only": CSP,
+    "Reporting-Endpoints": 'csp="/api/csp-report"',
+    "Referrer-Policy": "no-referrer",
+    "X-Frame-Options": "DENY",
+    "X-Content-Type-Options": "nosniff",
+    "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
+    "Cross-Origin-Opener-Policy": "same-origin",
+}
+HSTS = "max-age=31536000; includeSubDomains"   # only ever sent over HTTPS (COOKIE_SECURE), never in dev
+GEO_CACHE = "public, max-age=86400"            # the boundary files change with a deploy, not with the data
 
 
 @app.middleware("http")
 async def interface_language(request: Request, call_next):
-    """X-Lang from the browser decides the language of API text (?lang= is taken: it filters articles)."""
+    """X-Lang from the browser decides the language of API text (?lang= is taken: it filters articles).
+    Every response also carries the security headers (above), and the /geo files a day of caching."""
     token = i18n.set_lang(request.headers.get("x-lang"))
     try:
-        return await call_next(request)
+        response = await call_next(request)
     finally:
         i18n.LANG.reset(token)
+    for k, v in SECURITY_HEADERS.items():
+        response.headers.setdefault(k, v)
+    if settings.COOKIE_SECURE:
+        response.headers.setdefault("Strict-Transport-Security", HSTS)
+    if request.url.path.startswith("/geo/"):
+        response.headers["Cache-Control"] = GEO_CACHE
+    return response
 
 
 for r in (account.router, gaps.router, items.router, social.router, outlets.router, admin.router, contribute.router,

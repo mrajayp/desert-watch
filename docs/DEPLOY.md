@@ -102,6 +102,39 @@ alerts-list, train-theme-model (laptop only) and any `--dry-run`. ai-audit does 
 its whole run either (the assistant calls take minutes), each answer's write takes it on its own.
 Run every command as `dw` with `runuser -u dw --`.
 
+## After the sources and speed release (2026-10-19)
+
+No data rebuild. These steps follow the deploy:
+
+1. The register programme. `runuser -u dw -- python -m app.cli label-scopes` prints what it would
+   write (foreign country-code domains, GDELT's source country, vanity .ly domains). Read the plan,
+   then run it again with `--apply`. It takes the job lock. Alignment is never set. Homepage signals
+   stay suggestions on the Contribute review queue.
+2. Feeds. The nightly job searches 50 outlets a night from 02:05 UTC (after the social posts). The four
+   Libyan outlets seeded in config already exist on the server as auto-discovered rows, and the seed
+   never changes an existing row, so set their feeds by hand on the outlet page (PATCH rss_url) or run
+   `runuser -u dw -- python -m app.cli discover-feeds --limit 60` once. Feeds found from this PC on
+   2026-10-19: `https://www.eanlibya.com/feed/`, `https://www.alsaaa24.com/feed/` and
+   `https://www.libyanexpress.com/feed/`. 218tv.net refused the connection. LANA, Al Wasat, Libya
+   Observer and Al Marsad answer 404 on every feed path and stay on the daily `site:` searches.
+   Paused feeds (10 failed runs in a row) are listed on `GET /api/admin/feeds` and tried again after
+   a fortnight.
+3. The content security policy is report-only for this release. Watch `csp_violations` on
+   `/api/admin/health` for a week. The counts live in the process memory and reset with a restart.
+   When nothing but noise shows, change the header name in `backend/app/main.py` from
+   `Content-Security-Policy-Report-Only` to `Content-Security-Policy` and deploy again.
+4. The session cookie is now `__Host-dw_session` over HTTPS. The old name is still read for this
+   release, so nobody is signed out by the deploy. The next release drops the old name
+   (`LEGACY_COOKIE` in `backend/app/auth.py`).
+5. The health strip has two new lines, outlet web rank (monthly, the 1st at 04:40 UTC) and feed
+   discovery (nightly). Both say never run until their first run. Each line now says how often its
+   source runs, and the sources run by hand (gdelt_timeline, the backfills) are never stale.
+6. Google News editions are now a list in `config/countries/libya.yaml` (`gnews.editions`), still one
+   Arabic and one English entry. The edition experiment (docs/research/gnews_editions_2026-10-19.md)
+   found no edition worth adding.
+7. Continuous integration runs on GitHub (`.github/workflows/ci.yml`): the backend suite and the
+   front-end build on every push and pull request, without secrets. Nothing to do on the server.
+
 ## Backups
 
 Every night at 01:15 UTC the app writes a compact copy of the database with `VACUUM INTO`, checks it

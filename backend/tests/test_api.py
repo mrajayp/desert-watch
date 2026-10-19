@@ -204,3 +204,172 @@ def test_delete_account(client, users, db):
     assert client.delete("/api/me").status_code == 200
     assert client.get("/api/me").status_code == 401
     assert db.scalar(select(Event)) is None
+
+
+# ---------------------------------------------------------------- security headers, CSP reports, the __Host- cookie (C-R3.5)
+ROOT = __import__("pathlib").Path(__file__).resolve().parents[2]
+
+
+def test_every_response_carries_the_security_headers_and_hsts_only_over_https(client, monkeypatch):
+    import re
+    from app import settings
+    h = client.get("/health").headers
+    csp = h["content-security-policy-report-only"]
+    assert csp.startswith("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; "
+                          "connect-src 'self'; font-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; "
+                          "object-src 'none'")
+    assert "report-uri /api/csp-report" in csp and "report-to csp" in csp and h["reporting-endpoints"] == 'csp="/api/csp-report"'
+    assert "content-security-policy" not in h                      # report-only for its first release: nothing is blocked yet
+    assert h["referrer-policy"] == "no-referrer" and h["x-frame-options"] == "DENY" and h["x-content-type-options"] == "nosniff"
+    assert h["permissions-policy"] == "camera=(), microphone=(), geolocation=()" and h["cross-origin-opener-policy"] == "same-origin"
+    assert "strict-transport-security" not in h                    # plain HTTP in development and tests
+    assert client.get("/api/meta").headers["x-frame-options"] == "DENY"   # an error answer (401) carries them too
+    monkeypatch.setattr(settings, "COOKIE_SECURE", True)
+    assert client.get("/health").headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    # the page shell holds no inline script (script-src 'self' allows none) and its favicon is a data: URL (img-src allows it)
+    for page in (ROOT / "frontend" / "index.html", ROOT / "frontend" / "dist" / "index.html"):
+        if page.exists():
+            html = page.read_text(encoding="utf-8")
+            scripts = re.findall(r"<script\b([^>]*)>(.*?)</script>", html, re.S)
+            assert scripts and all("src=" in attrs and not body.strip() for attrs, body in scripts), page
+            assert 'href="data:image/svg+xml' in html
+
+
+def test_csp_reports_are_counted_per_directive_and_shown_to_admins(client, users):
+    import json
+    from app.api import admin
+    admin.CSP_VIOLATIONS.clear()
+    legacy = {"csp-report": {"document-uri": "https://desert-watch.fly.dev/", "violated-directive": "script-src 'self'",
+                             "effective-directive": "script-src", "blocked-uri": "inline"}}
+    r = client.post("/api/csp-report", content=json.dumps(legacy), headers={"Content-Type": "application/csp-report"})
+    assert r.status_code == 204 and r.content == b""              # open to the browser, no sign-in, nothing echoed
+    modern = [{"type": "csp-violation", "body": {"effectiveDirective": "img-src", "blockedURL": "https://e/"}},
+              {"type": "csp-violation", "body": {"effectiveDirective": "img-src"}}]
+    assert client.post("/api/csp-report", content=json.dumps(modern), headers={"Content-Type": "application/reports+json"}).status_code == 204
+    assert client.post("/api/csp-report", content=b"not json").status_code == 204
+    assert client.post("/api/csp-report", content=b"x" * 9000).status_code == 204   # over the cap: dropped, not counted
+    login(client, "admin@example.org", "admin-password-1")
+    assert client.get("/api/admin/health").json()["csp_violations"] == {"script-src": 1, "img-src": 2, "unknown": 1}
+    admin.CSP_VIOLATIONS.clear()
+
+
+def test_session_cookie_has_the_host_prefix_over_https_and_the_old_name_still_signs_in(db, users, monkeypatch):
+    from fastapi.testclient import TestClient
+    from app import auth, settings
+    from app.main import app
+    monkeypatch.setattr(settings, "COOKIE_SECURE", True)
+    assert auth.cookie_name() == "__Host-dw_session" and auth.LEGACY_COOKIE == "dw_session"
+    with TestClient(app, base_url="https://testserver") as c:
+        r = c.post("/api/auth/login", json={"email": "j@example.org", "password": "journo-password-1"})
+        assert r.status_code == 200
+        sc = r.headers["set-cookie"]
+        assert sc.startswith("__Host-dw_session=") and "Secure" in sc and "Path=/" in sc and "HttpOnly" in sc and "Domain" not in sc
+        assert c.get("/api/me").status_code == 200
+        token = c.cookies["__Host-dw_session"]
+        c.cookies.clear()
+        assert c.get("/api/me").status_code == 401
+        # a browser signed in before the rename sends the old name: still signed in, for one release
+        assert c.get("/api/me", headers={"Cookie": f"dw_session={token}"}).status_code == 200
+        # sign-out ends the session and clears both names
+        r = c.post("/api/auth/logout", headers={"Cookie": f"dw_session={token}"})
+        assert {v.split("=", 1)[0] for v in r.headers.get_list("set-cookie")} == {"__Host-dw_session", "dw_session"}
+        assert c.get("/api/me", headers={"Cookie": f"dw_session={token}"}).status_code == 401
+
+
+# ---------------------------------------------------------------- the API trims (B-R4.2 contract) and the health strip's expectations (C-R2.7)
+def test_pending_count_and_the_strip_says_how_often_each_source_runs(client, users, db):
+    from app.auth import create_user
+    login(client, "j@example.org", "journo-password-1")
+    assert client.get("/api/admin/pending-count").status_code == 403
+    client.post("/api/auth/logout")
+    login(client, "admin@example.org", "admin-password-1")
+    assert client.get("/api/admin/pending-count").json() == {"pending": 0}
+    p = create_user(db, "p@example.org", "pending-password-1", "P")
+    p.status, p.active = "pending", False
+    db.commit()
+    assert client.get("/api/admin/pending-count").json() == {"pending": 1}
+    health = {h["key"]: h for h in client.get("/api/sources/health").json()}
+    assert (health["rss"]["expected_hours"], health["rss"]["manual"], health["rss"]["stale_after_hours"]) == (1, False, 2)
+    assert (health["gnews"]["expected_hours"], health["gnews"]["stale_after_hours"]) == (6, 12)
+    # run by hand with no cadence: never stale, shown as "manual, last run ..."
+    assert (health["gdelt_timeline"]["manual"], health["gdelt_timeline"]["expected_hours"], health["gdelt_timeline"]["stale"]) == (True, None, False)
+    # the weekly search import is by hand too, but a missed week empties the search lens: stale after 10 days
+    assert health["gtrends"]["manual"] is True and health["gtrends"]["stale_after_hours"] == 240 and health["gtrends"]["stale"] is True
+    assert health["digest"]["stale_after_hours"] == 8 * 24 and health["digest"]["expected_hours"] == 7 * 24
+    assert health["reach"]["expected_hours"] == 30 * 24 and health["reach"]["stale_after_hours"] == 35 * 24
+    assert health["discover_feeds"]["expected_hours"] == 24 and health["backup"]["stale_after_hours"] == 30
+    ar = {h["key"]: h for h in client.get("/api/sources/health", headers={"X-Lang": "ar"}).json()}
+    assert ar["reach"]["label"] != health["reach"]["label"] and ar["discover_feeds"]["label"] != health["discover_feeds"]["label"]
+
+
+def test_gap_detail_carries_thirty_articles_and_twenty_need_items_with_their_totals(client, users, db):
+    from datetime import timedelta
+    from app.api.gaps import GAP_ARTICLES, GAP_NEED_ITEMS
+    from app.ingest import load_rules, store_article
+    from app.models import Country, Item, ItemTheme, utcnow
+    themes, regions = ids(db)
+    c = db.scalar(select(Country))
+    rules = load_rules(db, c.id)
+    wk = date(2026, 10, 5)
+    when = datetime(2026, 10, 7, 9)
+    for i in range(GAP_ARTICLES + 5):
+        store_article(db, c.id, rules, url=f"https://ex.ly/h{i}", title=f"Libya hospital shortage of medicines {i}",
+                      published_at=when, source_key="rss")
+    for i in range(GAP_NEED_ITEMS + 3):
+        it = Item(country_id=c.id, kind="pageview", source_key="wikipedia", dedupe_key=f"pv:{i}", title=f"Health_in_Libya {i}",
+                  published_at=when - timedelta(hours=i), value=100, extra={})
+        db.add(it)
+        db.flush()
+        db.add(ItemTheme(item_id=it.id, theme_id=themes["health"], method="rule"))
+    db.commit()
+    login(client, "j@example.org", "journo-password-1")
+    d = client.get("/api/gap", params={"theme_id": themes["health"], "region_id": regions["national"], "lens": "audience",
+                                       "week": wk.isoformat()}).json()
+    assert d["articles"]["total"] == GAP_ARTICLES + 5 and len(d["articles"]["items"]) == GAP_ARTICLES == 30
+    assert d["need_items"]["total"] == GAP_NEED_ITEMS + 3 and len(d["need_items"]["items"]) == GAP_NEED_ITEMS == 20
+    assert utcnow() > when
+    # names only for the accounts the votes and claims refer to
+    from app import auth
+    admin, j = users
+    assert auth.team_names(db, admin, only={j.id}) == {j.id: "Journo"}
+    assert auth.team_names(db, admin, only=set()) == {} and auth.team_names(db, admin, only={None}) == {}
+    assert set(auth.team_names(db, admin)) >= {admin.id, j.id}
+
+
+def test_network_kinds_filter_what_is_sent_but_not_what_sizes_a_node(client, users, db):
+    from app.models import Country, NetworkEdgeWeek, Outlet, Region, Theme
+    c = db.scalar(select(Country))
+    o1, o2 = db.scalars(select(Outlet).order_by(Outlet.id).limit(2)).all()
+    r = db.scalar(select(Region).where(Region.level == "district"))
+    t = db.scalar(select(Theme))
+    wk = date(2026, 10, 5)
+    db.add_all([
+        NetworkEdgeWeek(country_id=c.id, kind="outlet_region", source_node=f"o:{o1.id}", target_node=f"r:{r.id}", theme_id=t.id, week_start=wk, weight=3),
+        NetworkEdgeWeek(country_id=c.id, kind="outlet_theme", source_node=f"o:{o1.id}", target_node=f"t:{t.id}", theme_id=t.id, week_start=wk, weight=5),
+        NetworkEdgeWeek(country_id=c.id, kind="outlet_outlet", source_node=f"o:{o1.id}", target_node=f"o:{o2.id}", weight=0.8),
+        NetworkEdgeWeek(country_id=c.id, kind="syndication", source_node=f"o:{o1.id}", target_node=f"o:{o2.id}", weight=2)])
+    db.commit()
+    login(client, "j@example.org", "journo-password-1")
+    full = client.get("/api/network", params={"week": wk.isoformat()}).json()
+    assert {e["kind"] for e in full["edges"]} == {"outlet_region", "outlet_theme", "outlet_outlet", "syndication"}
+    node = lambda d, key: next(n for n in d["nodes"] if n["id"] == key)  # noqa: E731
+    assert node(full, f"o:{o1.id}")["articles"] == 5 and node(full, f"o:{o2.id}")["articles"] == 0
+    only = client.get("/api/network", params={"week": wk.isoformat(), "kinds": "outlet_region"}).json()
+    assert [e["kind"] for e in only["edges"]] == ["outlet_region"]
+    assert node(only, f"o:{o1.id}")["articles"] == 5                       # the bubble size still counts the theme edges
+    assert not any(n["id"] == f"o:{o2.id}" for n in only["nodes"])          # an outlet no sent edge touches is left out
+    assert {n["type"] for n in only["nodes"]} == {"outlet", "region", "theme"}
+    sim = client.get("/api/network", params={"week": wk.isoformat(), "kinds": "similarity,syndication"}).json()
+    assert {e["kind"] for e in sim["edges"]} == {"outlet_outlet", "syndication"}
+    assert client.get("/api/network", params={"kinds": "outlet_region", "min_weight": 4}).json()["edges"] == []
+    assert client.get("/api/network", params={"kinds": "bogus"}).status_code == 400
+
+
+def test_big_answers_are_gzipped_and_geo_files_are_cached_for_a_day(client, users):
+    login(client, "j@example.org", "journo-password-1")
+    r = client.get("/api/meta", headers={"Accept-Encoding": "gzip"})
+    assert r.headers.get("content-encoding") == "gzip" and r.json()["country"]["iso2"] == "LY"
+    assert "content-encoding" not in client.get("/health", headers={"Accept-Encoding": "gzip"}).headers   # under 1 KB
+    g = client.get("/geo/libya_districts.geojson")
+    assert g.status_code == 200 and g.headers["cache-control"] == "public, max-age=86400"
+    assert client.get("/api/meta").headers.get("cache-control") != "public, max-age=86400"

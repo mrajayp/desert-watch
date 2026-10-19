@@ -1,6 +1,6 @@
 import secrets
 
-from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -96,7 +96,7 @@ def logout_all(response: Response, u: User = Depends(auth.current_user), s: Sess
     """Sign out everywhere: every session of the account ends, this one included."""
     n = auth.end_sessions(s, u.id)
     s.commit()
-    response.delete_cookie(auth.COOKIE, path="/")
+    auth.clear_cookies(response)
     return {"ok": True, "ended": n}
 
 
@@ -107,7 +107,7 @@ class PasswordIn(BaseModel):
 
 @router.post("/me/password")
 def change_password(body: PasswordIn, request: Request, u: User = Depends(auth.current_user), s: Session = Depends(get_db),
-                    dw_session: str | None = Cookie(default=None)):
+                    dw_session: str | None = Depends(auth.session_token)):
     """A new password ends every other session of the account (a stolen cookie elsewhere stops
     working). A wrong current password counts towards the sign-in throttle for this email."""
     u = s.merge(u)
@@ -150,7 +150,7 @@ def signup(body: SignupIn, request: Request, s: Session = Depends(get_db)):
 
 
 @router.post("/auth/logout")
-def logout(response: Response, dw_session: str | None = Cookie(default=None), s: Session = Depends(get_db)):
+def logout(response: Response, dw_session: str | None = Depends(auth.session_token), s: Session = Depends(get_db)):
     auth.end_session(s, dw_session, response)
     return {"ok": True}
 
@@ -206,7 +206,7 @@ FREE_TEXT = ("note", "notes", "reason", "comment", "why", "body", "text")   # su
 
 @router.delete("/me")
 def delete_me(response: Response, u: User = Depends(auth.current_user), s: Session = Depends(get_db),
-              dw_session: str | None = Cookie(default=None)):
+              dw_session: str | None = Depends(auth.session_token)):
     """Deletes the account and everything attributable to it. What the team still needs (votes, ratings,
     added articles, outlet labels, key events, logged AI answers) is kept without the person or their words;
     labels are kept without the pseudo_id. Every session of the account ends."""
